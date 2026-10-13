@@ -21,6 +21,7 @@ for d in (30, 60, 90):
 print("\nÖncelikli 5 fatura:")
 print(res["ranked"].head(5)[["invoice_id", "customer_name", "open_amount", "days_overdue", "p_late", "stage"]]
       .to_string(index=False))
+print(f"Sabit ödeme günü tespit edilen müşteri: {(res['ranked'].drop_duplicates('customer_id')['payday'] > 0).sum()}")
 draft = next(filter(None, (actions.draft_message(r, "Örnek Ticaret A.Ş.") for _, r in res["ranked"].iterrows())))
 print(f"\nÖrnek taslak ({draft['stage']}):\n{draft['body']}")
 

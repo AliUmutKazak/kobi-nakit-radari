@@ -13,7 +13,7 @@ from radar import actions, ingest, pipeline  # noqa: E402
 from radar.reconcile import reconcile  # noqa: E402
 
 SAMPLES = Path(__file__).parent / "ornekler"
-KEEP = ("sim", "ranked", "metrics", "opening", "gap_day", "simple_model", "n_train")
+KEEP = ("sim", "ranked", "metrics", "opening", "gap_day", "simple_model", "n_train", "disputed_total", "obs", "as_of")
 
 st.set_page_config(page_title="KOBİ Nakit Akışı Radarı", layout="wide")
 st.title("KOBİ Nakit Akışı Radarı")
@@ -67,10 +67,15 @@ def run_own(inv, ubl, pay, out, chq, opening, terms, as_of, include_projected):
     return {k: res[k] for k in KEEP} | {"notes": notes, "has_outflows": bool(out)}
 
 
+@st.cache_data(show_spinner="Geçmiş tarihlerde tahmin üretiliyor...")
+def run_backtest(obs, as_of):
+    return pipeline.backtest_own(obs, as_of)
+
+
 with st.sidebar:
     source = st.radio("Veri", ["Demo şirket", "Kendi verim"])
     include_projected = st.toggle("Henüz kesilmemiş satışları dahil et", True)
-    seller = st.text_input("Mesajlardaki imza", "Örnek Ticaret A.Ş.")
+    seller = st.text_input("Mesajlardaki imza (ticaret unvanı ve MERSİS no)", "Örnek Ticaret A.Ş.")
     if source == "Demo şirket":
         seed = st.number_input("Örnek şirket", 1, 99, 7)
     else:
@@ -111,6 +116,11 @@ for note in res["notes"]:
 if res["simple_model"]:
     st.info(f"Vadesi dolmuş {res['n_train']} fatura bulundu. Bu kadar veriyle öğrenen model yerine "
             "müşteri alışkanlığına dayalı basit tahmin kullanılıyor; bant daha geniş ve daha az kişisel olur.")
+if res["disputed_total"]:
+    st.caption(f"• İtirazlı {res['disputed_total']:,.0f} TL alacak tahmine ve hatırlatma listesine dahil edilmedi.")
+if m["over_60_terms"]:
+    st.caption(f"• {m['over_60_terms']} açık faturada vade 60 günden uzun. TTK m.1530'a göre alacaklı KOBİ ise ya da "
+               "borçlu büyük işletmeyse vade 60 günü aşamaz; bu sözleşmeleri gözden geçirin.")
 if not res["has_outflows"]:
     st.warning("Gider planı yüklenmedi: grafik yalnızca tahsilatları gösteriyor, kasa açığı hesaplanamaz.")
 
@@ -135,19 +145,38 @@ fig.add_hline(y=0, line_dash="dash", line_color="crimson")
 fig.update_layout(height=380, margin=dict(l=0, r=0, t=10, b=0), yaxis_title="Kasa (TL)", hovermode="x unified")
 st.plotly_chart(fig, width="stretch")
 
+with st.expander("Bu tahmin geçmişte ne kadar tuttu?"):
+    st.write("Geçmişteki birkaç tarihe dönülür, o gün eldeki bilgiyle 90 günlük tahsilat tahmin edilir "
+             "ve sonradan gerçekleşenle karşılaştırılır.")
+    if st.button("Geri testi çalıştır"):
+        bt = run_backtest(res["obs"], res["as_of"])
+        if bt is None:
+            st.info("Geri test için yeterli geçmiş yok: en az 9 aylık fatura ve ödeme kaydı gerekir.")
+        else:
+            st.write(f"{len(bt)} test tarihinin {int(bt['inside'].sum())} tanesinde gerçekleşen tahsilat, "
+                     f"tahmin bandının içinde kaldı. Beklenen değerin ortalama sapması: "
+                     f"%{bt['err_p50_pct'].mean():+.0f}.")
+            st.dataframe(bt.rename(columns={
+                "origin": "Tahmin tarihi", "actual": "Gerçekleşen (TL)", "p10": "Kötümser (TL)",
+                "p50": "Beklenen (TL)", "p90": "İyimser (TL)", "inside": "Bant içinde",
+                "err_p50_pct": "Sapma (%)"}).round(0), width="stretch", hide_index=True)
+
 st.subheader("Öncelikli tahsilat listesi")
-todo = res["ranked"][res["ranked"]["actionable"]]
+todo = res["ranked"][res["ranked"]["actionable"]].copy()
+todo["payday_label"] = todo["payday"].map(actions.payday_label)
 st.dataframe(
-    todo[["invoice_id", "customer_name", "due_date", "open_amount", "days_overdue", "p_late", "stage"]].rename(columns={
+    todo[["invoice_id", "customer_name", "due_date", "open_amount", "days_overdue", "p_late", "stage",
+          "payday_label", "contact_date"]].rename(columns={
         "invoice_id": "Fatura", "customer_name": "Müşteri", "due_date": "Vade", "open_amount": "Tutar (TL)",
-        "days_overdue": "Gecikme (gün)", "p_late": "Açık gününe kadar gelmeme olasılığı", "stage": "Aşama"}),
+        "days_overdue": "Gecikme (gün)", "p_late": "Açık gününe kadar gelmeme olasılığı", "stage": "Aşama",
+        "payday_label": "Müşterinin ödeme günü", "contact_date": "Önerilen iletişim tarihi"}),
     width="stretch", hide_index=True)
 
 st.subheader("Mesaj taslağı")
 if len(todo):
     by_id = todo.set_index("invoice_id", drop=False)
     pick = st.selectbox("Fatura", todo["invoice_id"], format_func=lambda i: f"{i} · {by_id.at[i, 'customer_name']}")
-    draft = actions.draft_message(by_id.loc[pick], seller, m["on_time_rate"])
+    draft = actions.draft_message(by_id.loc[pick], seller)
     st.text_area("Taslak (düzenleyebilirsiniz)", draft["body"], height=140)
     if draft["note"]:
         st.info(draft["note"])

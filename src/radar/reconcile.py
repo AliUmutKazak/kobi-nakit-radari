@@ -36,7 +36,7 @@ def reconcile(invoices: pd.DataFrame, payments: pd.DataFrame, tol: float = 0.01)
     """invoices: invoice_id, customer_id, customer_name, vkn, due_date, open_amount
     payments: date, amount, description
     Döner: (güncellenmiş faturalar, eşleşme satırları, eşleşmeyen ödemeler)."""
-    inv = invoices.copy()
+    inv = invoices.copy().reset_index(drop=True)
     inv["open_amount"] = inv["open_amount"].astype(float)
     if "paid_date" not in inv:
         inv["paid_date"] = pd.NaT

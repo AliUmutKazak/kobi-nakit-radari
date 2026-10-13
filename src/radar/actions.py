@@ -8,7 +8,10 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 
-# TTK m.1530 kapsamında TCMB'nin 2026 için ilan ettiği değerler (her yıl güncellenir).
+from .features import MONTH_END, next_payday, payday_habit
+
+# TTK m.1530/7 uyarınca TCMB'nin 01.01.2026'dan itibaren ilan ettiği değerler (her yıl güncellenir).
+# Kaynak: tcmb.gov.tr > İstatistikler > Piyasa Verileri > TTK Md. 1530
 LATE_INTEREST_RATE = 0.43
 MIN_RECOVERY_COST_TL = 2020
 
@@ -26,21 +29,46 @@ def metrics(obs: pd.DataFrame, as_of) -> dict:
         "dso": float(open_inv["open_amount"].sum() / sales_90 * 90) if sales_90 else float("nan"),
         "avg_days_beyond_terms": float(np.average(dbt, weights=paid["amount"])) if len(paid) else float("nan"),
         "on_time_rate": float((dbt <= 0).mean()) if len(paid) else float("nan"),
+        # TTK m.1530/5: alacaklı KOBİ ise ya da borçlu büyük işletmeyse vade 60 günü aşamaz.
+        "over_60_terms": int(((open_inv["due_date"] - open_inv["issue_date"]).dt.days > 60).sum()),
     }
 
 
-def prioritize(open_inv: pd.DataFrame, pay_day: np.ndarray, as_of, gap_day: int) -> pd.DataFrame:
+def payment_habits(obs: pd.DataFrame) -> pd.DataFrame:
+    """Müşteri bazında sabit ödeme günü (0 = yok) ve vadesinde ödeme oranı."""
+    paid = obs.dropna(subset=["paid_date"])
+    rows = {}
+    for cid, g in paid.groupby("customer_id"):
+        d = g["paid_date"]
+        rows[cid] = {"payday": payday_habit(d.dt.day.to_numpy(), (d.dt.days_in_month - d.dt.day).to_numpy()),
+                     "cust_on_time": float((d <= g["due_date"]).mean()), "cust_n_paid": len(g)}
+    return pd.DataFrame.from_dict(rows, orient="index", columns=["payday", "cust_on_time", "cust_n_paid"])
+
+
+def prioritize(open_inv: pd.DataFrame, pay_day: np.ndarray, as_of, gap_day: int,
+               habits: pd.DataFrame | None = None) -> pd.DataFrame:
     """Faturaları "açık gününe kadar tahsil edilememe riski taşıyan tutar"a göre sıralar."""
     as_of = pd.Timestamp(as_of)
     df = open_inv[["invoice_id", "customer_id", "customer_name", "due_date", "open_amount"]].copy()
+    promised = open_inv["promised_date"] if "promised_date" in open_inv else pd.Series(pd.NaT, index=df.index)
+    df["promised_date"] = promised.where(promised > as_of)
     df["days_overdue"] = (as_of - df["due_date"]).dt.days
     df["p_late"] = (pay_day > gap_day).mean(axis=1)
     df["expected_pay_day"] = np.median(pay_day, axis=1)
     df["amount_at_risk"] = df["open_amount"] * df["p_late"]
     df["stage"] = pd.cut(df["days_overdue"], [-np.inf, -8, 0, 15, np.inf],
                          labels=["bekle", "hatirlatma", "mutabakat", "resmi"]).astype(str)
+    df.loc[df["promised_date"].notna(), "stage"] = "soz"      # söz tarihi geçene kadar hatırlatma yok
     # Vadesine bir haftadan fazla olan faturalar için hatırlatma işe yaramaz; listede sona alınır.
-    df["actionable"] = df["stage"] != "bekle"
+    df["actionable"] = ~df["stage"].isin(["bekle", "soz"])
+    if habits is not None and len(habits):
+        df = df.join(habits, on="customer_id")
+    for col, default in (("payday", 0), ("cust_on_time", np.nan), ("cust_n_paid", 0)):
+        df[col] = df[col].fillna(default) if col in df else default
+    # Sabit ödeme günü olan müşteriye, o günden 3 gün önce ulaşmak ödeme listesine girmeyi sağlar.
+    today, lead = np.datetime64(as_of.date()), np.timedelta64(3, "D")
+    df["contact_date"] = [pd.Timestamp(max(today, next_payday(today + lead, int(h)) - lead)) if h else as_of
+                          for h in df["payday"]]
     return df.sort_values(["actionable", "amount_at_risk"], ascending=False).reset_index(drop=True)
 
 
@@ -48,15 +76,22 @@ def _tl(x: float) -> str:
     return f"{x:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".") + " TL"
 
 
-def draft_message(row, seller: str, on_time_rate: float | None = None) -> dict | None:
-    """Aşamaya göre WhatsApp/e-posta taslağı üretir. Tanıtım içeriği eklenmez."""
+def payday_label(habit: int) -> str:
+    return "" if not habit else ("ay sonu" if habit == MONTH_END else f"ayın {int(habit)}. günü")
+
+
+def draft_message(row, seller: str) -> dict | None:
+    """Aşamaya göre WhatsApp/e-posta taslağı üretir. Tanıtım içeriği eklenmez.
+
+    `seller` gönderenin ticaret unvanıdır (varsa MERSİS numarasıyla); ticari iletilerde
+    gönderenin kimliğinin açıkça belirtilmesi gerekir."""
     due, amount = pd.Timestamp(row["due_date"]).strftime("%d.%m.%Y"), _tl(row["open_amount"])
     ref = f"{row['invoice_id']} numaralı, {amount} tutarındaki faturamız"
-    if row["stage"] == "bekle":
+    if row["stage"] in ("bekle", "soz"):
         return None
     if row["stage"] == "hatirlatma":
         habit = (" Bugüne kadarki ödemelerinizin büyük bölümünü vadesinde yaptığınız için teşekkür ederiz."
-                 if on_time_rate is not None and on_time_rate >= 0.7 else "")
+                 if row.get("cust_n_paid", 0) >= 5 and row.get("cust_on_time", 0) >= 0.7 else "")
         body = (f"Merhaba, {ref} için vade tarihi {due}.{habit} "
                 f"Ödeme planınızda bir değişiklik varsa bize bildirmeniz yeterli. {seller}")
         note = None

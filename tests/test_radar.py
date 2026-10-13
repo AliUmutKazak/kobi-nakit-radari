@@ -132,3 +132,51 @@ def test_ingest_reports_missing_columns_and_defaults(tmp_path):
     p.write_text("Belge;Kime\nA1;X\n", encoding="utf-8")
     with pytest.raises(ValueError, match="Eksik sütun"):
         ingest.load_invoices(p)
+
+
+def test_disputed_and_promised_invoices(full):
+    obs = observe(full, AS_OF)
+    open_ids = obs.loc[obs["open_amount"] > 0].sort_values("due_date")["invoice_id"]
+    disputed_id, promised_id = open_ids.iloc[-1], open_ids.iloc[0]      # en yeni ve en eski açık fatura
+    obs["disputed"] = obs["invoice_id"] == disputed_id
+    obs["promised_date"] = pd.NaT
+    obs.loc[obs["invoice_id"] == promised_id, "promised_date"] = pd.Timestamp(AS_OF) + pd.Timedelta(days=20)
+    res = pipeline.forecast(obs, AS_OF, 0.0, pd.DataFrame({"date": [], "amount": []}), n_sims=300,
+                            include_projected=False)
+    ranked = res["ranked"].set_index("invoice_id", drop=False)
+    assert disputed_id not in ranked.index and res["disputed_total"] > 0
+    assert ranked.at[promised_id, "stage"] == "soz" and not ranked.at[promised_id, "actionable"]
+    assert actions.draft_message(ranked.loc[promised_id], "X") is None
+    # Söz verilen fatura, söz tarihinden çok önce ödenmiş sayılmamalı.
+    assert ranked.at[promised_id, "expected_pay_day"] >= 10
+
+
+def test_payday_habit_detection():
+    from radar.features import MONTH_END, next_payday, payday_habit
+
+    def habit(dates):
+        d = pd.to_datetime(dates)
+        return payday_habit(d.day.to_numpy(), (d.days_in_month - d.day).to_numpy())
+
+    mid = ["2026-01-15", "2026-02-16", "2026-03-15", "2026-04-14", "2026-05-15", "2026-06-15", "2026-07-03"]
+    eom = ["2026-01-31", "2026-02-28", "2026-03-31", "2026-04-30", "2026-05-29", "2026-06-30"]
+    spread = ["2026-01-03", "2026-02-09", "2026-03-14", "2026-04-20", "2026-05-25", "2026-06-28", "2026-07-06"]
+    assert habit(mid) == 15 and habit(eom) == MONTH_END and habit(mid[:3]) == 0 and habit(spread) == 0
+    assert next_payday(np.datetime64("2026-10-16"), 15) == np.datetime64("2026-11-15")
+    assert next_payday(np.datetime64("2026-10-16"), MONTH_END) == np.datetime64("2026-10-31")
+
+
+def test_message_praise_is_customer_specific():
+    row = {"invoice_id": "A1", "customer_name": "X", "due_date": "2026-10-05", "open_amount": 100.0,
+           "stage": "hatirlatma", "days_overdue": -4, "cust_on_time": 0.9, "cust_n_paid": 8}
+    assert "teşekkür" in actions.draft_message(row, "S")["body"]
+    assert "teşekkür" not in actions.draft_message(row | {"cust_on_time": 0.3}, "S")["body"]
+    assert "teşekkür" not in actions.draft_message(row | {"cust_n_paid": 2}, "S")["body"]
+
+
+def test_backtest_on_own_data(full):
+    obs = observe(full, AS_OF)
+    bt = pipeline.backtest_own(obs, AS_OF, origins=2)
+    assert len(bt) == 2 and (bt["p10"] <= bt["p90"]).all() and bt["actual"].gt(0).all()
+    recent = obs[obs["issue_date"] > pd.Timestamp(AS_OF) - pd.Timedelta(days=200)]
+    assert pipeline.backtest_own(recent, AS_OF) is None

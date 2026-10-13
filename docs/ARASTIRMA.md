@@ -16,20 +16,21 @@ Bu proje gerçek kullanım için geliştiriliyor; bu yüzden her iddia, dayandı
 
 Kural: ürün ve model kararları yalnızca A düzeyine dayanır. B düzeyi pazarın durumunu anlamak için kullanılır. C düzeyindeki hiçbir rakam ürün metnine, satış sunumuna ya da mesaj şablonuna birincil kaynaktan teyit edilmeden girmez.
 
-C düzeyinden birincil kaynağa taşınması gerekenler:
+Birincil kaynak teyidinin durumu (14 Ekim 2026):
 
-| Bilgi | Şu anki kaynak | Teyit edilecek birincil kaynak |
+| Bilgi | Durum | Birincil kaynak |
 |---|---|---|
-| TL ticari kredi faizi (%49,23) | Haber sitesi | TCMB EVDS, haftalık kredi faiz serisi |
-| Karşılıksız çek tutarı ve oranı | Mevzuat haber sitesi | TBB Risk Merkezi aylık bülteni |
-| 2026 temerrüt faizi (%43) ve 2.020 TL | Haber | Resmî Gazete'deki TCMB tebliği |
-| KOBİ alacaklıya 60 gün sınırı | Yazılım firması blogu | TTK m.1530 metni |
-| Açık bankacılık lisans sayısı | Haber | TCMB yetkili kuruluş listesi |
-| Borç hatırlatma mesajında onay istisnası | 2015 tarihli yönetmelik kopyası | mevzuat.gov.tr güncel metin |
-| Rakip fiyatları | Derleme siteleri | Üreticiden teklif |
-| Aralıkların dar kalması bulgusu | Hyndman'ın blogu | Hyndman, Koehler, Snyder, Grose (IJF 2002) |
+| 2026 temerrüt faizi %43,00 ve asgari giderim 2.020,00 TL | Teyit edildi | [TCMB, TTK Md. 1530 tablosu](https://www.tcmb.gov.tr/wps/wcm/connect/TR/TCMB+TR/Main+Menu/Istatistikler/Piyasa+Verileri/TTK+Md.+1530); tebliğ 2 Ocak 2026 tarihli Resmî Gazete'de |
+| 60 gün vade sınırı | Teyit edildi, ifade düzeltildi | [6102 sayılı TTK m.1530/5](https://www.mevzuat.gov.tr/mevzuatmetin/1.5.6102.pdf): alacaklı KOBİ veya tarımsal/hayvansal üretici ise **ya da** borçlu büyük ölçekli işletme ise vade 60 günü aşamaz. İlk notumdaki "alacaklı KOBİ ve borçlu büyük" ifadesi kanundan dardı. |
+| Vade yazmıyorsa temerrüt | Yeni bulgu | Aynı madde: ödeme günü belirtilmemişse borçlu, faturanın alınmasından 30 gün sonra ihtarsız temerrüde düşer. Vadesi olmayan faturada 30 gün varsayımı buna dayanıyor. |
+| Borç hatırlatma mesajında onay istisnası | Teyit edildi | [Ticaret Bakanlığı](https://ticaret.gov.tr/ic-ticaret/ticari-elektronik-iletiler/genel-bilgiler) ve [yönetmelik metni](https://www.mevzuat.gov.tr/File/GeneratePdf?mevzuatNo=20914&mevzuatTur=KurumVeKurulusYonetmeligi&mevzuatTertip=5), m.6/2: tahsilat ve borç hatırlatma bildirimlerinde önceden onay aranmaz, tanıtım yapılamaz. Yürürlükteki son hâli avukatla teyit edilmeli. |
+| Karşılıksız çek tutarı ve oranı | Kısmen | [TBB Risk Merkezi](https://www.riskmerkezi.org/istatistiki-raporlar/2544) Ağustos 2026 bültenini yayımlamış; rakamları bültenden doğrudan okuyamadım, haber aktarımına dayanıyor. |
+| Açık bankacılık lisans sayısı | Kısmen | [TCMB ödeme kuruluşları listesi](https://www.tcmb.gov.tr/wps/wcm/connect/tr/tcmb+tr/main+menu/temel+faaliyetler/odeme+hizmetleri/odeme+kuruluslari) mevcut; (f) ve (g) bendi sayımını yapamadım. Lisans gerektiği kesin, sayı kesin değil. |
+| TL ticari kredi faizi (%49,23) | Teyit edilmedi | TCMB EVDS haftalık kredi faiz serisi |
+| Aralıkların dar kalması bulgusu | Teyit edilmedi | Hyndman, Koehler, Snyder, Grose (IJF 2002) makalesinin tam metni; elimdeki kaynak yazarın kendi blogu |
+| Rakip fiyatları | Teyit edilmedi | Üreticiden teklif |
 
-Koddaki %43 faiz, 2.020 TL ve %3,4 çek karşılıksızlık oranı bu yüzden tek yerde tanımlı parametrelerdir ve teyit edilene kadar "varsayılan" sayılır.
+Koddaki %3,4 çek karşılıksızlık oranı bu yüzden hâlâ "varsayılan" bir parametredir. %43 ve 2.020 TL birincil kaynaktan teyitlidir ve her 1 Ocak'ta güncellenmelidir.
 
 ## 1. Raporda düzeltilmesi gereken iddialar
 
@@ -69,7 +70,7 @@ Koddaki %43 faiz, 2.020 TL ve %3,4 çek karşılıksızlık oranı bu yüzden te
 
 **E-faturada vade tarihi.** UBL-TR'de ödeme vadesi alanlarının genel e-faturada zorunlu olduğunu doğrulayamadım; bulduğum zorunluluk kuralları yalnızca kamuya kesilen faturalara ait. Ayrıştırıcı, vade alanı boş faturayı beklenen durum saymalı. Faturalara erişim de GİB'den değil, özel entegratörlerin API'leri üzerinden olur.
 
-**Geç ödeme hukuku (TTK m.1530).** 2026 için TCMB'nin ilan ettiği gecikme faizi yıllık %43, asgari tahsil gideri 2.020 TL. Alacaklı KOBİ, borçlu büyük işletmeyse vade kural olarak 60 günü aşamaz. Bu, mesajlarda kullanılabilecek gerçek bir dayanak. Buna karşılık rapordaki "sevkiyatın askıya alınacağını belirten Hukuki Ön İhtar" şablonunun otomatik üretilmesi risklidir; resmî dildeki mesajlar hukukçu kontrolünden geçmeli.
+**Geç ödeme hukuku (TTK m.1530).** 2026 için TCMB'nin ilan ettiği gecikme faizi yıllık %43, asgari tahsil gideri 2.020 TL. Alacaklı KOBİ ise ya da borçlu büyük ölçekli işletmeyse vade 60 günü aşamaz; vade yazmıyorsa borçlu faturanın alınmasından 30 gün sonra ihtarsız temerrüde düşer. Bu, mesajlarda kullanılabilecek gerçek bir dayanak. Buna karşılık rapordaki "sevkiyatın askıya alınacağını belirten Hukuki Ön İhtar" şablonunun otomatik üretilmesi risklidir; resmî dildeki mesajlar hukukçu kontrolünden geçmeli.
 
 **İleti mevzuatı.** Ticari elektronik ileti yönetmeliğine göre borç hatırlatma ve tahsilat bildirimleri için önceden onay aranmıyor, ancak mesaj tanıtım içeremez. Tacir alıcıların ret hakkı var. Kişisel e-posta adresine giden mesaj bireysel alıcı sayılabilir. Bulduğum yönetmelik metni 2015 tarihli; güncel hâli teyit edilmeli. KVKK tarafında hukuki dayanak ayrıca değerlendirilmeli.
 

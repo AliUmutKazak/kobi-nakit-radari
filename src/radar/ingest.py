@@ -25,6 +25,8 @@ ALIASES = {
     "amount": ["tutar", "genel toplam", "odenecek tutar", "toplam", "fatura tutari", "islem tutari", "alacak"],
     "paid_date": ["odeme tarihi", "tahsilat tarihi", "kapanis tarihi"],
     "open_amount": ["kalan", "acik tutar", "bakiye", "kalan tutar"],
+    "disputed": ["itiraz", "itirazli", "ihtilafli", "anlasmazlik"],
+    "promised_date": ["odeme sozu", "soz tarihi", "odeme sozu tarihi", "taahhut tarihi"],
     "description": ["aciklama", "islem aciklamasi", "detay"],
     "label": ["kalem", "gider", "aciklama", "tur"],
     "drawer": ["kesideci", "cek sahibi", "borclu", "musteri", "cari"],
@@ -106,7 +108,12 @@ def _finish_invoices(df: pd.DataFrame, default_terms: int, notes: list[str]) -> 
     if "open_amount" not in df:
         df["open_amount"] = np.where(df["paid_date"].isna(), df["amount"], 0.0)
     df["open_amount"] = df["open_amount"].fillna(df["amount"]).clip(lower=0)
-    cols = ["invoice_id", "customer_id", "customer_name", "vkn", "issue_date", "due_date", "amount", "paid_date", "open_amount"]
+    df["disputed"] = (df["disputed"].map(lambda v: _key(v) in {"evet", "e", "x", "1", "true", "var", "itirazli"})
+                      if "disputed" in df else False)
+    if "promised_date" not in df:
+        df["promised_date"] = pd.NaT
+    cols = ["invoice_id", "customer_id", "customer_name", "vkn", "issue_date", "due_date", "amount", "paid_date",
+            "open_amount", "disputed", "promised_date"]
     return df[cols].sort_values("issue_date").reset_index(drop=True)
 
 
@@ -114,8 +121,9 @@ def load_invoices(file, default_terms: int = 30):
     """Kesilen faturalar. Zorunlu: fatura no, müşteri, fatura tarihi, tutar."""
     notes: list[str] = []
     df = _pick(_read(file), ["invoice_id", "customer_name", "vkn", "issue_date", "due_date", "amount",
-                             "paid_date", "open_amount"], ["invoice_id", "customer_name", "issue_date", "amount"])
-    for c in ("issue_date", "due_date", "paid_date"):
+                             "paid_date", "open_amount", "disputed", "promised_date"],
+               ["invoice_id", "customer_name", "issue_date", "amount"])
+    for c in ("issue_date", "due_date", "paid_date", "promised_date"):
         if c in df:
             df[c] = _date(df[c])
     for c in ("amount", "open_amount"):
