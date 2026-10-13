@@ -1,0 +1,1 @@
+"""KOBİ Nakit Akışı Radarı."""

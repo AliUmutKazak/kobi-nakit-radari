@@ -1,0 +1,9 @@
+numpy
+pandas
+scipy
+lightgbm
+scikit-learn
+streamlit
+plotly
+openpyxl
+pytest

@@ -1,0 +1,142 @@
+"""Sentetik KOBİ alacak verisi.
+
+Gerçek veri gelene kadar geliştirme ve geri test için kullanılır. Gecikmeler bilerek
+Gaussyen değildir: sağa çarpık, müşteriye göre kümelenmiş, zamanla kötüleşen ve
+"ödeme günü" (ayın 15'i / ay sonu) alışkanlığına oturan bir yapı üretir.
+"""
+from __future__ import annotations
+
+import numpy as np
+import pandas as pd
+
+_NAMES = ["Anadolu", "Marmara", "Ege", "Toros", "Bosfor", "Kuzey", "Yıldız", "Demir", "Akın", "Güven"]
+_KINDS = ["Yapı", "Tekstil", "Gıda", "Lojistik", "Makine", "Plastik", "Kimya", "Mobilya", "Otomotiv", "Ambalaj"]
+
+
+def generate(seed: int = 7, n_customers: int = 40, months: int = 24, as_of: str = "2026-10-01") -> pd.DataFrame:
+    """Tüm gerçeği (true_paid_date dahil) içeren fatura tablosunu üretir."""
+    rng = np.random.default_rng(seed)
+    as_of = pd.Timestamp(as_of)
+    start = as_of - pd.DateOffset(months=months)
+    n_days = (as_of - start).days
+    frames = []
+    for i in range(n_customers):
+        terms = int(rng.choice([30, 45, 60, 90], p=[0.35, 0.25, 0.30, 0.10]))
+        p_ontime = rng.beta(2, 2)
+        base_delay = rng.gamma(2.0, 7.0)
+        sigma = rng.uniform(0.5, 1.0)
+        pay_day = int(rng.choice([0, 15, 31], p=[0.5, 0.25, 0.25]))
+        rate = min(rng.pareto(2.0) * 1.5 + 0.4, 8.0)
+        size = rng.lognormal(0, 0.6)
+        p_default = 0.08 if rng.random() < 0.10 else rng.uniform(0, 0.02)
+
+        k = rng.poisson(rate * months)
+        if k == 0:
+            continue
+        offs = rng.integers(0, n_days, k)
+        issue = start + pd.to_timedelta(offs, unit="D")
+        due = issue + pd.Timedelta(days=terms)
+        # Finansal sıkılaşma: dönem ilerledikçe gecikmeler uzar; Ocak ve Ağustos'ta ek sarkma.
+        macro = 1 + 0.6 * offs / n_days + 0.25 * np.isin(issue.month, [1, 8])
+        amount = rng.lognormal(np.log(45_000 * size), 0.8, k)
+        z = (np.log(amount) - np.log(45_000 * size)) / 0.8
+        ontime = rng.random(k) < p_ontime / macro
+        late = rng.lognormal(np.log(base_delay * macro + 3), sigma) * np.clip(1 + 0.15 * z, 0.5, 2.0)
+        delay = np.where(ontime, rng.normal(-1, 2, k), late).round()
+        paid = pd.DatetimeIndex(due + pd.to_timedelta(delay, unit="D"))
+        if pay_day == 31:
+            paid = paid + pd.offsets.MonthEnd(0)
+        elif pay_day == 15:
+            first = paid.to_period("M").to_timestamp()
+            nxt = (paid.to_period("M") + 1).to_timestamp()
+            paid = pd.DatetimeIndex(np.where(paid.day <= 15, first, nxt)) + pd.Timedelta(days=14)
+        paid = paid.where(rng.random(k) >= p_default, pd.NaT)  # hiç ödenmeyenler
+
+        frames.append(pd.DataFrame({
+            "customer_id": f"C{i:03d}",
+            "customer_name": f"{rng.choice(_NAMES)} {rng.choice(_KINDS)} {i:02d} A.Ş.",
+            "vkn": f"{rng.integers(10**9, 10**10 - 1)}",
+            "issue_date": issue, "due_date": due,
+            "amount": amount.round(2), "true_paid_date": paid,
+        }))
+    full = pd.concat(frames, ignore_index=True).sort_values("issue_date").reset_index(drop=True)
+    full.insert(0, "invoice_id", [f"FTR{2025000000 + i}" for i in range(len(full))])
+    return full
+
+
+def observe(full: pd.DataFrame, as_of) -> pd.DataFrame:
+    """`as_of` tarihinde görülebilen veri: gelecekteki faturalar ve ödemeler gizlenir."""
+    as_of = pd.Timestamp(as_of)
+    df = full[full["issue_date"] <= as_of].copy()
+    df["paid_date"] = df["true_paid_date"].where(df["true_paid_date"] <= as_of)
+    df["open_amount"] = np.where(df["paid_date"].isna(), df["amount"], 0.0)
+    return df.drop(columns="true_paid_date").reset_index(drop=True)
+
+
+def cash_plan(obs: pd.DataFrame, as_of, horizon: int = 90, opening_months: float = 0.45):
+    """Açılış kasası ve deterministik çıkışlar (kira, maaş, SGK/muhtasar, KDV, tedarikçi)."""
+    as_of = pd.Timestamp(as_of)
+    monthly = obs.loc[obs["issue_date"] > as_of - pd.Timedelta(days=180), "amount"].sum() / 6
+    rows = []
+    for d in pd.date_range(as_of + pd.Timedelta(days=1), periods=horizon):
+        fixed = {1: ("Kira", 0.06), 5: ("Maaş", 0.30), 26: ("SGK + Muhtasar", 0.10), 28: ("KDV", 0.08)}
+        if d.day in fixed:
+            label, share = fixed[d.day]
+            rows.append((d, monthly * share, label))
+        if d.dayofweek == 4:
+            rows.append((d, monthly * 0.46 / 4.33, "Tedarikçi ödemeleri"))
+    return opening_months * monthly, pd.DataFrame(rows, columns=["date", "amount", "label"])
+
+
+def export_samples(folder, seed: int = 7, as_of: str = "2026-10-01") -> None:
+    """Kendi verisini yükleyecek kullanıcı için örnek dosyalar (Türkçe başlık ve sayı biçimiyle)."""
+    from pathlib import Path
+    folder = Path(folder)
+    folder.mkdir(parents=True, exist_ok=True)
+    rng = np.random.default_rng(seed)
+    obs = observe(generate(seed=seed, as_of=as_of), as_of)
+    tr = dict(sep=";", decimal=",", index=False, date_format="%d.%m.%Y", encoding="utf-8-sig")
+
+    obs.rename(columns={"invoice_id": "Fatura No", "customer_name": "Cari Unvan", "vkn": "VKN",
+                        "issue_date": "Fatura Tarihi", "due_date": "Vade Tarihi", "amount": "Tutar"})[
+        ["Fatura No", "Cari Unvan", "VKN", "Fatura Tarihi", "Vade Tarihi", "Tutar"]].to_csv(folder / "faturalar.csv", **tr)
+
+    paid = obs.dropna(subset=["paid_date"]).groupby(["customer_id", "customer_name", "vkn", "paid_date"], as_index=False)["amount"].sum()
+    with_vkn = rng.random(len(paid)) < 0.6
+    paid["Açıklama"] = ("GELEN HAVALE " + paid["customer_name"].str.upper() + " "
+                        + np.where(with_vkn, paid["vkn"], "") + " CARI HESAP ODEMESI")
+    paid.rename(columns={"paid_date": "Tarih", "amount": "Tutar"})[["Tarih", "Tutar", "Açıklama"]]         .sort_values("Tarih").to_csv(folder / "ekstre.csv", **tr)
+
+    opening, outflows = cash_plan(obs, as_of)
+    outflows.rename(columns={"date": "Tarih", "amount": "Tutar", "label": "Kalem"}).to_csv(folder / "giderler.csv", **tr)
+
+    as_of = pd.Timestamp(as_of)
+    names = obs["customer_name"].drop_duplicates().sample(8, random_state=seed).to_numpy()
+    pd.DataFrame({"Vade": as_of + pd.to_timedelta(rng.integers(5, 80, 8), unit="D"),
+                  "Tutar": rng.lognormal(np.log(120_000), 0.5, 8).round(2), "Keşideci": names})         .sort_values("Vade").to_csv(folder / "cekler.csv", **tr)
+    (folder / "OKU.txt").write_text("\n".join([
+        f"Örnek dosyalar {as_of:%d.%m.%Y} tarihine göre üretildi; panelde 'Bugünün tarihi' olarak bunu seçin.",
+        f"Açılış kasası için {opening:.0f} TL girebilirsiniz.", ""]), encoding="utf-8")
+
+
+def to_ubl_xml(row, with_due_date: bool = True) -> str:
+    """Test ve örnek dosyalar için asgari bir UBL-TR faturası."""
+    due = (f"<cac:PaymentMeans><cbc:PaymentMeansCode>42</cbc:PaymentMeansCode>"
+           f"<cbc:PaymentDueDate>{pd.Timestamp(row['due_date']).date()}</cbc:PaymentDueDate></cac:PaymentMeans>"
+           ) if with_due_date else ""
+    return f"""<?xml version="1.0" encoding="UTF-8"?>
+<Invoice xmlns="urn:oasis:names:specification:ubl:schema:xsd:Invoice-2"
+ xmlns:cac="urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2"
+ xmlns:cbc="urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2">
+  <cbc:UBLVersionID>2.1</cbc:UBLVersionID>
+  <cbc:CustomizationID>TR1.2</cbc:CustomizationID>
+  <cbc:ID>{row['invoice_id']}</cbc:ID>
+  <cbc:IssueDate>{pd.Timestamp(row['issue_date']).date()}</cbc:IssueDate>
+  <cbc:DocumentCurrencyCode>TRY</cbc:DocumentCurrencyCode>
+  <cac:AccountingCustomerParty><cac:Party>
+    <cac:PartyIdentification><cbc:ID schemeID="VKN">{row['vkn']}</cbc:ID></cac:PartyIdentification>
+    <cac:PartyName><cbc:Name>{row['customer_name']}</cbc:Name></cac:PartyName>
+  </cac:Party></cac:AccountingCustomerParty>
+  {due}
+  <cac:LegalMonetaryTotal><cbc:PayableAmount currencyID="TRY">{row['amount']:.2f}</cbc:PayableAmount></cac:LegalMonetaryTotal>
+</Invoice>"""
