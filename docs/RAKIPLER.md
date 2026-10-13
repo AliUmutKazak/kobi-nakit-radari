@@ -22,10 +22,27 @@ Tarih: 14 Ekim 2026. Yöntem: her üründe yalnızca üreticinin kendi ürün sa
 | Hedef müşteri | Yıllık 10–500 milyon £ ciro | Belirtilmemiş | Belirtilmemiş | Yıllık 1 milyon £ üstü ciro | KOBİ ve büyük şirket | KOBİ |
 | Fiyat | Teklifle | Belirtilmemiş | Belirtilmemiş | Belirtilmemiş | Teklifle | — |
 
+## Yerli ön muhasebe programları
+
+Bu ürünler doğrudan rakip değil, verinin durduğu yer; KOBİ'lerin çoğu faturasını bunlardan kesiyor. Aynı yöntemle (yalnızca kendi sayfalarında yazan) incelendi.
+
+| Özellik | Logo İşbaşı | BizimHesap | Paraşüt | Mikro |
+|---|---|---|---|---|
+| Nakit akış tahmini yöntemi | Belirtilmemiş (kasa ve banka takibi) | Belirtilmemiş (takip) | Belirtilmemiş | Belirtilmemiş |
+| Çek / senet takibi | Çek giriş-çıkış var; senet belirtilmemiş | Çek ve senet var | Belirtilmemiş | Senet (müşteri yorumunda) |
+| Otomatik tahsilat hatırlatma | Belirtilmemiş | Belirtilmemiş | Belirtilmemiş | Belirtilmemiş |
+| Banka entegrasyonu | 17 banka | Var (gelen-giden eşleştirme) | "Akıllı Banka Entegrasyonu" | Belirtilmemiş |
+| Online tahsilat | Kartla 7/24 ödeme alma | Sanal POS | Ayrı ürün sayfası var | Belirtilmemiş |
+| Fiyat (KDV hariç) | 463–738 ₺/ay | Belirtilmemiş | Belirtilmemiş | Belirtilmemiş |
+
+Sonuç: yerli programlar kaydı, banka eşleştirmesini ve ödeme almayı çözmüş; hiçbirinin sayfasında tahmin yöntemi ya da otomatik hatırlatma geçmiyor. Bu, konumlanmayı netleştiriyor: bu ürün ön muhasebe programının yerine değil üstüne oturmalı, veriyi onlardan almalı. Logo İşbaşı'nın aylık 463–738 ₺ fiyatı da KOBİ'nin bu tür yazılıma ödediği düzey için bir referans.
+
+Kaynaklar: [Logo İşbaşı](https://isbasi.com/), [BizimHesap](https://bizimhesap.com/), [Paraşüt özellikler](https://www.parasut.com/ozellikler), [Mikro tahsilat](https://www.mikro.com.tr/Tahsilat-programi/).
+
 ## Rakiplerden alınıp uygulananlar
 
 1. **İtirazlı fatura (Agicap).** İtirazlı işaretlenen fatura hatırlatma listesine ve kasa tahminine girmez; toplamı ayrıca gösterilir. Gerekçe: itirazlı faturaya hatırlatma göndermek ilişkiyi bozar, tahsil edilecekmiş gibi saymak tahmini şişirir.
-2. **Ödeme sözü (Upflow).** Söz tarihi girilen faturada bu tarih yeni vade sayılır ve söz tarihi geçene kadar hatırlatma üretilmez. Upflow bunu e-posta yanıtlarından otomatik çıkarıyor; bizde şimdilik elle giriliyor.
+2. **Ödeme sözü (Upflow).** Söz tarihi girilen faturada bu tarih yeni vade sayılır ve söz tarihi geçene kadar hatırlatma üretilmez. Upflow bunu e-posta yanıtlarından otomatik çıkarıyor; bizde panelden elle giriliyor.
 3. **İletişim zamanı (Chaser).** Chaser "en iyi gün ve saat" öneriyor ama yöntemini açıklamıyor. Bizde kural açık: müşterinin ödemelerinin en az %60'ı aynı günün ±1 gün çevresinde toplanıyorsa sabit ödeme günü sayılır ve iletişim o günden 3 gün öncesine önerilir. Örnek veride 40 müşterinin 12'sinde tespit edildi.
 
 ## Rakiplerde olmayan, bizde olan
@@ -43,7 +60,7 @@ Tarih: 14 Ekim 2026. Yöntem: her üründe yalnızca üreticinin kendi ürün sa
 | Mesajın gerçekten gönderilmesi (e-posta, sonra WhatsApp) | Taslak üretmek işin yarısı | WhatsApp için Meta onaylı şablon ve çözüm sağlayıcı; hukuki metin kontrolü |
 | Yanıtların okunması (itiraz, ödeme sözü) | Upflow'un asıl farkı; elle giriş ölçeklenmez | Gelen kutusu erişimi, dil modeli ve KVKK değerlendirmesi |
 | Ödeme bağlantısı | Hatırlatmadan ödemeye geçişi kısaltır | Ödeme kuruluşu ortaklığı |
-| Çok kullanıcılı hesap, yetki, kayıt | Gerçek üründe zorunlu | Streamlit prototipi bunun için uygun değil; ayrı bir uygulama katmanı gerekir |
+| Çok kullanıcılı hesap ve yetki | Gerçek üründe zorunlu | Kayıt katmanı eklendi (tek şirket, tek bilgisayar); hesap ve yetki için ayrı bir uygulama katmanı gerekir |
 
 ## Kaynaklar
 
@@ -53,4 +70,4 @@ Tarih: 14 Ekim 2026. Yöntem: her üründe yalnızca üreticinin kendi ürün sa
 - [Kolleno özellikler](https://www.kolleno.com/features/)
 - [Finrota NAP360](https://www.finrota.com/ozel-cozumler/cash-flow-management-nap360-finrota)
 
-Paraşüt'ün ilgili ürün sayfasına ulaşamadım (sayfa bulunamadı); bu tabloda yer almıyor ve ayrıca incelenmeli. Logo İşbaşı, Mikro ve BizimHesap da henüz incelenmedi.
+Paraşüt ve Mikro'nun sayfaları özellikleri ayrıntılandırmıyor; bu ikisi için kesin bilgi ancak deneme hesabıyla alınır.

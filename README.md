@@ -34,6 +34,7 @@ C:\Users\HP\.venvs\kobi-radar\Scripts\python -m pytest -q
 | `src/radar/model.py` | LightGBM kantil modeli ve aralık kalibrasyonu |
 | `src/radar/simulate.py` | Korelasyonlu Monte Carlo kasa simülasyonu |
 | `src/radar/actions.py` | Metrikler, önceliklendirme, mesaj taslakları |
+| `src/radar/store.py` | Kalıcı kayıt (SQLite): yüklenen tablolar, ayarlar, itiraz / ödeme sözü / mesaj günlüğü |
 | `src/radar/pipeline.py` | Uçtan uca akış ve geri testler |
 | `app.py` | Streamlit paneli |
 
@@ -44,5 +45,5 @@ C:\Users\HP\.venvs\kobi-radar\Scripts\python -m pytest -q
 - Tahsilat geri testinde P50, gerçekleşenin %1–9 üzerinde; bant içinde kalsa da iyimser bir sapma var.
 - Ödenecek faturalar, döviz ve canlı banka/e-fatura bağlantısı yok. Çeklerde keşideci bazlı risk yok.
 - Koddaki yasal ve piyasa parametreleri (gecikme faizi, tahsil gideri, çek karşılıksızlık oranı) ikincil kaynaklardan alındı; birincil kaynaktan teyit edilmeli (bkz. docs/ARASTIRMA.md).
-- Mesaj gönderimi yok; yalnızca taslak üretilir.
-- İtirazlı fatura ve ödeme sözü, fatura dosyasındaki `İtiraz` ve `Ödeme Sözü` sütunlarından okunur; panelden girilemez.
+- Mesaj gönderimi yok; taslak üretilir, kullanıcı kendi hesabından gönderip panelde kayda geçirir.
+- Veriler `data/radar.db` dosyasında, yalnızca bu bilgisayarda saklanır; kullanıcı hesabı, yetki ve yedekleme yok.

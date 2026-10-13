@@ -180,3 +180,34 @@ def test_backtest_on_own_data(full):
     assert len(bt) == 2 and (bt["p10"] <= bt["p90"]).all() and bt["actual"].gt(0).all()
     recent = obs[obs["issue_date"] > pd.Timestamp(AS_OF) - pd.Timedelta(days=200)]
     assert pipeline.backtest_own(recent, AS_OF) is None
+
+
+def test_store_persists_tables_and_events(full, tmp_path):
+    from radar.store import Store
+
+    obs = observe(full, AS_OF)
+    store = Store(tmp_path / "radar.db")
+    assert store.load("invoices") is None and store.rev == 0
+    store.save("invoices", obs)
+    store.set("opening", 1500.0)
+    open_ids = list(obs.loc[obs["open_amount"] > 0].sort_values("due_date")["invoice_id"])
+    a, b, c = open_ids[0], open_ids[1], open_ids[2]
+    store.add_event(a, "dispute", "1", ts="2026-09-20")
+    store.add_event(b, "promise", "2026-10-25", ts="2026-09-21")
+    store.add_event(c, "message", "taslak metni", ts="2026-09-29")
+    store.add_event(a, "dispute", "0", ts="2026-10-05")           # AS_OF'tan sonra: henüz geçerli değil
+
+    again = Store(tmp_path / "radar.db")                           # yeniden açınca her şey yerinde
+    inv = again.apply_events(again.load("invoices"), AS_OF).set_index("invoice_id")
+    assert len(inv) == len(obs) and float(again.get("opening")) == 1500.0 and again.rev == store.rev > 0
+    assert inv["issue_date"].dtype.kind == "M" and inv.at[a, "disputed"] and not inv.at[b, "disputed"]
+    assert inv.at[b, "promised_date"] == pd.Timestamp("2026-10-25")
+    assert inv.at[c, "last_contact"] == pd.Timestamp("2026-09-29")
+
+    res = pipeline.forecast(inv.reset_index(), AS_OF, 0.0, pd.DataFrame({"date": [], "amount": []}),
+                            n_sims=200, include_projected=False)
+    ranked = res["ranked"].set_index("invoice_id")
+    assert a not in ranked.index and ranked.at[b, "stage"] == "soz"
+    assert not ranked.at[c, "actionable"]                          # 2 gün önce yazıldı, bekleme süresinde
+    later = again.apply_events(again.load("invoices"), "2026-10-10").set_index("invoice_id")
+    assert not later.at[a, "disputed"]

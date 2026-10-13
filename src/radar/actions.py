@@ -14,6 +14,8 @@ from .features import MONTH_END, next_payday, payday_habit
 # Kaynak: tcmb.gov.tr > İstatistikler > Piyasa Verileri > TTK Md. 1530
 LATE_INTEREST_RATE = 0.43
 MIN_RECOVERY_COST_TL = 2020
+# Aynı fatura için yeni hatırlatma önermeden önce beklenen süre.
+CONTACT_COOLDOWN_DAYS = 7
 
 
 def metrics(obs: pd.DataFrame, as_of) -> dict:
@@ -60,7 +62,10 @@ def prioritize(open_inv: pd.DataFrame, pay_day: np.ndarray, as_of, gap_day: int,
                          labels=["bekle", "hatirlatma", "mutabakat", "resmi"]).astype(str)
     df.loc[df["promised_date"].notna(), "stage"] = "soz"      # söz tarihi geçene kadar hatırlatma yok
     # Vadesine bir haftadan fazla olan faturalar için hatırlatma işe yaramaz; listede sona alınır.
-    df["actionable"] = ~df["stage"].isin(["bekle", "soz"])
+    last = open_inv["last_contact"] if "last_contact" in open_inv else pd.Series(pd.NaT, index=df.index)
+    df["last_contact"] = pd.to_datetime(last)
+    contacted = (as_of - df["last_contact"]).dt.days < CONTACT_COOLDOWN_DAYS
+    df["actionable"] = ~df["stage"].isin(["bekle", "soz"]) & ~contacted
     if habits is not None and len(habits):
         df = df.join(habits, on="customer_id")
     for col, default in (("payday", 0), ("cust_on_time", np.nan), ("cust_n_paid", 0)):
