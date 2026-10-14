@@ -26,6 +26,8 @@ ALIASES = {
     "paid_date": ["odeme tarihi", "tahsilat tarihi", "kapanis tarihi"],
     "open_amount": ["kalan", "acik tutar", "bakiye", "kalan tutar"],
     "disputed": ["itiraz", "itirazli", "ihtilafli", "anlasmazlik"],
+    "currency": ["para birimi", "doviz", "doviz cinsi", "doviz turu", "pb"],
+    "invoice_type": ["fatura tipi", "fatura turu", "belge tipi"],
     "promised_date": ["odeme sozu", "soz tarihi", "odeme sozu tarihi", "taahhut tarihi"],
     "description": ["aciklama", "islem aciklamasi", "detay"],
     "label": ["kalem", "gider", "aciklama", "tur"],
@@ -101,6 +103,20 @@ def _date(s: pd.Series) -> pd.Series:
 
 
 def _finish_invoices(df: pd.DataFrame, default_terms: int, notes: list[str]) -> pd.DataFrame:
+    # İade faturası alacak değil, alacaktan düşülecek tutardır; dövizli fatura ise kur bilinmeden
+    # TL kasaya eklenemez. İkisi de sessizce karıştırılmak yerine dışarıda bırakılıp bildirilir.
+    if "invoice_type" in df:
+        refund = df["invoice_type"].map(_key).str.contains("iade", na=False)
+        if refund.any():
+            notes.append(f"{int(refund.sum())} iade faturası dışarıda bırakıldı; ilgili faturanın kalan tutarını elle düzeltin.")
+            df = df[~refund]
+    if "currency" in df:
+        code = df["currency"].fillna("TRY").astype(str).str.strip().str.upper().replace({"TL": "TRY", "": "TRY", "₺": "TRY"})
+        foreign = code != "TRY"
+        if foreign.any():
+            kinds = ", ".join(sorted(code[foreign].unique()))
+            notes.append(f"{int(foreign.sum())} dövizli fatura ({kinds}) dışarıda bırakıldı; döviz desteği henüz yok.")
+            df = df[~foreign]
     n = len(df)
     df = df.dropna(subset=["invoice_id", "issue_date", "amount"])
     df = df[df["amount"] > 0].drop_duplicates("invoice_id")
@@ -137,7 +153,7 @@ def load_invoices(file, default_terms: int = 30, mapping: dict | None = None):
     """Kesilen faturalar. Zorunlu: fatura no, müşteri, fatura tarihi, tutar."""
     notes: list[str] = []
     df = _pick(_read(file), ["invoice_id", "customer_name", "vkn", "issue_date", "due_date", "amount",
-                             "paid_date", "open_amount", "disputed", "promised_date"],
+                             "paid_date", "open_amount", "disputed", "promised_date", "currency", "invoice_type"],
                INVOICE_REQUIRED, mapping)
     for c in ("issue_date", "due_date", "paid_date", "promised_date"):
         if c in df:
@@ -156,7 +172,7 @@ def load_ubl(files, default_terms: int = 30):
             rows.append(parse_invoice(f.read() if hasattr(f, "read") else f))
         except Exception:
             notes.append(f"{getattr(f, 'name', 'XML')} okunamadı.")
-    df = pd.DataFrame(rows).drop(columns=["due_source", "currency"], errors="ignore")
+    df = pd.DataFrame(rows).drop(columns=["due_source"], errors="ignore")
     if df.empty:
         return df, notes
     df["due_date"] = pd.to_datetime(df["due_date"])

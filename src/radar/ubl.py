@@ -42,6 +42,7 @@ def parse_invoice(xml: str | bytes, default_terms_days: int | None = None) -> di
     amount_el = root.find("cac:LegalMonetaryTotal/cbc:PayableAmount", NS)
     return {
         "invoice_id": _text(root, "cbc:ID"),
+        "invoice_type": _text(root, "cbc:InvoiceTypeCode"),
         "issue_date": issue,
         "due_date": due,
         "due_source": source,

@@ -7,7 +7,7 @@ import pandas as pd
 from . import actions
 from .features import build_features
 from .model import DelayModel, FallbackModel, evaluate, fit_model, training_frame
-from .simulate import aging_curve, simulate
+from .simulate import aging_curve, estimate_correlation, simulate
 from .synthetic import cash_plan, observe
 
 
@@ -60,9 +60,10 @@ def forecast(obs: pd.DataFrame, as_of, opening: float, outflows: pd.DataFrame, h
     # gecikme alışkanlığı bu tarihe göre uygulanır (varsayım: söz de vade kadar tutulur).
     promised = target["promised_date"] > as_of
     sim_inv = target.assign(due_date=target["promised_date"].where(promised, target["due_date"]))
+    rho = estimate_correlation(model.predict(X), y, obs.loc[X.index, "customer_id"], obs.loc[X.index, "due_date"])
     ctx = {"sim_inv": sim_inv, "Q": model.predict(feats), "aging": aging_curve(obs, as_of), "cheques": cheques,
-           "horizon": horizon, "n_sims": n_sims, "seed": seed}
-    sim = simulate(sim_inv, ctx["Q"], as_of, opening, outflows, horizon, n_sims, seed=seed,
+           "horizon": horizon, "n_sims": n_sims, "seed": seed, "rho": rho}
+    sim = simulate(sim_inv, ctx["Q"], as_of, opening, outflows, horizon, n_sims, rho[0], rho[1], seed=seed,
                    aging=ctx["aging"], cheques=cheques)
     real = ~target["projected"].to_numpy()
     gap_day = sim.breach_day if sim.breach_day is not None else horizon
@@ -90,7 +91,8 @@ def scenario(res: dict, collect_ids=(), collect_in_days: int = 7, delay_labels=(
     if cash:
         out = pd.concat([out, pd.DataFrame({"date": [as_of + pd.Timedelta(days=collect_in_days)],
                                             "amount": [-cash], "label": ["Tahsilat (senaryo)"]})], ignore_index=True)
-    return simulate(inv, ctx["Q"], as_of, res["opening"], out, ctx["horizon"], ctx["n_sims"], seed=ctx["seed"],
+    return simulate(inv, ctx["Q"], as_of, res["opening"], out, ctx["horizon"], ctx["n_sims"], *ctx["rho"],
+                    seed=ctx["seed"],
                     aging=ctx["aging"], cheques=ctx["cheques"])
 
 

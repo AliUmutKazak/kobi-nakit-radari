@@ -257,3 +257,49 @@ def test_doubtful_receivables_are_separated():
     # Gerçekte de bunların çoğu sonradan tahsil edilememiş olmalı.
     truth = res["full"].set_index("invoice_id")["true_paid_date"].reindex(doubtful["invoice_id"])
     assert truth.isna().mean() > 0.7
+
+
+def test_correlation_is_estimated_from_data():
+    from radar.simulate import PRIOR_RHO, estimate_correlation
+
+    rng = np.random.default_rng(0)
+    n, n_cust = 3000, 30
+    cust = rng.integers(0, n_cust, n)
+    due = pd.Timestamp("2024-01-01") + pd.to_timedelta(rng.integers(0, 720, n), unit="D")
+    quarter = pd.PeriodIndex(due, freq="Q").astype(str)
+    Q = np.tile([-12.8, -6.7, 0.0, 6.7, 12.8], (n, 1))             # N(0, 10) dağılımının kantilleri
+
+    def rho(market_sd, cust_sd):
+        m = pd.Series(rng.normal(0, market_sd, quarter.nunique()), index=quarter.unique())
+        keys = pd.Series(cust.astype(str)) + quarter
+        c = pd.Series(rng.normal(0, cust_sd, keys.nunique()), index=keys.unique())
+        idio = np.sqrt(max(1 - market_sd ** 2 - cust_sd ** 2, 0))
+        y = 10 * (m[quarter].to_numpy() + c[keys].to_numpy() + idio * rng.standard_normal(n))
+        return estimate_correlation(Q, y, cust, due)
+
+    none = rho(0.0, 0.0)
+    strong = rho(0.0, np.sqrt(0.4))
+    assert none[1] < 0.05 and 0.25 < strong[1] < 0.55               # müşteri etkisi veriden bulunuyor
+    assert estimate_correlation(Q[:50], np.zeros(50), cust[:50], due[:50]) == PRIOR_RHO
+
+
+def test_foreign_currency_and_refund_invoices_are_reported_not_mixed(tmp_path, full):
+    from radar import ingest
+
+    p = tmp_path / "f.csv"
+    p.write_text("Fatura No;Cari;Tarih;Toplam;Para Birimi;Fatura Tipi\n"
+                 "A1;Deneme Ltd;05.09.2026;1000;TL;SATIS\n"
+                 "A2;Deneme Ltd;06.09.2026;500;USD;SATIS\n"
+                 "A3;Deneme Ltd;07.09.2026;200;TRY;IADE\n"
+                 "A4;Deneme Ltd;08.09.2026;300;;SATIS\n", encoding="utf-8")
+    inv, notes = ingest.load_invoices(p)
+    assert list(inv["invoice_id"]) == ["A1", "A4"] and inv["amount"].sum() == 1300
+    assert any("USD" in n for n in notes) and any("iade" in n for n in notes)
+
+    row = full.iloc[0]
+    usd = to_ubl_xml(row).replace('currencyID="TRY"', 'currencyID="USD"')
+    refund = to_ubl_xml(row).replace("<cbc:IssueDate>", "<cbc:InvoiceTypeCode>IADE</cbc:InvoiceTypeCode><cbc:IssueDate>")
+    df, notes = ingest.load_ubl([usd.encode(), refund.encode()])
+    assert df.empty and len(notes) == 2
+    ok, notes = ingest.load_ubl([to_ubl_xml(row).encode()])
+    assert len(ok) == 1 and not notes

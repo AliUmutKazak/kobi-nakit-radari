@@ -13,7 +13,8 @@ _NAMES = ["Anadolu", "Marmara", "Ege", "Toros", "Bosfor", "Kuzey", "Yıldız", "
 _KINDS = ["Yapı", "Tekstil", "Gıda", "Lojistik", "Makine", "Plastik", "Kimya", "Mobilya", "Otomotiv", "Ambalaj"]
 
 
-def generate(seed: int = 7, n_customers: int = 40, months: int = 24, as_of: str = "2026-10-01") -> pd.DataFrame:
+def generate(seed: int = 7, n_customers: int = 40, months: int = 24, as_of="2026-10-01",
+             trend: float = 0.6) -> pd.DataFrame:
     """Tüm gerçeği (true_paid_date dahil) içeren fatura tablosunu üretir."""
     rng = np.random.default_rng(seed)
     as_of = pd.Timestamp(as_of)
@@ -37,7 +38,7 @@ def generate(seed: int = 7, n_customers: int = 40, months: int = 24, as_of: str 
         issue = start + pd.to_timedelta(offs, unit="D")
         due = issue + pd.Timedelta(days=terms)
         # Finansal sıkılaşma: dönem ilerledikçe gecikmeler uzar; Ocak ve Ağustos'ta ek sarkma.
-        macro = 1 + 0.6 * offs / n_days + 0.25 * np.isin(issue.month, [1, 8])
+        macro = 1 + trend * offs / n_days + 0.25 * np.isin(issue.month, [1, 8])
         amount = rng.lognormal(np.log(45_000 * size), 0.8, k)
         z = (np.log(amount) - np.log(45_000 * size)) / 0.8
         ontime = rng.random(k) < p_ontime / macro

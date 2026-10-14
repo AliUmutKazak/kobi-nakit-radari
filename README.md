@@ -2,7 +2,7 @@
 
 Açık faturaların ne zaman tahsil edileceğini olasılıksal olarak tahmin eder, 90 günlük kasa bandını (P10 / P50 / P90) çıkarır ve açığı kapatmaya en çok yarayacak faturalar için onay bekleyen mesaj taslakları üretir.
 
-Şu an sentetik veriyle çalışır. Tasarım kararlarının gerekçesi: [docs/ARASTIRMA.md](docs/ARASTIRMA.md). Rakip karşılaştırması: [docs/RAKIPLER.md](docs/RAKIPLER.md).
+Şu an sentetik veriyle çalışır. Tasarım kararlarının gerekçesi: [docs/ARASTIRMA.md](docs/ARASTIRMA.md). Rakip karşılaştırması: [docs/RAKIPLER.md](docs/RAKIPLER.md). Doğrulama sonuçları: [docs/DOGRULAMA.md](docs/DOGRULAMA.md).
 
 ## Kurulum
 
@@ -46,5 +46,6 @@ C:\Users\HP\.venvs\kobi-radar\Scripts\python -m pytest -q
 - Ödenecek faturalar, döviz ve canlı banka/e-fatura bağlantısı yok. Çeklerde keşideci bazlı risk yok.
 - Koddaki yasal ve piyasa parametreleri (gecikme faizi, tahsil gideri, çek karşılıksızlık oranı) ikincil kaynaklardan alındı; birincil kaynaktan teyit edilmeli (bkz. docs/ARASTIRMA.md).
 - Dosya başlıkları tanınmazsa panel elle sütun eşleştirme ister ve seçimi hatırlar; muhasebe programlarına özel hazır şablon yok.
+- İade ve dövizli faturalar dışarıda bırakılır ve bildirilir; döviz desteği yok.
 - Mesaj gönderimi yok; taslak üretilir, kullanıcı kendi hesabından gönderip panelde kayda geçirir.
 - Veriler `data/radar.db` dosyasında, yalnızca bu bilgisayarda saklanır; kullanıcı hesabı, yetki ve yedekleme yok.
