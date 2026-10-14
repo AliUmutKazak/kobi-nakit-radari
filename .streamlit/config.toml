@@ -1,0 +1,15 @@
+# Güvenlik ayarları (bkz. docs/GUVENLIK.md)
+[server]
+# Panel yalnızca bu bilgisayardan açılabilir; ağdaki diğer cihazlara kapalıdır.
+address = "127.0.0.1"
+port = 8501
+maxUploadSize = 50
+enableXsrfProtection = true
+
+[browser]
+serverAddress = "localhost"
+# Streamlit'e kullanım istatistiği gönderilmez.
+gatherUsageStats = false
+
+[client]
+toolbarMode = "minimal"

@@ -6,7 +6,9 @@ kullanıldığı `due_source` alanında saklanır.
 """
 from __future__ import annotations
 
-import xml.etree.ElementTree as ET
+# Dışarıdan gelen XML için güvenli ayrıştırıcı: varlık genişletme ("billion laughs") ve dış
+# varlık saldırılarını reddeder.
+from defusedxml import ElementTree as ET
 
 import pandas as pd
 

@@ -40,8 +40,10 @@ def send(cfg: MailConfig, to: str, subject: str, body: str) -> None:
         raise MailError("E-posta ayarları eksik.")
     if not is_address(to):
         raise MailError("Alıcı adresi geçerli görünmüyor.")
+    # Başlıklara satır sonu girerse ek alıcı ya da başlık eklenebilir (header injection); temizlenir.
+    one_line = lambda v: " ".join(str(v).split())
     msg = EmailMessage()
-    msg["From"], msg["To"], msg["Subject"] = cfg.sender or cfg.username, to.strip(), subject
+    msg["From"], msg["To"], msg["Subject"] = one_line(cfg.sender or cfg.username), one_line(to), one_line(subject)
     msg.set_content(body)
     try:
         if cfg.port == 465:

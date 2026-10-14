@@ -6,6 +6,7 @@ yüklense bile olaylar fatura numarası üzerinden korunur.
 """
 from __future__ import annotations
 
+import os
 import sqlite3
 from pathlib import Path
 
@@ -16,10 +17,21 @@ TABLES = {"invoices": ["issue_date", "due_date", "paid_date", "promised_date"],
 EVENT_KINDS = ("dispute", "promise", "message")
 
 
+def default_path() -> Path:
+    """Veritabanının yeri. Proje klasörü OneDrive gibi eşitlenen bir yerde olabilir; müşteri verisi
+    buluta gitmesin diye varsayılan yer bu bilgisayarın yerel uygulama klasörüdür."""
+    if os.environ.get("RADAR_DB"):
+        return Path(os.environ["RADAR_DB"])
+    base = os.environ.get("LOCALAPPDATA") or Path.home() / ".local" / "share"
+    return Path(base) / "KobiRadar" / "radar.db"
+
+
 class Store:
-    def __init__(self, path="data/radar.db"):
-        Path(path).parent.mkdir(parents=True, exist_ok=True)
-        self.db = sqlite3.connect(path, check_same_thread=False)
+    def __init__(self, path=None):
+        path = Path(path) if path else default_path()
+        path.parent.mkdir(parents=True, exist_ok=True)
+        self.path = path
+        self.db = sqlite3.connect(path, check_same_thread=False, timeout=10)
         self.db.executescript("""
             CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT);
             CREATE TABLE IF NOT EXISTS events (
@@ -48,13 +60,18 @@ class Store:
                         (key, str(value)))
         self._bump()
 
+    @staticmethod
+    def _check(name: str) -> None:
+        if name not in TABLES:          # tablo adı SQL'e yazıldığı için yalnızca bilinen adlar
+            raise ValueError(f"Bilinmeyen tablo: {name}")
+
     def save(self, name: str, df: pd.DataFrame) -> None:
-        assert name in TABLES
+        self._check(name)
         df.to_sql(name, self.db, if_exists="replace", index=False)
         self._bump()
 
     def load(self, name: str) -> pd.DataFrame | None:
-        assert name in TABLES
+        self._check(name)
         if not self.db.execute("SELECT 1 FROM sqlite_master WHERE name = ?", (name,)).fetchone():
             return None
         df = pd.read_sql(f"SELECT * FROM {name}", self.db)
@@ -74,7 +91,8 @@ class Store:
         self._bump()
 
     def add_event(self, invoice_id: str, kind: str, value: str = "", ts=None) -> None:
-        assert kind in EVENT_KINDS
+        if kind not in EVENT_KINDS:
+            raise ValueError(f"Bilinmeyen olay: {kind}")
         ts = pd.Timestamp(ts) if ts is not None else pd.Timestamp.now()
         self.db.execute("INSERT INTO events (ts, invoice_id, kind, value) VALUES (?, ?, ?, ?)",
                         (ts.isoformat(), str(invoice_id), kind, str(value)))

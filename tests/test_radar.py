@@ -1,3 +1,5 @@
+from pathlib import Path
+
 import numpy as np
 import pandas as pd
 import pytest
@@ -591,3 +593,48 @@ def test_iban_alias_and_payment_instructions():
     body = draft_message(row, "S", "TR12 3456", "Ziraat")["body"]
     assert "TR12 3456 (Ziraat) hesabımıza, açıklamaya GIB2026000000142 yazarak" in body
     assert "hesabımıza" not in draft_message(row, "S")["body"]
+
+
+def test_security_hardening(tmp_path, monkeypatch):
+    import tomllib
+
+    from radar import ubl
+    from radar.store import Store, default_path
+
+    cfg = tomllib.loads((Path(__file__).parents[1] / ".streamlit" / "config.toml").read_text(encoding="utf-8"))
+    assert cfg["server"]["address"] == "127.0.0.1" and cfg["browser"]["gatherUsageStats"] is False
+
+    bomb = """<?xml version="1.0"?><!DOCTYPE x [<!ENTITY a "aaaaaaaaaa"><!ENTITY b "&a;&a;&a;&a;&a;&a;&a;&a;&a;&a;">]>
+<Invoice xmlns="urn:oasis:names:specification:ubl:schema:xsd:Invoice-2">&b;</Invoice>"""
+    with pytest.raises(Exception, match="(?i)entit"):
+        ubl.parse_invoice(bomb)
+
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
+    monkeypatch.delenv("RADAR_DB", raising=False)
+    assert default_path() == tmp_path / "KobiRadar" / "radar.db"
+    store = Store(tmp_path / "x.db")
+    with pytest.raises(ValueError):
+        store.load("invoices; DROP TABLE settings")
+    with pytest.raises(ValueError):
+        store.add_event("A1", "hack")
+
+
+def test_mail_headers_cannot_be_injected(monkeypatch):
+    import smtplib
+
+    from radar import mailer
+
+    sent = []
+
+    class FakeSMTP:
+        def __init__(self, *a, **kw): pass
+        def __enter__(self): return self
+        def __exit__(self, *a): return False
+        def starttls(self, **kw): pass
+        def login(self, *a): pass
+        def send_message(self, msg): sent.append(msg)
+
+    monkeypatch.setattr(smtplib, "SMTP", FakeSMTP)
+    cfg = mailer.MailConfig("smtp.example.com", 587, "ben@example.com", "x")
+    mailer.send(cfg, "a@b.co", "Fatura A1\nBcc: kurban@example.com", "metin")
+    assert sent[0]["Bcc"] is None and "\n" not in sent[0]["Subject"]

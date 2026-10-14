@@ -31,7 +31,7 @@ st.caption("Mesajlar taslaktır; bu panel hiçbir mesajı kendiliğinden gönder
 
 @st.cache_resource
 def get_store() -> Store:
-    return Store(os.environ.get("RADAR_DB", ROOT / "data" / "radar.db"))
+    return Store()
 
 
 def _open(upload):
@@ -203,6 +203,7 @@ with st.sidebar:
                 password=st.text_input("Parola", type="password"))
             for key, value in (("smtp_host", mail.host), ("smtp_port", mail.port), ("smtp_user", mail.username)):
                 store.set(key, value)
+        st.caption(f"Verileriniz yalnızca bu bilgisayarda saklanır: {store.path}")
         with st.expander("Kayıtlı veriyi sil"):
             st.write("Yüklenen tablolar silinir. İtiraz, ödeme sözü ve mesaj kayıtları korunur.")
             sure = st.checkbox("Eminim")
