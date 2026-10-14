@@ -13,7 +13,7 @@ import plotly.graph_objects as go  # noqa: E402
 import streamlit as st  # noqa: E402
 
 from radar import actions, ingest, mailer, pipeline  # noqa: E402
-from radar.reconcile import reconcile  # noqa: E402
+from radar.reconcile import reconcile, sender_key  # noqa: E402
 from radar.store import Store  # noqa: E402
 
 ROOT = Path(__file__).parent
@@ -93,7 +93,7 @@ def parse_invoices(uploads, terms, rates):
 @st.cache_data(show_spinner="Simülasyon çalışıyor...")
 def run_demo(seed: int, include_projected: bool):
     res = pipeline.demo(seed=seed, include_projected=include_projected)
-    return {k: res[k] for k in KEEP} | {"notes": [], "has_outflows": True}
+    return {k: res[k] for k in KEEP} | {"notes": [], "has_outflows": True, "unmatched": None}
 
 
 @st.cache_data(show_spinner="Veriler işleniyor ve simülasyon çalışıyor...")
@@ -106,7 +106,7 @@ def run_own(rev: int, as_of: str, include_projected: bool):
     payments = store.load("payments")
     if payments is not None:
         payments = payments[payments["date"] <= pd.Timestamp(as_of)]
-        obs, _, unmatched = reconcile(obs, payments)
+        obs, _, unmatched = reconcile(obs, payments, aliases=json.loads(store.get("sender_aliases", "{}")))
         notes.append(f"Ekstre: {len(payments)} tahsilatın {len(payments) - len(unmatched)} tanesi faturalarla eşleşti.")
         if len(unmatched):
             notes.append(f"Eşleşmeyen tahsilat tutarı: {unmatched['amount'].sum():,.0f} TL "
@@ -128,7 +128,8 @@ def run_own(rev: int, as_of: str, include_projected: bool):
     res = pipeline.forecast(obs.reset_index(drop=True), as_of, float(store.get("opening", 0)),
                             outflows if outflows is not None else pd.DataFrame({"date": [], "amount": []}),
                             include_projected=include_projected, cheques=cheques)
-    return {k: res[k] for k in KEEP} | {"notes": notes, "has_outflows": outflows is not None}
+    return {k: res[k] for k in KEEP} | {"notes": notes, "has_outflows": outflows is not None,
+                                        "unmatched": unmatched if payments is not None else None}
 
 
 @st.cache_data(show_spinner="Senaryolar hesaplanıyor...")
@@ -365,6 +366,30 @@ with tab_collect:
             "days_overdue": "Gecikme (gün)", "p_late": "Açık gününe kadar gelmeme olasılığı", "stage_label": "Aşama",
             "payday_label": "Müşterinin ödeme günü", "contact_date": "Önerilen iletişim tarihi"}),
         width="stretch", hide_index=True)
+
+    conc = actions.concentration(res["obs"])
+    if conc["top_share"] >= 0.5:
+        st.warning(f"Açık alacağın %{conc['top_share'] * 100:.0f}'i üç müşteride: {', '.join(conc['top_names'])}. "
+                   f"Alacak, eşit büyüklükte yalnızca {conc['effective_n']:.1f} müşteriye yayılmış gibi; bu müşterilerden "
+                   "birinin gecikmesi kasayı tek başına belirler.")
+    unmatched = res.get("unmatched")
+    if own and unmatched is not None and len(unmatched):
+        with st.expander(f"Eşleşmeyen banka tahsilatları: {len(unmatched)} adet, {unmatched['amount'].sum():,.0f} TL"):
+            st.write("Bu girişlerin hangi müşteriden geldiği bulunamadı. Bir kez müşteriye bağlarsanız aynı gönderen "
+                     "bundan sonraki ekstrelerde otomatik tanınır.")
+            show = unmatched.reset_index(drop=True)
+            st.dataframe(show[["date", "amount", "description"]].rename(columns={
+                "date": "Tarih", "amount": "Tutar (TL)", "description": "Açıklama"}), width="stretch")
+            row = st.number_input("Satır no", 0, len(show) - 1, 0)
+            names = res["obs"].drop_duplicates("customer_id").set_index("customer_id")["customer_name"]
+            target = st.selectbox("Müşteri", names.index, format_func=lambda c: names[c])
+            key = sender_key(show.at[int(row), "description"])
+            st.caption(f"Tanınacak gönderen: \"{key}\"")
+            if key and st.button("Bu göndereni müşteriye bağla"):
+                aliases = json.loads(store.get("sender_aliases", "{}"))
+                aliases[key] = str(target)
+                store.set("sender_aliases", json.dumps(aliases, ensure_ascii=False))
+                st.rerun()
 
     doubtful = ranked[ranked["stage"] == "supheli"]
     if len(doubtful):

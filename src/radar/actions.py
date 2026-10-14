@@ -45,6 +45,19 @@ def metrics(obs: pd.DataFrame, as_of) -> dict:
     }
 
 
+def concentration(obs: pd.DataFrame, top: int = 3) -> dict:
+    """Açık alacağın müşterilere dağılımı. Herfindahl-Hirschman endeksi (paylar karesi toplamı) ve
+    "eşdeğer müşteri sayısı" (1 / HHI): alacak, eşit büyüklükte kaç müşteriye yayılmış gibi davranıyor."""
+    open_by = obs.loc[obs["open_amount"] > 0].groupby("customer_name")["open_amount"].sum().sort_values(ascending=False)
+    total = open_by.sum()
+    if total <= 0:
+        return {"top_share": 0.0, "top_names": [], "hhi": 0.0, "effective_n": 0.0}
+    share = open_by / total
+    hhi = float((share ** 2).sum())
+    return {"top_share": float(share.head(top).sum()), "top_names": list(share.head(top).index),
+            "hhi": hhi, "effective_n": 1 / hhi}
+
+
 def payment_habits(obs: pd.DataFrame) -> pd.DataFrame:
     """Müşteri bazında sabit ödeme günü (0 = yok) ve vadesinde ödeme oranı."""
     paid = obs.dropna(subset=["paid_date"])

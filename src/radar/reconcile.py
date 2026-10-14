@@ -51,10 +51,28 @@ def identify_customer(description: str, customers: pd.DataFrame) -> str | None:
     return best if best_score >= 2 and best_score > runner_up else None
 
 
-def reconcile(invoices: pd.DataFrame, payments: pd.DataFrame, tol: float = 0.01):
+def sender_key(description: str) -> str:
+    """Banka açıklamasından göndereni temsil eden anahtar: önekler, ekler ve sayılar atılmış kelimeler.
+
+    Kullanıcı eşleşmeyen bir tahsilatı bir kez müşteriye bağladığında bu anahtar saklanır ve aynı
+    gönderen sonraki ekstrelerde otomatik tanınır."""
+    words = [w for w in _norm(description).split() if w not in _NOISE and not w.isdigit() and len(w) >= 2]
+    return " ".join(dict.fromkeys(words))
+
+
+def _alias_match(description: str, aliases: dict[str, str]) -> str | None:
+    words = set(_norm(description).split())
+    hits = [(len(k.split()), cid) for k, cid in aliases.items() if k and set(k.split()) <= words]
+    return max(hits)[1] if hits else None
+
+
+def reconcile(invoices: pd.DataFrame, payments: pd.DataFrame, tol: float = 0.01, aliases: dict[str, str] | None = None):
     """invoices: invoice_id, customer_id, customer_name, vkn, due_date, open_amount
     payments: date, amount, description
+    aliases: kullanıcının daha önce müşteriye bağladığı gönderen anahtarları (sender_key -> customer_id)
     Döner: (güncellenmiş faturalar, eşleşme satırları, eşleşmeyen ödemeler)."""
+    known = set(invoices["customer_id"])
+    aliases = {k: v for k, v in (aliases or {}).items() if v in known}
     inv = invoices.copy().reset_index(drop=True)
     inv["open_amount"] = inv["open_amount"].astype(float)
     if "paid_date" not in inv:
@@ -65,7 +83,8 @@ def reconcile(invoices: pd.DataFrame, payments: pd.DataFrame, tol: float = 0.01)
     for p in payments.sort_values("date").itertuples():
         # Açıklamada fatura numarası geçiyorsa müşteri ve fatura doğrudan bellidir.
         named = [by_number[n] for n in INVOICE_NO.findall(str(p.description).upper()) if n in by_number]
-        cid = inv.at[named[0], "customer_id"] if named else identify_customer(p.description, customers)
+        cid = (inv.at[named[0], "customer_id"] if named
+               else _alias_match(p.description, aliases) or identify_customer(p.description, customers))
         if cid is None:
             unmatched.append(p._asdict())
             continue

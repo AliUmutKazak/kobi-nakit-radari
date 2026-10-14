@@ -535,3 +535,27 @@ def test_sample_ledger_reproduces_open_receivables(tmp_path):
     inv, notes, chq = ingest.load_ledger(tmp_path / "cari_ekstre.csv")
     truth = observe(generate(seed=3, as_of=AS_OF), AS_OF)
     assert len(inv) == len(truth) and inv["open_amount"].sum() == pytest.approx(truth["open_amount"].sum(), rel=1e-6)
+
+
+def test_sender_alias_memory_matches_unknown_sender():
+    from radar.reconcile import sender_key
+
+    inv = pd.DataFrame({"invoice_id": ["A1"], "customer_id": ["C1"], "customer_name": ["Yıldız Tekstil A.Ş."],
+                        "vkn": [""], "due_date": pd.to_datetime(["2026-09-01"]), "open_amount": [1000.0]})
+    pay = pd.DataFrame({"date": pd.to_datetime(["2026-09-05"]), "amount": [1000.0],
+                        "description": ["GELEN EFT - MEHMET KAYA - SORGUNO:1234 - CARI ODEME"]})
+    _, _, unmatched = reconcile(inv, pay)
+    assert len(unmatched) == 1
+    key = sender_key(pay.at[0, "description"])
+    assert key == "mehmet kaya"
+    out, alloc, unmatched = reconcile(inv, pay, aliases={key: "C1", "baska kisi": "YOK"})
+    assert out.at[0, "open_amount"] == 0 and len(unmatched) == 0
+
+
+def test_concentration_measures():
+    from radar.actions import concentration
+
+    obs = pd.DataFrame({"customer_name": ["A", "B", "C", "D"], "open_amount": [700.0, 100.0, 100.0, 100.0]})
+    c = concentration(obs)
+    assert c["top_share"] == pytest.approx(0.9) and c["top_names"][0] == "A"
+    assert c["hhi"] == pytest.approx(0.52) and c["effective_n"] == pytest.approx(1 / 0.52)
