@@ -15,14 +15,18 @@ from .features import FEATURES, build_features
 QS = (0.10, 0.25, 0.50, 0.75, 0.90)
 
 
-def training_frame(obs: pd.DataFrame, cutoff, mature_days: int = 60):
+def training_frame(obs: pd.DataFrame, cutoff, mature_days: int = 60, feats: pd.DataFrame | None = None):
     """Yalnızca vadesi en az `mature_days` önce dolmuş faturalar eğitime girer.
 
     Yeni faturalarda sadece hızlı ödenenler görünür olduğu için hepsini almak modeli
     iyimser yapar. Olgunlaşmış ama hâlâ ödenmemiş faturaların etiketi, o güne kadarki
-    gecikmedir (alt sınır)."""
+    gecikmedir (alt sınır).
+
+    `feats`: tüm veri için önceden hesaplanmış (fatura tarihine göre) özellikler. Bu özellikler
+    yalnızca fatura tarihinden önceki ödemelere baktığı için verinin hangi tarihte kesildiğinden
+    etkilenmez; geçmiş tarihlere dönülürken yeniden hesaplanmaları gerekmez."""
     cutoff = pd.Timestamp(cutoff)
-    X = build_features(obs)
+    X = feats.loc[obs.index] if feats is not None else build_features(obs)
     mature = obs["due_date"] <= cutoff - pd.Timedelta(days=mature_days)
     y = (obs["paid_date"].fillna(cutoff) - obs["due_date"]).dt.days.astype(float)
     order = obs.loc[mature].sort_values("issue_date").index
@@ -30,8 +34,10 @@ def training_frame(obs: pd.DataFrame, cutoff, mature_days: int = 60):
 
 
 class DelayModel:
-    def __init__(self, alpha: float = 0.2, calib_share: float = 0.25, **params):
-        self.alpha, self.calib_share = alpha, calib_share
+    def __init__(self, alpha: float = 0.2, calib_share: float = 0.25, refit: bool = True, **params):
+        """refit=False: kalibrasyon payı ayrılarak eğitilen model kullanılır (tam bölünmüş uyumlu
+        aralık; daha hızlı). True: aynı pay korunarak tüm veriyle yeniden eğitilir (yaklaşık)."""
+        self.alpha, self.calib_share, self.refit = alpha, calib_share, refit
         self.params = dict(n_estimators=300, learning_rate=0.05, num_leaves=15,
                            min_child_samples=20, subsample=0.8, subsample_freq=1,
                            colsample_bytree=0.8, verbose=-1, random_state=0, n_jobs=1) | params
@@ -47,12 +53,13 @@ class DelayModel:
     def fit(self, X: pd.DataFrame, y: pd.Series):
         """X, y fatura tarihine göre sıralı gelmelidir; son dilim kalibrasyona ayrılır."""
         n_cal = max(int(len(X) * self.calib_share), 30)
-        raw = self._raw(self._fit(X.iloc[:-n_cal], y.iloc[:-n_cal]), X.iloc[-n_cal:])
+        first = self._fit(X.iloc[:-n_cal], y.iloc[:-n_cal])
+        raw = self._raw(first, X.iloc[-n_cal:])
         y_cal = y.iloc[-n_cal:].to_numpy()
         score = np.maximum(raw[:, 0] - y_cal, y_cal - raw[:, -1])
         level = min(1.0, (1 - self.alpha) * (1 + 1 / n_cal))
         self.offset = float(np.quantile(score, level))
-        self.models = self._fit(X, y)  # kalibrasyon payı korunarak tüm veriyle yeniden eğitim
+        self.models = self._fit(X, y) if self.refit else first
         return self
 
     def predict(self, X: pd.DataFrame) -> np.ndarray:
@@ -78,10 +85,10 @@ class FallbackModel:
 MIN_LGBM_ROWS = 300
 
 
-def fit_model(X: pd.DataFrame, y: pd.Series, min_rows: int | None = None):
+def fit_model(X: pd.DataFrame, y: pd.Series, min_rows: int | None = None, refit: bool = True):
     """Yeterli olgun fatura varsa LightGBM, yoksa basit kantil modeli."""
     min_rows = MIN_LGBM_ROWS if min_rows is None else min_rows
-    return (DelayModel() if len(X) >= min_rows else FallbackModel()).fit(X, y)
+    return (DelayModel(refit=refit) if len(X) >= min_rows else FallbackModel()).fit(X, y)
 
 
 def evaluate(Q: np.ndarray, y, baseline) -> dict:

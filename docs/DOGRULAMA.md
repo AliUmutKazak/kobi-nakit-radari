@@ -84,6 +84,8 @@ Bu belgenin ilk hâlinde "8 müşterili şirketlerde bant dar ve beklenen değer
 - Dört çeyrekle tahmin edilen tek bir sayı, gürültüsüne göre çok az bilgi taşıyor.
 - Tahmin süresi 2 saniyeden 9–11 saniyeye çıktı.
 
+**Geçmiş çeyrek modellerinde tek eğitim (14 Ekim 2026).** Hız için, kalibrasyonun geçmiş çeyreklerde kurduğu modeller kalibrasyon payı ayrılmış hâliyle bırakıldı (tüm veriyle yeniden eğitilmedi). Tahmin %35–40 hızlandı, ama aynı 384 tahminde sonuç her ölçütte aynı yönde kötüleşti: bant içi %81 → %79, bandın altında %14 → %16, sapma +0,10 → +0,12 aylık ciro; 40 müşterili şirketlerde bandın altında kalma %9 → %14. Geri alındı. Sonucu birebir aynı bırakan hızlandırmalar (zamandan bağımsız özelliklerin bir kez hesaplanması, piyasa medyanının tarih başına bir kez hesaplanması; fark sayısal olarak 0) tutuldu; kazanç yaklaşık %20.
+
 Kalan iyimserlik bu yüzden düzeltilmedi, açıkça bildiriliyor: panel, ödemeler son 90 günde belirgin biçimde gecikmeye başladıysa kötümser çizgiyi esas almayı öneriyor.
 
 ## Ek ölçümler (tek şirket, 6 geçmiş tarih)

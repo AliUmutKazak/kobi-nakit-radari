@@ -41,11 +41,11 @@ def censor(obs: pd.DataFrame, t) -> pd.DataFrame:
     df = obs[obs["issue_date"] <= t].copy()
     df["paid_date"] = df["paid_date"].where(df["paid_date"] <= t)
     df["open_amount"] = np.where(df["paid_date"].isna(), df["amount"], 0.0)
-    return df.reset_index(drop=True)
+    return df                                   # satır numaraları korunur: önceden hesaplanmış özelliklerle eşleşir
 
 
 def calibrate(obs: pd.DataFrame, as_of, origins: int = 4, step: int = 90, mature_days: int = 60,
-              min_scores: int = 100, shrink_n: float = 200.0) -> dict:
+              min_scores: int = 100, shrink_n: float = 200.0, feats: pd.DataFrame | None = None) -> dict:
     """Simülasyonun belirsizlik ayarlarını, geçmişteki ileriye dönük tahminlerin hatasından çıkarır.
 
     Son `origins` çeyreğin her birinin başına dönülür, o günkü bilgiyle model kurulur ve o gün
@@ -61,13 +61,14 @@ def calibrate(obs: pd.DataFrame, as_of, origins: int = 4, step: int = 90, mature
     neutral = {"z_shift": 0.0, "z_scale": 1.0, "n": 0}
     default = {"rho_market": PRIOR_RHO[0], "rho_customer": PRIOR_RHO[1], "fresh": neutral, "overdue": neutral}
     final = obs.set_index("invoice_id")
+    feats = build_features(obs) if feats is None else feats
     parts = []
     for k in range(1, origins + 1):
         t = as_of - pd.Timedelta(days=k * step)
         past = censor(obs, t)
         if not len(past):
             break
-        X, y = training_frame(past, t)
+        X, y = training_frame(past, t, feats=feats)
         if len(X) < 60:
             break
         # Sonucu seçim yanlılığı olmadan bilinenler: o gün açık ve bugün itibarıyla olgunlaşmış faturalar.
@@ -107,7 +108,8 @@ def forecast(obs: pd.DataFrame, as_of, opening: float, outflows: pd.DataFrame, h
              cheques: pd.DataFrame | None = None, calib_hook=None) -> dict:
     """calib_hook: kalibrasyon sözlüğünü değiştiren isteğe bağlı fonksiyon (yalnızca deneyler için)."""
     as_of = pd.Timestamp(as_of)
-    X, y = training_frame(obs, as_of)
+    feats_issue = build_features(obs)
+    X, y = training_frame(obs, as_of, feats=feats_issue)
     model = fit_model(X, y)
 
     obs = obs.copy()
@@ -129,7 +131,7 @@ def forecast(obs: pd.DataFrame, as_of, opening: float, outflows: pd.DataFrame, h
     # gecikme alışkanlığı bu tarihe göre uygulanır (varsayım: söz de vade kadar tutulur).
     promised = target["promised_date"] > as_of
     sim_inv = target.assign(due_date=target["promised_date"].where(promised, target["due_date"]))
-    calib = calibrate(obs, as_of)
+    calib = calibrate(obs, as_of, feats=feats_issue)
     if calib_hook is not None:
         calib = calib_hook(calib)
     ctx = {"sim_inv": sim_inv, "Q": model.predict(feats), "aging": aging_curve(obs, as_of), "cheques": cheques,

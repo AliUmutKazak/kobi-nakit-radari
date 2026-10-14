@@ -124,13 +124,13 @@ def parse_invoices(uploads, terms, rates):
     return pd.concat(frames, ignore_index=True).drop_duplicates("invoice_id"), notes
 
 
-@st.cache_data(show_spinner="Simülasyon çalışıyor...")
+@st.cache_data(show_spinner="Demo şirketin 90 günlük kasası hesaplanıyor; 10-20 saniye sürer. Panel açık kaldıkça sonraki işlemler anında gelir...")
 def run_demo(seed: int, include_projected: bool):
     res = pipeline.demo(seed=seed, include_projected=include_projected)
     return {k: res[k] for k in KEEP} | {"notes": [], "has_outflows": True, "unmatched": None, "last_activity": None}
 
 
-@st.cache_data(show_spinner="Veriler işleniyor ve simülasyon çalışıyor...")
+@st.cache_data(show_spinner="Verileriniz işleniyor ve 90 günlük kasa hesaplanıyor; 10-20 saniye sürebilir. Veri değişmedikçe sonraki işlemler anında gelir...")
 def run_own(rev: int, as_of: str, include_projected: bool):
     """`rev` kayıt her değiştiğinde artar; sonuç ancak o zaman yeniden hesaplanır."""
     store = get_store()
@@ -169,7 +169,7 @@ def run_own(rev: int, as_of: str, include_projected: bool):
                                         "unmatched": unmatched if payments is not None else None, "last_activity": last}
 
 
-@st.cache_data(show_spinner="Senaryolar hesaplanıyor...")
+@st.cache_data(show_spinner="Açığı kapatacak tahsilat hesaplanıyor...")
 def run_gap(key, _res):
     return pipeline.gap_summary(_res)
 
@@ -179,7 +179,7 @@ def run_scenario(key, _res, collect_ids, delay_labels, delay_days):
     return pipeline.scenario(_res, collect_ids, delay_labels=delay_labels, delay_days=delay_days)
 
 
-@st.cache_data(show_spinner="Geçmiş tarihlerde tahmin üretiliyor...")
+@st.cache_data(show_spinner="Geçmiş tarihlere dönülüp tahmin yeniden üretiliyor; yarım dakikayı bulabilir...")
 def run_backtest(obs, as_of):
     return pipeline.backtest_own(obs, as_of)
 

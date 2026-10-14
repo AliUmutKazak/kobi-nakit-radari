@@ -61,12 +61,15 @@ def build_features(inv: pd.DataFrame, ref=None, prior_n: float = 5.0) -> pd.Data
     g_paid, g_delay = paid[order][:n_paid], delay[order][:n_paid]
 
     out = np.zeros((len(df), len(FEATURES)))
-    market = np.zeros(len(df))
-    for i in range(len(df)):
-        hi = np.searchsorted(g_paid, ref_d[i])
-        lo = np.searchsorted(g_paid, ref_d[i] - 90)
+    # Piyasa medyanı yalnızca referans tarihine bağlı: her farklı tarih için bir kez hesaplanır.
+    dates, inverse = np.unique(ref_d, return_inverse=True)
+    per_date = np.zeros(len(dates))
+    for k, r in enumerate(dates):
+        hi = np.searchsorted(g_paid, r)
+        lo = np.searchsorted(g_paid, r - 90)
         window = g_delay[lo:hi] if hi - lo >= 5 else g_delay[:hi]
-        market[i] = np.median(window) if len(window) else 0.0
+        per_date[k] = np.median(window) if len(window) else 0.0
+    market = per_date[inverse]
 
     for idx in df.groupby("customer_id").indices.values():
         c_issue, c_due, c_paid, c_delay, c_amt = issue[idx], due[idx], paid[idx], delay[idx], amount[idx]
