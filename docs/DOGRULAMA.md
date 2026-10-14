@@ -10,7 +10,7 @@ Bu çalışma şunu gösterir: istatistiksel kurgu kendi içinde tutarlı mı, h
 
 ## Tasarım
 
-192 bağımsız tahmin: 24 rastgele tohum × 8 rejim. Her tahminden üç açılış kasası düzeyi türetilir (toplam 576 şirket durumu); açılış kasası yalnızca bütün yolları sabit kadar kaydırdığı için ayrı tahmin gerektirmez.
+384 bağımsız tahmin: 48 rastgele tohum × 8 rejim. Her tahminden üç açılış kasası düzeyi türetilir (toplam 1.152 şirket durumu); açılış kasası yalnızca bütün yolları sabit kadar kaydırdığı için ayrı tahmin gerektirmez.
 
 | Boyut | Değerler | Neden |
 |---|---|---|
@@ -25,34 +25,36 @@ Bu çalışma şunu gösterir: istatistiksel kurgu kendi içinde tutarlı mı, h
 
 | Ölçüt | Hedef | Sonuç |
 |---|---|---|
-| Dönem sonu kasa P10–P90 bandında | %80 | %84 ±3 |
-| Bandın altında kalan | %10 | %10 ±2 |
-| Bandın üstünde kalan | %10 | %5 ±2 |
-| Beklenen değerin sapması (aylık ciro; artı = iyimser) | 0 | +0,09 ±0,03 |
-| Brier skoru (tahminsiz taban 0,229) | düşük | 0,095 |
+| Dönem sonu kasa P10–P90 bandında | %80 | %81 ±2 |
+| Bandın altında kalan | %10 | %14 ±2 |
+| Bandın üstünde kalan | %10 | %5 ±1 |
+| Beklenen değerin sapması (aylık ciro; artı = iyimser) | 0 | +0,10 ±0,02 |
+| Brier skoru (Brier 1950; tahminsiz taban 0,223) | düşük | 0,097 |
 
 Eksiye düşme olasılığının kalibrasyonu:
 
 | Söylenen olasılık | Şirket durumu | Ortalama tahmin | Gerçekleşen sıklık |
 |---|---|---|---|
-| %0–10 | 44 | %6 | %2 |
-| %10–30 | 97 | %21 | %11 |
-| %30–70 | 145 | %51 | %54 |
-| %70–90 | 97 | %81 | %93 |
-| %90–100 | 193 | %97 | %99 |
+| %0–10 | 97 | %5 | %4 |
+| %10–30 | 163 | %21 | %17 |
+| %30–70 | 289 | %50 | %53 |
+| %70–90 | 194 | %81 | %91 |
+| %90–100 | 409 | %97 | %99 |
 
-Okuma: sıralama doğru ve orta bölge isabetli. İki uçta tahmin ortaya doğru çekik: "%21" denen şirketlerin %11'i, "%81" denenlerin %93'ü eksiye düştü. Yani panel düşük riskte biraz fazla, yüksek riskte biraz eksik söylüyor; karar yönünü değiştirmiyor ama düzeltilmesi gereken bir kusur.
+Okuma: alt ve orta bölge isabetli. Yüksek riskte panel eksik söylüyor: "%81" denen şirketlerin %91'i eksiye düştü. Bu, aşağıdaki iyimser kaymayla aynı kusurun olasılıktaki görüntüsü.
 
 Rejim kırılımı:
 
 | Rejim | Bant içi | Altında | Üstünde | Sapma (aylık ciro) |
 |---|---|---|---|---|
-| 8 müşteri | %81 ±4 | %15 ±4 | %4 ±2 | +0,14 ±0,05 |
-| 40 müşteri | %88 ±3 | %6 ±2 | %6 ±2 | +0,05 ±0,03 |
-| Gecikmeler sabit | %83 ±4 | %8 ±3 | %8 ±3 | +0,02 ±0,04 |
-| Gecikmeler hızla kötüleşiyor | %85 ±4 | %12 ±3 | %2 ±1 | +0,17 ±0,04 |
-| Piyasa şoku yok | %89 ±3 | %9 ±3 | %2 ±1 | +0,13 ±0,04 |
-| Piyasa şoku var | %80 ±4 | %11 ±3 | %8 ±3 | +0,05 ±0,04 |
+| 8 müşteri | %77 ±3 | %18 ±3 | %5 ±2 | +0,14 ±0,04 |
+| 40 müşteri | %85 ±3 | %9 ±2 | %6 ±2 | +0,07 ±0,02 |
+| Gecikmeler sabit | %80 ±3 | %11 ±2 | %9 ±2 | +0,03 ±0,03 |
+| Gecikmeler hızla kötüleşiyor | %82 ±3 | %16 ±3 | %2 ±1 | +0,18 ±0,03 |
+| Piyasa şoku yok | %85 ±3 | %11 ±2 | %4 ±1 | +0,11 ±0,03 |
+| Piyasa şoku var | %77 ±3 | %16 ±3 | %7 ±2 | +0,09 ±0,03 |
+
+Not: aynı kodla yalnızca ilk 24 tohum koşulduğunda sonuçlar daha iyi görünüyordu (bant içi %84, altında %10). İkinci 24 tohum daha kötü çıktı (%78, %17). Fark iki standart hatanın içinde; 48 tohumluk birleşik sonuç esas alınmalı.
 
 ## Bu çalışmanın ortaya çıkardığı ve düzeltilen kusurlar
 
@@ -69,10 +71,12 @@ Bu belgenin ilk hâlinde "8 müşterili şirketlerde bant dar ve beklenen değer
 
 | Bulgu | Değer | Durum |
 |---|---|---|
-| Gecikmeler hızla kötüleşirken beklenen değer iyimser | +0,17 ±0,04 aylık ciro | Giderilemedi. Kalibrasyon geçmiş hatayı düzeltiyor ama kötüleşmenin tahmin döneminde de süreceğini öngöremiyor. Eğilimi ileriye uzatmak tahmin literatüründe güvenilmez bulunduğu için yapılmadı. Bunun yerine panel, ödemeler son 90 günde belirgin biçimde gecikmeye başladıysa kullanıcıyı uyarıyor. Bant bu rejimde de %85 kapsıyor. |
-| Genel hafif iyimserlik | +0,09 ±0,03 aylık ciro | Büyük kısmı yukarıdaki rejimden geliyor; gecikmeler sabitken sapma +0,02 ±0,04. |
-| Bandın üst tarafı fazla geniş | Üstünde %5 (hedef %10) | Yukarı yönlü sürpriz olması gerekenden seyrek; hata temkinli yönde. |
-| Olasılık iki uçta ortaya çekik | %21 denilen %11, %81 denilen %93 | Henüz ele alınmadı. |
+| Dağılım iyimser yöne kaymış | Altında %14, üstünde %5; sapma +0,10 aylık ciro | Asıl kalan kusur. Gecikmeler sabitken neredeyse yok (+0,03); gecikmeler hızla kötüleşirken (+0,18) ve az müşteride (+0,14) belirgin. |
+| Gecikmeler hızla kötüleşirken iyimserlik | +0,18 ±0,03 aylık ciro | Kalibrasyon geçmiş hatayı düzeltiyor ama kötüleşmenin tahmin döneminde de süreceğini öngöremiyor. Eğilimi ileriye uzatmak güvenilmez olduğu için yapılmadı; panel bu durumda uyarı veriyor. |
+| Piyasa şokunda alt kuyruk ince | Altında %16 ±3 | Dört çeyreklik geçmişten piyasa korelasyonu güvenilir ölçülemiyor; ön değere büzülüyor. |
+| Yüksek riskte olasılık eksik | %81 denilen %91 | Kaymanın olasılıktaki karşılığı. |
+
+Sıradaki deneme: aynı ileriye dönük kalibrasyonu fatura düzeyinde değil, toplam tahsilat düzeyinde de yapmak. Şirketin kendi geçmiş tahsilat tahminlerinin sistematik hatası ölçülüp bandı kaydırmak için kullanılır; bu, nedeni ne olursa olsun kaymayı yakalar. Etkisi ayrı tohumlarla sınanacak.
 
 ## Ek ölçümler (tek şirket, 6 geçmiş tarih)
 
@@ -82,4 +86,8 @@ Bu belgenin ilk hâlinde "8 müşterili şirketlerde bant dar ve beklenen değer
 ## Kaynaklar
 
 - Gneiting, Balabdaoui, Raftery (2007), [Probabilistic forecasts, calibration and sharpness](https://sites.stat.washington.edu/people/raftery/Research/PDF/Gneiting2007jrssb.pdf), JRSS-B.
-- Brier skoru ve güvenilirlik tablosu, tek yönlü rastgele etkiler varyans analizi, sansürlü normal olabilirlik (Tobit) ve Poisson bootstrap standart istatistik yöntemleridir. Bunlar için birincil kaynak taraması henüz yapılmadı; [ARASTIRMA.md](ARASTIRMA.md) içindeki teyit listesine eklenmeli.
+- Brier (1950), Verification of forecasts expressed in terms of probability, Monthly Weather Review 78(1), 1–3.
+- Tobin (1958), [Estimation of relationships for limited dependent variables](https://jstor.econometricsociety.org/publications/econometrica/1958/01/01/estimation-relationships-limited-dependent-variables), Econometrica 26(1), 24–36: sansürlü normal olabilirlik.
+- Kaplan ve Meier (1958), Nonparametric estimation from incomplete observations, JASA 53(282), 457–481: yaşlandırma eğrisi.
+- Romano, Patterson, Candès (2019), [Conformalized Quantile Regression](https://proceedings.neurips.cc/paper_files/paper/2019/file/5103c3584b063c431bd1268e9b5e76fb-Paper.pdf), NeurIPS: gecikme modelindeki aralık kalibrasyonu.
+- Hanley ve MacGibbon (2006), Poisson bootstrap; künye ikincil kaynaklardan, dergi sayfası teyit edilmedi.
