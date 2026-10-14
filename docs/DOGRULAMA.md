@@ -76,7 +76,15 @@ Bu belgenin ilk hâlinde "8 müşterili şirketlerde bant dar ve beklenen değer
 | Piyasa şokunda alt kuyruk ince | Altında %16 ±3 | Dört çeyreklik geçmişten piyasa korelasyonu güvenilir ölçülemiyor; ön değere büzülüyor. |
 | Yüksek riskte olasılık eksik | %81 denilen %91 | Kaymanın olasılıktaki karşılığı. |
 
-Sıradaki deneme: aynı ileriye dönük kalibrasyonu fatura düzeyinde değil, toplam tahsilat düzeyinde de yapmak. Şirketin kendi geçmiş tahsilat tahminlerinin sistematik hatası ölçülüp bandı kaydırmak için kullanılır; bu, nedeni ne olursa olsun kaymayı yakalar. Etkisi ayrı tohumlarla sınanacak.
+## Denenip reddedilen düzeltme
+
+**Toplam tahsilat düzeyinde kalibrasyon (14 Ekim 2026).** Her geçmiş çeyrek başında o gün açık olan bütün faturaların sonraki 90 günlük tahsilatı simüle edildi ve simülasyonu gerçekleşene eşitleyen ortak kayma, çeyrekler üzerinden ortalanıp uygulandı. Reddedildi:
+
+- İşaret tutarsızdı. Gecikmeleri hızla kötüleşen bir şirkette dört çeyreğin önerdiği kaymalar −0,30 ile +0,08 arasında dağıldı ve ortalaması, gereken yönün tersine (iyimserliği artıracak yönde) çıktı.
+- Dört çeyrekle tahmin edilen tek bir sayı, gürültüsüne göre çok az bilgi taşıyor.
+- Tahmin süresi 2 saniyeden 9–11 saniyeye çıktı.
+
+Kalan iyimserlik bu yüzden düzeltilmedi, açıkça bildiriliyor: panel, ödemeler son 90 günde belirgin biçimde gecikmeye başladıysa kötümser çizgiyi esas almayı öneriyor.
 
 ## Ek ölçümler (tek şirket, 6 geçmiş tarih)
 
