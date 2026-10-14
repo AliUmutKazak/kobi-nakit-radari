@@ -10,11 +10,17 @@ Bu kılavuz, kod bilgisi gerektirmeden paneli kurup kendi verinizle kullanmanız
 
 Tahminler müşterilerinizin geçmişte nasıl ödediğine dayanır. Geçmiş ne kadar uzunsa tahmin o kadar kişiseldir; 1–2 yıllık fatura geçmişi idealdir.
 
-## 1. Kurulum (bir kez)
+## 1. Kurulum
 
-1. **Python'u kurun.** python.org adresinden Python 3.13'ü indirin. Kurulumun ilk ekranında **"Add python.exe to PATH"** kutusunu işaretleyin.
-2. **Paneli başlatın.** Proje klasöründeki **`KOBI_Radar_Baslat.bat`** dosyasına çift tıklayın. İlk açılışta gerekli programlar internetten kurulur; birkaç dakika sürer. Sonraki açılışlar birkaç saniyedir.
-3. Panel hazır olunca tarayıcınızda kendiliğinden açılır (adres: http://127.0.0.1:8501).
+**Hazır paketle (önerilen, kurulum gerekmez).**
+
+1. Size verilen `KobiRadar-....zip` dosyasını sağ tıklayıp "Tümünü ayıkla" deyin ve klasörü kalıcı bir yere koyun (ör. Belgeler).
+2. Klasördeki **`KOBI_Radar.bat`** dosyasına çift tıklayın. Panel tarayıcınızda kendiliğinden açılır (adres: http://127.0.0.1:8501).
+3. İlk açılış 20–30 saniye sürebilir (Windows yeni dosyaları ilk kez tarar); sonraki açılışlar birkaç saniyedir.
+
+Paket kendi Python'unu içinde taşır; Python kurmanız ya da internete bağlı olmanız gerekmez. Yeni sürüm geldiğinde eski klasörü silip yenisini açmanız yeterlidir: verileriniz klasörde değil, bilgisayarın yerel uygulama klasöründe durur ve silinmez.
+
+**Proje klasöründen (geliştirme için).** python.org'dan Python 3.13'ü kurun ("Add python.exe to PATH" kutusunu işaretleyin) ve proje klasöründeki `KOBI_Radar_Baslat.bat` dosyasına çift tıklayın. İlk açılışta gerekli paketler internetten kurulur.
 
 Paneli kapatmak için siyah pencereyi kapatın. Panel yalnızca sizin bilgisayarınızdan açılabilir; ağdaki başka bir cihaz bağlanamaz.
 

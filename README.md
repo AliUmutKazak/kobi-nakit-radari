@@ -6,7 +6,7 @@ Açık faturaların ne zaman tahsil edileceğini olasılıksal olarak tahmin ede
 
 ## Kullanım
 
-İşletme sahibi için: [docs/KULLANIM_KILAVUZU.md](docs/KULLANIM_KILAVUZU.md). Kısaca: Python 3.13'ü kurun, `KOBI_Radar_Baslat.bat` dosyasına çift tıklayın. İlk açılışta gerekli paketler kurulur; panel tarayıcıda http://localhost:8501 adresinde açılır ve yalnızca bu bilgisayardan erişilebilir.
+İşletme sahibi için: [docs/KULLANIM_KILAVUZU.md](docs/KULLANIM_KILAVUZU.md). Dağıtım için taşınabilir paket: `python tools/paketle.py` komutu `dist/KobiRadar-<tarih>.zip` üretir (python.org'un gömülebilir Python'u ve paketler içinde; kullanıcının Python kurması gerekmez, ~150 MB). Kısaca: Python 3.13'ü kurun, `KOBI_Radar_Baslat.bat` dosyasına çift tıklayın. İlk açılışta gerekli paketler kurulur; panel tarayıcıda http://localhost:8501 adresinde açılır ve yalnızca bu bilgisayardan erişilebilir.
 
 Güvenlik ayarları ve gözden geçirme: [docs/GUVENLIK.md](docs/GUVENLIK.md). Veriler `%LOCALAPPDATA%\KobiRadar\radar.db` dosyasında saklanır (OneDrive gibi eşitlenen klasörlerin dışında).
 
