@@ -45,9 +45,25 @@ Kaynaklar: [Logo İşbaşı](https://isbasi.com/), [BizimHesap](https://bizimhes
 2. **Ödeme sözü (Upflow).** Söz tarihi girilen faturada bu tarih yeni vade sayılır ve söz tarihi geçene kadar hatırlatma üretilmez. Upflow bunu e-posta yanıtlarından otomatik çıkarıyor; bizde panelden elle giriliyor.
 3. **İletişim zamanı (Chaser).** Chaser "en iyi gün ve saat" öneriyor ama yöntemini açıklamıyor. Bizde kural açık: müşterinin ödemelerinin en az %60'ı aynı günün ±1 gün çevresinde toplanıyorsa sabit ödeme günü sayılır ve iletişim o günden 3 gün öncesine önerilir. Örnek veride 40 müşterinin 12'sinde tespit edildi.
 
+## Düzeltme (14 Ekim 2026, kullanıcının inceleme raporu üzerine)
+
+Önceki sürümde "olasılık bandı ya da eksiye düşme olasılığı hiçbir rakipte yok" ve tahminle ilgili satırlarda "belirtilmemiş" yazıyordu. Daha ayrıntılı kaynaklarla:
+
+- **Chaser** ([geç ödeme tahmini](https://help.chaserhq.com/predict-late-payments)) fatura başına makine öğrenmesiyle geç ödeme olasılığı veriyor (yüzde ve düşük/orta/yüksek). [Alacak tahmini](https://help.chaserhq.com/receivables-forecasting) beta aşamasında; vadeye göre ve tahmin edilen tahsilatı iki çizgi olarak gösteriyor, aralık ya da olasılık yok ve yalnızca tahsilatı kapsıyor (gider, banka bakiyesi yok).
+- **Upflow** için inceleme raporu, nakit tahmininin aylık fatura kohortlarına ve toplu tahsilat hızına dayandığını ve yapay zekâyla ödeme sözü önerdiğini belirtiyor; ilgili yardım sayfaları erişime kapalı olduğu için doğrulanamadı.
+
+Sonuç: "rakiplerde tahmin ya da otomasyon yok" iddiası kullanılmamalı. Fatura bazında gecikme olasılığı pazarda var. Savunulabilir fark daha dar ve daha somut:
+
+1. Giderler, borçlar, vergi takvimi ve çeklerle birlikte **toplam kasanın** olasılıklı görünümü ve "eksiye düşme olasılığı"; incelenen hiçbir kaynakta bu bütünlük yok.
+2. Tahminin **basit yöntemlere karşı ve geçmiş tarihlerde ölçülmüş** isabeti; kullanıcı kendi verisinde de görebiliyor.
+3. Türkiye'nin muhasebe dışa aktarımları, cari hesap, kısmi ödeme ve çek pratiği.
+4. Her önerinin kullanıcı onayıyla ve kayıtlı yapılması.
+
+Konumlandırma cümlesi (inceleme raporunun önerisinden uyarlandı): *KOBİ'lerin muhasebe ve banka dosyalarını müşterilerin gerçek ödeme davranışıyla birleştirerek önümüzdeki 13 haftada kasanın hangi aralıkta hareket edeceğini gösteren, her tahsilat önerisini kullanıcı kontrolünde ve geriye dönük ölçülebilir kılan nakit karar destek aracı.*
+
 ## Rakiplerde olmayan, bizde olan
 
-1. **Olasılıksal kasa görünümü.** İncelenen hiçbir ürün sayfasında güven bandı ya da "kasanın eksiye düşme olasılığı" geçmiyor; en yakını Finrota'nın elle kurulan senaryoları.
+1. **Olasılıksal toplam kasa görünümü.** Fatura bazında gecikme olasılığı Chaser'da var (yukarıdaki düzeltme); ama giderler dahil toplam kasa için güven bandı ve "eksiye düşme olasılığı" incelenen kaynaklarda geçmiyor. En yakını Finrota'nın elle kurulan senaryoları.
 2. **Tahsilat listesinin kasa açığına bağlanması.** Sıralama "en çok gecikmiş" ya da "en büyük tutar"a göre değil, açık gününe kadar gelmeme riski taşıyan tutara göre.
 3. **Çek/senet ve cari hesap mantığı.** Yabancı ürünlerde yok; Finrota sayfasında belirtilmemiş.
 4. **Kendini sınayan tahmin.** Geçmiş tarihlerde tahmin üretip gerçekleşenle karşılaştıran geri test kodda var. Panelde "Bu tahmin geçmişte ne kadar tuttu?" bölümünde kullanıcının kendi verisiyle çalışır.

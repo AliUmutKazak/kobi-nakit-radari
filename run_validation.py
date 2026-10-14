@@ -21,6 +21,9 @@ if __name__ == "__main__":
           f"  |  altında {s['below_p10']} (hedef %10)  |  üstünde {s['above_p90']} (hedef %10)")
     print(f"Beklenen değerin sapması: {s['bias_months']} aylık ciro (artı = iyimser)")
     print(f"Brier skoru: {s['brier']:.3f}  |  tahminsiz taban: {s['brier_baseline']:.3f} (düşük olan iyi)")
+    print("\nBasit yöntemlere karşı (hatalar aylık ciro cinsinden, düşük olan iyi; fark = model eksi yöntem, eksi = model daha iyi):")
+    print(s["baselines"].to_string(float_format=lambda v: f"{v:.3f}"))
+    print(f"Aralık skoru (%80, Gneiting-Raftery; düşük olan iyi): {s['interval_score']:.3f}")
     print("\nEksiye düşme olasılığı kalibrasyonu:")
     print(s["reliability"].to_string())
     for name, table in s["by_regime"].items():

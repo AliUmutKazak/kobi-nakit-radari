@@ -43,6 +43,27 @@ Eksiye düşme olasılığının kalibrasyonu:
 
 Okuma: alt ve orta bölge isabetli. Yüksek riskte panel eksik söylüyor: "%81" denen şirketlerin %91'i eksiye düştü. Bu, aşağıdaki iyimser kaymayla aynı kusurun olasılıktaki görüntüsü.
 
+### Basit yöntemlere karşı
+
+Bir modelin "akıllı" sayılması için önce basit yöntemleri yenmesi gerekir (Makridakis vd. 2022, M5 sonuçları; ayrıca kullanıcının 14 Ekim 2026 tarihli inceleme raporundaki öneri). Aynı 384 tahminde, aynı fatura kümesi ve aynı giderlerle, üç basit kasa tahmini kuruldu:
+
+- **Sözleşme vadesi:** her fatura vadesinde ödenir; vadesi geçmişse yarın.
+- **Müşteri medyanı:** her müşteri, geçmişte vadeden medyan kaç gün sonra ödediyse yine öyle öder.
+- **Tahsilat hızı:** son 90 günde günde ortalama ne kadar tahsil edildiyse önümüzdeki 90 günde de o kadar gelir. Elle tutulan Excel tahminlerinin çoğu budur.
+
+Hatalar aylık ciro cinsindendir; "fark" model eksi yöntemdir, eksi değer modelin daha iyi olduğunu gösterir. Farklar aynı şirketler üzerinde eşleştirilmiştir.
+
+| Yöntem | Dönem sonu kasa hatası | En düşük kasa hatası | Eksiye düşme (Brier) | Fark: dönem sonu | Fark: en düşük kasa | Fark: Brier |
+|---|---|---|---|---|---|---|
+| **Model** | **0,332** | **0,193** | **0,097** | | | |
+| Sözleşme vadesi | 1,585 | 1,412 | 0,607 | −1,253 ±0,034 | −1,219 ±0,028 | −0,509 ±0,016 |
+| Müşteri medyanı | 1,033 | 0,879 | 0,527 | −0,701 ±0,027 | −0,686 ±0,023 | −0,429 ±0,015 |
+| Tahsilat hızı | 0,780 | 0,420 | 0,345 | −0,448 ±0,040 | −0,227 ±0,018 | −0,247 ±0,014 |
+
+%80 aralık skoru (Gneiting ve Raftery 2007; aralığın genişliği ile dışına düşen gözlemin cezası): 1,494 aylık ciro. Basit yöntemler aralık vermediği için bu ölçüt yalnızca model sürümlerini birbiriyle karşılaştırmak içindir.
+
+Çekince: veri sentetiktir ve modelin bildiği türden davranışlar (çarpık gecikmeler, hiç ödenmeyen faturalar, ödeme günü alışkanlıkları) içerir. Basit yöntemler bunları bilmediği için fark burada büyük çıkıyor; gerçek veride daha küçük olabilir. Aynı karşılaştırma ilk pilot verisinde tekrarlanmalı; model orada da tahsilat hızı yöntemini yenmezse panel "akıllı tahmin" iddiasında bulunmamalı. Yaşlandırma eğrisine dayalı daha güçlü bir basit yöntem henüz eklenmedi.
+
 Rejim kırılımı:
 
 | Rejim | Bant içi | Altında | Üstünde | Sapma (aylık ciro) |

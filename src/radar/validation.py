@@ -51,7 +51,17 @@ def run_case(seed: int, customers: int, trend: float, shock: float, as_of="2026-
     truth = np.cumsum(flow)
 
     monthly = obs.loc[obs["issue_date"] > as_of - pd.Timedelta(days=180), "amount"].sum() / 6
-    base = {"seed": seed, "customers": customers, "trend": trend, "shock": shock, "n_invoices": len(obs),
+    baselines = baseline_paths(obs, res["ctx"]["sim_inv"], outflows, as_of, horizon)
+    alpha = 0.2                                             # %80 aralık için aralık skoru (Gneiting ve Raftery 2007)
+    lo, hi, y = sim.p10[-1], sim.p90[-1], truth[-1]
+    interval_score = (hi - lo) + 2 / alpha * max(lo - y, 0) + 2 / alpha * max(y - hi, 0)
+    errors = {"err_final_model": abs(sim.p50[-1] - truth[-1]) / monthly,
+              "err_min_model": abs(sim.p50[1:].min() - truth[1:].min()) / monthly,
+              "interval_score": interval_score / monthly}
+    for name, path in baselines.items():
+        errors[f"err_final_{name}"] = abs(path[-1] - truth[-1]) / monthly
+        errors[f"err_min_{name}"] = abs(path[1:].min() - truth[1:].min()) / monthly
+    base = errors | {"seed": seed, "customers": customers, "trend": trend, "shock": shock, "n_invoices": len(obs),
             "simple_model": res["simple_model"], "rho_market": res["ctx"]["calib"]["rho_market"], "rho_customer": res["ctx"]["calib"]["rho_customer"],
             "z_shift": res["ctx"]["calib"]["fresh"]["z_shift"], "z_shift_overdue": res["ctx"]["calib"]["overdue"]["z_shift"],
             "z_scale": res["ctx"]["calib"]["fresh"]["z_scale"], "z_scale_overdue": res["ctx"]["calib"]["overdue"]["z_scale"],
@@ -60,7 +70,46 @@ def run_case(seed: int, customers: int, trend: float, shock: float, as_of="2026-
             "below": bool(truth[-1] < sim.p10[-1]), "above": bool(truth[-1] > sim.p90[-1])}
     # Açılış kasası yalnızca tüm yolları sabit kadar kaydırır; aynı senaryolardan üç ayrı şirket durumu çıkar.
     return [base | {"opening_months": m, "p_breach": float((sim.min_balance + m * monthly < 0).mean()),
-                    "breached": bool(truth[1:].min() + m * monthly < 0)} for m in OPENINGS]
+                    "breached": bool(truth[1:].min() + m * monthly < 0)}
+            | {f"breach_{name}": float(path[1:].min() + m * monthly < 0) for name, path in baselines.items()}
+            for m in OPENINGS]
+
+
+BASELINES = {"vade": "Sözleşme vadesinde ödenir", "medyan": "Müşteri her zamanki kadar geç öder",
+             "hiz": "Son 90 günün günlük tahsilat hızı sürer"}
+
+
+def baseline_paths(obs: pd.DataFrame, target: pd.DataFrame, outflows: pd.DataFrame, as_of, horizon: int) -> dict:
+    """Basit, deterministik kasa tahminleri (açılış 0). Model bunları yenmeden "akıllı" sayılmaz.
+
+    target: modelin simüle ettiği faturalar (açık + gelecek satış tahmini); adil olsun diye aynı küme."""
+    as_of = pd.Timestamp(as_of)
+    out = np.zeros(horizon + 1)
+    off = (outflows["date"] - as_of).dt.days.to_numpy()
+    keep = (off >= 1) & (off <= horizon)
+    np.add.at(out, off[keep], outflows["amount"].to_numpy()[keep])
+
+    paid = obs.dropna(subset=["paid_date"])
+    delay = (paid["paid_date"] - paid["due_date"]).dt.days
+    med = delay.groupby(paid["customer_id"]).median()
+    overall = float(delay.median()) if len(delay) else 0.0
+    earliest = np.maximum((target["issue_date"] - as_of).dt.days.to_numpy(), 0) + 1
+    due = (target["due_date"] - as_of).dt.days.to_numpy()
+    amount = target["open_amount"].to_numpy(float)
+
+    def path(days):
+        flow = np.zeros(horizon + 1)
+        days = np.maximum(days, earliest)
+        ok = days <= horizon
+        np.add.at(flow, days[ok].astype(int), amount[ok])
+        return np.cumsum(flow - out)
+
+    recent = paid[(paid["paid_date"] > as_of - pd.Timedelta(days=90)) & (paid["paid_date"] <= as_of)]
+    daily = recent["amount"].sum() / 90
+    rate = np.cumsum(np.r_[0.0, np.full(horizon, daily)] - out)
+    return {"vade": path(due),
+            "medyan": path(due + np.round(target["customer_id"].map(med).fillna(overall).to_numpy())),
+            "hiz": rate}
 
 
 def study(seeds=range(24), n_jobs: int = -1, **kwargs) -> pd.DataFrame:
@@ -92,7 +141,26 @@ def summarize(df: pd.DataFrame) -> dict:
                              "olcek": g["z_scale"].mean().round(2), "olcek_gecikmis": g["z_scale_overdue"].mean().round(2)})
 
     err = cases["err_p50_months"]
+
+    def paired(model_col, base_col, frame):
+        d = frame[model_col] - frame[base_col]
+        return f"{d.mean():+.3f} ±{d.std() / np.sqrt(len(d)):.3f}"
+
+    rows = [{"yöntem": "Model (P50 / olasılık)", "dönem_sonu_hata": cases["err_final_model"].mean(),
+             "en_düşük_kasa_hatası": cases["err_min_model"].mean(),
+             "brier": float(np.mean((df["p_breach"] - df["breached"]) ** 2)),
+             "fark_dönem_sonu": "", "fark_en_düşük": "", "fark_brier": ""}]
+    df = df.assign(se_model=(df["p_breach"] - df["breached"]) ** 2)
+    for name, label in BASELINES.items():
+        df[f"se_{name}"] = (df[f"breach_{name}"] - df["breached"]) ** 2
+        rows.append({"yöntem": label, "dönem_sonu_hata": cases[f"err_final_{name}"].mean(),
+                     "en_düşük_kasa_hatası": cases[f"err_min_{name}"].mean(), "brier": df[f"se_{name}"].mean(),
+                     "fark_dönem_sonu": paired("err_final_model", f"err_final_{name}", cases),
+                     "fark_en_düşük": paired("err_min_model", f"err_min_{name}", cases),
+                     "fark_brier": paired("se_model", f"se_{name}", df)})
+    baseline_table = pd.DataFrame(rows).set_index("yöntem")
     return {
+        "baselines": baseline_table, "interval_score": float(cases["interval_score"].mean()),
         "n_cases": len(cases), "n_rows": len(df),
         "coverage": _rate(cases["inside"]), "below_p10": _rate(cases["below"]), "above_p90": _rate(cases["above"]),
         "bias_months": f"{err.mean():+.2f} ±{err.std() / np.sqrt(len(err)):.2f}",
