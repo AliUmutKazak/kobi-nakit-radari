@@ -48,6 +48,7 @@ C:\Users\HP\.venvs\kobi-radar\Scripts\python -m pytest -q
 - Ödenecek faturalar, döviz ve canlı banka/e-fatura bağlantısı yok. Çeklerde keşideci bazlı risk yok.
 - Koddaki yasal ve piyasa parametreleri (gecikme faizi, tahsil gideri, çek karşılıksızlık oranı) ikincil kaynaklardan alındı; birincil kaynaktan teyit edilmeli (bkz. docs/ARASTIRMA.md).
 - Dosya başlıkları tanınmazsa panel elle sütun eşleştirme ister ve seçimi hatırlar; muhasebe programlarına özel hazır şablon yok.
+- Ödenecek faturalar ayrı dosyayla girer ve kasa çıkışına çevrilir; vadesi geçmiş borç ertesi gün ödenecek sayılır. Borç tarafında model yok: ödeme tarihini kullanıcı belirler.
 - Dövizli faturalar kullanıcının girdiği kurla TL'ye çevrilir; kur değişimi tahmin bandına dahil değildir. İade faturaları müşterinin en eski açık faturalarından düşülür.
 - E-posta, kullanıcının kendi SMTP hesabı üzerinden ve yalnızca düğmeye basınca gönderilir; gerçek bir sunucuyla denenmedi (sahte sunucuyla test edildi). WhatsApp gönderimi yok.
 - Veriler `data/radar.db` dosyasında, yalnızca bu bilgisayarda saklanır; kullanıcı hesabı, yetki ve yedekleme yok.

@@ -33,6 +33,7 @@ ALIASES = {
     "description": ["aciklama", "islem aciklamasi", "detay"],
     "label": ["kalem", "gider", "aciklama", "tur"],
     "drawer": ["kesideci", "cek sahibi", "borclu", "musteri", "cari"],
+    "supplier": ["tedarikci", "satici", "tedarikci unvan", "cari", "cari unvan", "firma", "unvan"],
 }
 
 
@@ -237,6 +238,45 @@ def load_payments(file, mapping: dict | None = None):
     if len(df) < n:
         notes.append(f"Ekstrede {n - len(df)} satır atlandı (çıkış hareketi ya da okunamayan tarih/tutar).")
     return df.reset_index(drop=True), notes
+
+
+PAYABLES_LABEL = "Ödenecek faturalar"
+
+
+def load_payables(file, default_terms: int = 30):
+    """Tedarikçilerden gelen, henüz ödenmemiş faturalar. Zorunlu: tutar ve vade ya da fatura tarihi.
+
+    Kalan tutar sütunu varsa o ödenir; vade yoksa fatura tarihi + `default_terms` gün varsayılır."""
+    notes: list[str] = []
+    df = _pick(_read(file), ["invoice_id", "supplier", "due_date", "issue_date", "amount", "open_amount"], ["amount"])
+    due = _date(df["due_date"]) if "due_date" in df else pd.Series(pd.NaT, index=df.index)
+    if "issue_date" in df:
+        missing = due.isna() & _date(df["issue_date"]).notna()
+        if missing.any():
+            due[missing] = _date(df["issue_date"])[missing] + pd.Timedelta(days=default_terms)
+            notes.append(f"{int(missing.sum())} borç faturasında vade yoktu; fatura tarihi + {default_terms} gün varsayıldı.")
+    amount = _num(df["open_amount"]).fillna(_num(df["amount"])) if "open_amount" in df else _num(df["amount"])
+    out = pd.DataFrame({"date": due, "amount": amount, "label": PAYABLES_LABEL,
+                        "supplier": df["supplier"] if "supplier" in df else "",
+                        "invoice_id": df["invoice_id"] if "invoice_id" in df else ""})
+    n = len(out)
+    out = out.dropna(subset=["date", "amount"]).query("amount > 0").reset_index(drop=True)
+    if len(out) < n:
+        notes.append(f"{n - len(out)} borç satırı atlandı (tarih ya da tutar okunamadı, sıfır veya negatif tutar).")
+    return out, notes
+
+
+def payables_to_outflows(payables: pd.DataFrame, as_of) -> tuple[pd.DataFrame, list[str]]:
+    """Borç faturalarını kasa çıkışına çevirir. Vadesi geçmiş borç ilk gün ödenecek sayılır:
+    ertelenebileceği varsayımı kasayı olduğundan iyi gösterir."""
+    as_of = pd.Timestamp(as_of)
+    flows = payables[["date", "amount", "label"]].copy()
+    late = flows["date"] <= as_of
+    notes = []
+    if late.any():
+        notes.append(f"Vadesi geçmiş {flows.loc[late, 'amount'].sum():,.0f} TL borç, yarın ödenecek sayıldı.")
+        flows.loc[late, "date"] = as_of + pd.Timedelta(days=1)
+    return flows, notes
 
 
 def load_schedule(file, label_field: str = "label"):

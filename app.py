@@ -91,7 +91,7 @@ def run_demo(seed: int, include_projected: bool):
 def run_own(rev: int, as_of: str, include_projected: bool):
     """`rev` kayıt her değiştiğinde artar; sonuç ancak o zaman yeniden hesaplanır."""
     store = get_store()
-    notes = [n for name in ("invoices", "payments") for n in json.loads(store.get(f"notes_{name}", "[]"))]
+    notes = [n for name in ("invoices", "payments", "payables") for n in json.loads(store.get(f"notes_{name}", "[]"))]
     obs = store.apply_events(store.load("invoices"), as_of)
     obs = obs[obs["issue_date"] <= pd.Timestamp(as_of)]
     payments = store.load("payments")
@@ -102,7 +102,11 @@ def run_own(rev: int, as_of: str, include_projected: bool):
         if len(unmatched):
             notes.append(f"Eşleşmeyen tahsilat tutarı: {unmatched['amount'].sum():,.0f} TL "
                          "(müşterisi bulunamayan ya da fazla ödeme).")
-    outflows, cheques = store.load("outflows"), store.load("cheques")
+    outflows, cheques, payables = store.load("outflows"), store.load("cheques"), store.load("payables")
+    if payables is not None:
+        flows, n = ingest.payables_to_outflows(payables, as_of)
+        notes += n + [f"Ödenecek faturalar: {len(payables)} adet, {payables['amount'].sum():,.0f} TL."]
+        outflows = flows if outflows is None else pd.concat([outflows, flows], ignore_index=True)
     if cheques is not None:
         notes.append(f"Çek/senet portföyü: {len(cheques)} adet, {cheques['amount'].sum():,.0f} TL.")
     res = pipeline.forecast(obs.reset_index(drop=True), as_of, float(store.get("opening", 0)),
@@ -154,6 +158,8 @@ with st.sidebar:
                     lambda ups: ingest.load_payments(_open(ups[0]), json.loads(store.get("map_payments", "{}"))))
         save_upload(store, "outflows", st.file_uploader("Planlı giderler (isteğe bağlı)", ["csv", "xlsx", "xls"]),
                     lambda ups: (ingest.load_schedule(_open(ups[0])), []))
+        save_upload(store, "payables", st.file_uploader("Ödenecek faturalar (isteğe bağlı)", ["csv", "xlsx", "xls"]),
+                    lambda ups: ingest.load_payables(_open(ups[0]), int(terms)))
         save_upload(store, "cheques", st.file_uploader("Çek / senet portföyü (isteğe bağlı)", ["csv", "xlsx", "xls"]),
                     lambda ups: (ingest.load_schedule(_open(ups[0]), "drawer"), []))
         with st.expander("E-posta gönderimi (isteğe bağlı)"):
@@ -171,7 +177,7 @@ with st.sidebar:
             sure = st.checkbox("Eminim")
             if st.button("Tabloları sil", disabled=not sure):
                 store.clear()
-                for name in ("invoices", "payments", "outflows", "cheques"):
+                for name in ("invoices", "payments", "outflows", "cheques", "payables"):
                     store.set(f"hash_{name}", "")
                 st.rerun()
 
@@ -211,7 +217,7 @@ elif store.load("invoices") is None:
             "Vade Tarihi, VKN, Ödeme Tarihi ve Kalan sütunları varsa kullanılır.")
     if SAMPLES.exists():
         st.write("Biçimi görmek için örnek dosyalar:")
-        for col, name in zip(st.columns(4), ["faturalar.csv", "ekstre.csv", "giderler.csv", "cekler.csv"]):
+        for col, name in zip(st.columns(5), ["faturalar.csv", "ekstre.csv", "giderler.csv", "odenecekler.csv", "cekler.csv"]):
             col.download_button(name, (SAMPLES / name).read_bytes(), name)
         st.caption((SAMPLES / "OKU.txt").read_text(encoding="utf-8"))
     st.stop()
@@ -258,48 +264,51 @@ if sim.breach_day is not None:
 elif res["has_outflows"]:
     st.success("Kötümser senaryoda bile kasa 90 gün boyunca artıda kalıyor.")
 
-fig = go.Figure()
-fig.add_scatter(x=sim.dates, y=sim.p90, line=dict(width=0), showlegend=False, hoverinfo="skip")
-fig.add_scatter(x=sim.dates, y=sim.p10, fill="tonexty", line=dict(width=0), name="P10–P90 bandı",
-                fillcolor="rgba(31,119,180,0.2)")
-fig.add_scatter(x=sim.dates, y=sim.p50, name="Beklenen (P50)", line=dict(color="rgb(31,119,180)"))
-fig.add_hline(y=0, line_dash="dash", line_color="crimson")
-fig.update_layout(height=380, margin=dict(l=0, r=0, t=10, b=0), yaxis_title="Kasa (TL)", hovermode="x unified")
-st.plotly_chart(fig, width="stretch")
+tab_cash, tab_collect, tab_accuracy = st.tabs(["Kasa tahmini", "Tahsilat işleri", "Tahmin doğruluğu"])
 
-st.subheader("Açığı kapatmak için ne gerekir?")
-gap = run_gap(res_key, res)
-if gap["gap"] == 0:
-    st.write("Kötümser senaryoda kasa açığı görünmüyor.")
-else:
-    day = sim.dates[gap["gap_day"]]
-    text = f"Kötümser senaryoda en derin açık **{gap['gap']:,.0f} TL** ({day:%d.%m.%Y}). "
-    if gap["k"]:
-        text += (f"Aşağıdaki listenin ilk **{gap['k']} faturası** ({gap['amount']:,.0f} TL) bir hafta içinde "
-                 "tahsil edilirse kötümser senaryoda da kasa artıda kalır.")
+with tab_cash:
+    fig = go.Figure()
+    fig.add_scatter(x=sim.dates, y=sim.p90, line=dict(width=0), showlegend=False, hoverinfo="skip")
+    fig.add_scatter(x=sim.dates, y=sim.p10, fill="tonexty", line=dict(width=0), name="P10–P90 bandı",
+                    fillcolor="rgba(31,119,180,0.2)")
+    fig.add_scatter(x=sim.dates, y=sim.p50, name="Beklenen (P50)", line=dict(color="rgb(31,119,180)"))
+    fig.add_hline(y=0, line_dash="dash", line_color="crimson")
+    fig.update_layout(height=380, margin=dict(l=0, r=0, t=10, b=0), yaxis_title="Kasa (TL)", hovermode="x unified")
+    st.plotly_chart(fig, width="stretch")
+
+    st.subheader("Açığı kapatmak için ne gerekir?")
+    gap = run_gap(res_key, res)
+    if gap["gap"] == 0:
+        st.write("Kötümser senaryoda kasa açığı görünmüyor.")
     else:
-        text += (f"Listedeki öncelikli faturaların tamamı ({gap['amount']:,.0f} TL) tahsil edilse de açık kapanmıyor; "
-                 "gider ertelemesi ya da ek finansman gerekir.")
-    st.write(text)
-labels = sorted(set(res["outflows"]["label"].dropna())) if "label" in res["outflows"] else []
-actionable_ids = list(res["ranked"].loc[res["ranked"]["actionable"], "invoice_id"])
-s1, s2, s3 = st.columns(3)
-top_k = s1.slider("Bir haftada tahsil edilen öncelikli fatura sayısı", 0, min(40, len(actionable_ids)), 0)
-delayed = s2.multiselect("Ertelenecek gider kalemleri", labels)
-delay_days = s3.slider("Erteleme (gün)", 0, 60, 0, step=5)
-if top_k or (delayed and delay_days):
-    alt = run_scenario(res_key, res, tuple(actionable_ids[:top_k]), tuple(delayed), delay_days)
-    fig2 = go.Figure()
-    fig2.add_scatter(x=sim.dates, y=sim.p10, name="Kötümser, bugünkü durum", line=dict(color="crimson", dash="dot"))
-    fig2.add_scatter(x=alt.dates, y=alt.p10, name="Kötümser, senaryo", line=dict(color="crimson"))
-    fig2.add_scatter(x=alt.dates, y=alt.p50, name="Beklenen, senaryo", line=dict(color="rgb(31,119,180)"))
-    fig2.add_hline(y=0, line_dash="dash", line_color="gray")
-    fig2.update_layout(height=320, margin=dict(l=0, r=0, t=10, b=0), yaxis_title="Kasa (TL)", hovermode="x unified")
-    st.plotly_chart(fig2, width="stretch")
-    st.write(f"Senaryoda 90 günde eksiye düşme olasılığı: **%{alt.prob_any_breach * 100:.0f}** "
-             f"(bugünkü durumda %{sim.prob_any_breach * 100:.0f}).")
+        day = sim.dates[gap["gap_day"]]
+        text = f"Kötümser senaryoda en derin açık **{gap['gap']:,.0f} TL** ({day:%d.%m.%Y}). "
+        if gap["k"]:
+            text += (f"Aşağıdaki listenin ilk **{gap['k']} faturası** ({gap['amount']:,.0f} TL) bir hafta içinde "
+                     "tahsil edilirse kötümser senaryoda da kasa artıda kalır.")
+        else:
+            text += (f"Listedeki öncelikli faturaların tamamı ({gap['amount']:,.0f} TL) tahsil edilse de açık kapanmıyor; "
+                     "gider ertelemesi ya da ek finansman gerekir.")
+        st.write(text)
+    labels = sorted(set(res["outflows"]["label"].dropna())) if "label" in res["outflows"] else []
+    actionable_ids = list(res["ranked"].loc[res["ranked"]["actionable"], "invoice_id"])
+    s1, s2, s3 = st.columns(3)
+    top_k = s1.slider("Bir haftada tahsil edilen öncelikli fatura sayısı", 0, min(40, len(actionable_ids)), 0)
+    delayed = s2.multiselect("Ertelenecek gider kalemleri", labels)
+    delay_days = s3.slider("Erteleme (gün)", 0, 60, 0, step=5)
+    if top_k or (delayed and delay_days):
+        alt = run_scenario(res_key, res, tuple(actionable_ids[:top_k]), tuple(delayed), delay_days)
+        fig2 = go.Figure()
+        fig2.add_scatter(x=sim.dates, y=sim.p10, name="Kötümser, bugünkü durum", line=dict(color="crimson", dash="dot"))
+        fig2.add_scatter(x=alt.dates, y=alt.p10, name="Kötümser, senaryo", line=dict(color="crimson"))
+        fig2.add_scatter(x=alt.dates, y=alt.p50, name="Beklenen, senaryo", line=dict(color="rgb(31,119,180)"))
+        fig2.add_hline(y=0, line_dash="dash", line_color="gray")
+        fig2.update_layout(height=320, margin=dict(l=0, r=0, t=10, b=0), yaxis_title="Kasa (TL)", hovermode="x unified")
+        st.plotly_chart(fig2, width="stretch")
+        st.write(f"Senaryoda 90 günde eksiye düşme olasılığı: **%{alt.prob_any_breach * 100:.0f}** "
+                 f"(bugünkü durumda %{sim.prob_any_breach * 100:.0f}).")
 
-with st.expander("Bu tahmin geçmişte ne kadar tuttu?"):
+with tab_accuracy:
     st.write("Geçmişteki birkaç tarihe dönülür, o gün eldeki bilgiyle 90 günlük tahsilat tahmin edilir "
              "ve sonradan gerçekleşenle karşılaştırılır.")
     if st.button("Geri testi çalıştır"):
@@ -315,82 +324,83 @@ with st.expander("Bu tahmin geçmişte ne kadar tuttu?"):
                 "p50": "Beklenen (TL)", "p90": "İyimser (TL)", "inside": "Bant içinde",
                 "err_p50_pct": "Sapma (%)"}).round(0), width="stretch", hide_index=True)
 
-st.subheader("Öncelikli tahsilat listesi")
-ranked = res["ranked"]
-todo = ranked[ranked["actionable"]].copy()
-todo["payday_label"] = todo["payday"].map(actions.payday_label)
-todo["stage_label"] = todo["stage"].map(STAGES)
-st.dataframe(
-    todo[["invoice_id", "customer_name", "due_date", "open_amount", "days_overdue", "p_late", "stage_label",
-          "payday_label", "contact_date"]].rename(columns={
-        "invoice_id": "Fatura", "customer_name": "Müşteri", "due_date": "Vade", "open_amount": "Tutar (TL)",
-        "days_overdue": "Gecikme (gün)", "p_late": "Açık gününe kadar gelmeme olasılığı", "stage_label": "Aşama",
-        "payday_label": "Müşterinin ödeme günü", "contact_date": "Önerilen iletişim tarihi"}),
-    width="stretch", hide_index=True)
+with tab_collect:
+    st.subheader("Öncelikli tahsilat listesi")
+    ranked = res["ranked"]
+    todo = ranked[ranked["actionable"]].copy()
+    todo["payday_label"] = todo["payday"].map(actions.payday_label)
+    todo["stage_label"] = todo["stage"].map(STAGES)
+    st.dataframe(
+        todo[["invoice_id", "customer_name", "due_date", "open_amount", "days_overdue", "p_late", "stage_label",
+              "payday_label", "contact_date"]].rename(columns={
+            "invoice_id": "Fatura", "customer_name": "Müşteri", "due_date": "Vade", "open_amount": "Tutar (TL)",
+            "days_overdue": "Gecikme (gün)", "p_late": "Açık gününe kadar gelmeme olasılığı", "stage_label": "Aşama",
+            "payday_label": "Müşterinin ödeme günü", "contact_date": "Önerilen iletişim tarihi"}),
+        width="stretch", hide_index=True)
 
-doubtful = ranked[ranked["stage"] == "supheli"]
-if len(doubtful):
-    with st.expander(f"Şüpheli alacaklar: {len(doubtful)} fatura, {doubtful['open_amount'].sum():,.0f} TL"):
-        st.write(f"Bu faturalar {actions.DOUBTFUL_MIN_OVERDUE} günden fazla gecikmiş ve geçmiş verinize göre önümüzdeki "
-                 f"90 günde tahsil edilme olasılıkları %{actions.DOUBTFUL_MAX_COLLECT_PROB * 100:.0f}'in altında. "
-                 "Hatırlatma listesinde gösterilmezler; yeni bir hatırlatma yerine hukuki yolları değerlendirin.")
-        st.dataframe(doubtful[["invoice_id", "customer_name", "due_date", "open_amount", "days_overdue", "p_collect"]]
-                     .rename(columns={"invoice_id": "Fatura", "customer_name": "Müşteri", "due_date": "Vade",
-                                      "open_amount": "Tutar (TL)", "days_overdue": "Gecikme (gün)",
-                                      "p_collect": "90 günde tahsil olasılığı"}), width="stretch", hide_index=True)
+    doubtful = ranked[ranked["stage"] == "supheli"]
+    if len(doubtful):
+        with st.expander(f"Şüpheli alacaklar: {len(doubtful)} fatura, {doubtful['open_amount'].sum():,.0f} TL"):
+            st.write(f"Bu faturalar {actions.DOUBTFUL_MIN_OVERDUE} günden fazla gecikmiş ve geçmiş verinize göre önümüzdeki "
+                     f"90 günde tahsil edilme olasılıkları %{actions.DOUBTFUL_MAX_COLLECT_PROB * 100:.0f}'in altında. "
+                     "Hatırlatma listesinde gösterilmezler; yeni bir hatırlatma yerine hukuki yolları değerlendirin.")
+            st.dataframe(doubtful[["invoice_id", "customer_name", "due_date", "open_amount", "days_overdue", "p_collect"]]
+                         .rename(columns={"invoice_id": "Fatura", "customer_name": "Müşteri", "due_date": "Vade",
+                                          "open_amount": "Tutar (TL)", "days_overdue": "Gecikme (gün)",
+                                          "p_collect": "90 günde tahsil olasılığı"}), width="stretch", hide_index=True)
 
-st.subheader("Mesaj taslağı")
-if len(todo):
-    by_id = todo.set_index("invoice_id", drop=False)
-    pick = st.selectbox("Fatura", todo["invoice_id"], format_func=lambda i: f"{i} · {by_id.at[i, 'customer_name']}")
-    draft = actions.draft_message(by_id.loc[pick], seller)
-    body = st.text_area("Taslak (düzenleyebilirsiniz)", draft["body"], height=140, key=f"draft_{pick}")
-    if draft["note"]:
-        st.info(draft["note"])
+    st.subheader("Mesaj taslağı")
+    if len(todo):
+        by_id = todo.set_index("invoice_id", drop=False)
+        pick = st.selectbox("Fatura", todo["invoice_id"], format_func=lambda i: f"{i} · {by_id.at[i, 'customer_name']}")
+        draft = actions.draft_message(by_id.loc[pick], seller)
+        body = st.text_area("Taslak (düzenleyebilirsiniz)", draft["body"], height=140, key=f"draft_{pick}")
+        if draft["note"]:
+            st.info(draft["note"])
+        if own:
+            st.caption("Mesajı kendi e-posta ya da WhatsApp hesabınızdan gönderdikten sonra aşağıdan kayda geçirin. "
+                       f"Kayda geçen fatura {actions.CONTACT_COOLDOWN_DAYS} gün boyunca listede yeniden önerilmez.")
+            if mail.ready:
+                emails = res["obs"].set_index("invoice_id")["email"] if "email" in res["obs"] else {}
+                to = st.text_input("Alıcı e-posta adresi", emails.get(pick, ""), key=f"to_{pick}")
+                if st.button("E-posta ile gönder", disabled=not mailer.is_address(to)):
+                    try:
+                        mailer.send(mail, to, draft["subject"], body)
+                    except mailer.MailError as err:
+                        st.error(str(err))
+                    else:
+                        record(pick, "message", f"[e-posta: {to.strip()}] {body}")
+            b1, b2, b3 = st.columns(3)
+            if b1.button("Gönderildi olarak kaydet"):
+                record(pick, "message", body)
+            if b2.button("Müşteri itiraz etti"):
+                record(pick, "dispute", "1")
+            promise = b3.date_input("Ödeme sözü tarihi", value=None, format="DD.MM.YYYY", key=f"promise_{pick}")
+            if promise and b3.button("Ödeme sözünü kaydet"):
+                record(pick, "promise", str(promise))
+    else:
+        st.write("Şu an hatırlatma gerektiren fatura yok.")
+
     if own:
-        st.caption("Mesajı kendi e-posta ya da WhatsApp hesabınızdan gönderdikten sonra aşağıdan kayda geçirin. "
-                   f"Kayda geçen fatura {actions.CONTACT_COOLDOWN_DAYS} gün boyunca listede yeniden önerilmez.")
-        if mail.ready:
-            emails = res["obs"].set_index("invoice_id")["email"] if "email" in res["obs"] else {}
-            to = st.text_input("Alıcı e-posta adresi", emails.get(pick, ""), key=f"to_{pick}")
-            if st.button("E-posta ile gönder", disabled=not mailer.is_address(to)):
-                try:
-                    mailer.send(mail, to, draft["subject"], body)
-                except mailer.MailError as err:
-                    st.error(str(err))
-                else:
-                    record(pick, "message", f"[e-posta: {to.strip()}] {body}")
-        b1, b2, b3 = st.columns(3)
-        if b1.button("Gönderildi olarak kaydet"):
-            record(pick, "message", body)
-        if b2.button("Müşteri itiraz etti"):
-            record(pick, "dispute", "1")
-        promise = b3.date_input("Ödeme sözü tarihi", value=None, format="DD.MM.YYYY", key=f"promise_{pick}")
-        if promise and b3.button("Ödeme sözünü kaydet"):
-            record(pick, "promise", str(promise))
-else:
-    st.write("Şu an hatırlatma gerektiren fatura yok.")
-
-if own:
-    obs = res["obs"]
-    held = obs[(obs["open_amount"] > 0) & (obs["disputed"] | (obs["promised_date"] > res["as_of"]))]
-    waiting = ranked[ranked["last_contact"].notna() & ~ranked["actionable"]]
-    with st.expander(f"Beklemedeki faturalar ({len(held) + len(waiting)})"):
-        if len(held):
-            st.write("İtirazlı ya da ödeme sözü verilmiş faturalar:")
-            st.dataframe(held[["invoice_id", "customer_name", "open_amount", "disputed", "promised_date"]].rename(columns={
-                "invoice_id": "Fatura", "customer_name": "Müşteri", "open_amount": "Tutar (TL)",
-                "disputed": "İtirazlı", "promised_date": "Ödeme sözü"}), width="stretch", hide_index=True)
-            undo = st.selectbox("Durumu kaldırılacak fatura", held["invoice_id"])
-            u1, u2 = st.columns(2)
-            if u1.button("İtirazı kaldır"):
-                record(undo, "dispute", "0")
-            if u2.button("Ödeme sözünü kaldır"):
-                record(undo, "promise", "")
-        if len(waiting):
-            st.write("Yakın zamanda yazılmış, yanıt beklenen faturalar:")
-            st.dataframe(waiting[["invoice_id", "customer_name", "open_amount", "last_contact"]].rename(columns={
-                "invoice_id": "Fatura", "customer_name": "Müşteri", "open_amount": "Tutar (TL)",
-                "last_contact": "Son iletişim"}), width="stretch", hide_index=True)
-        if not len(held) and not len(waiting):
-            st.write("Beklemede fatura yok.")
+        obs = res["obs"]
+        held = obs[(obs["open_amount"] > 0) & (obs["disputed"] | (obs["promised_date"] > res["as_of"]))]
+        waiting = ranked[ranked["last_contact"].notna() & ~ranked["actionable"]]
+        with st.expander(f"Beklemedeki faturalar ({len(held) + len(waiting)})"):
+            if len(held):
+                st.write("İtirazlı ya da ödeme sözü verilmiş faturalar:")
+                st.dataframe(held[["invoice_id", "customer_name", "open_amount", "disputed", "promised_date"]].rename(columns={
+                    "invoice_id": "Fatura", "customer_name": "Müşteri", "open_amount": "Tutar (TL)",
+                    "disputed": "İtirazlı", "promised_date": "Ödeme sözü"}), width="stretch", hide_index=True)
+                undo = st.selectbox("Durumu kaldırılacak fatura", held["invoice_id"])
+                u1, u2 = st.columns(2)
+                if u1.button("İtirazı kaldır"):
+                    record(undo, "dispute", "0")
+                if u2.button("Ödeme sözünü kaldır"):
+                    record(undo, "promise", "")
+            if len(waiting):
+                st.write("Yakın zamanda yazılmış, yanıt beklenen faturalar:")
+                st.dataframe(waiting[["invoice_id", "customer_name", "open_amount", "last_contact"]].rename(columns={
+                    "invoice_id": "Fatura", "customer_name": "Müşteri", "open_amount": "Tutar (TL)",
+                    "last_contact": "Son iletişim"}), width="stretch", hide_index=True)
+            if not len(held) and not len(waiting):
+                st.write("Beklemede fatura yok.")

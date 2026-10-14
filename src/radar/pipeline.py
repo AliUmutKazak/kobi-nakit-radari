@@ -104,7 +104,8 @@ def calibrate(obs: pd.DataFrame, as_of, origins: int = 4, step: int = 90, mature
 
 def forecast(obs: pd.DataFrame, as_of, opening: float, outflows: pd.DataFrame, horizon: int = 90,
              n_sims: int = 2000, include_projected: bool = True, seed: int = 0,
-             cheques: pd.DataFrame | None = None) -> dict:
+             cheques: pd.DataFrame | None = None, calib_hook=None) -> dict:
+    """calib_hook: kalibrasyon sözlüğünü değiştiren isteğe bağlı fonksiyon (yalnızca deneyler için)."""
     as_of = pd.Timestamp(as_of)
     X, y = training_frame(obs, as_of)
     model = fit_model(X, y)
@@ -129,6 +130,8 @@ def forecast(obs: pd.DataFrame, as_of, opening: float, outflows: pd.DataFrame, h
     promised = target["promised_date"] > as_of
     sim_inv = target.assign(due_date=target["promised_date"].where(promised, target["due_date"]))
     calib = calibrate(obs, as_of)
+    if calib_hook is not None:
+        calib = calib_hook(calib)
     ctx = {"sim_inv": sim_inv, "Q": model.predict(feats), "aging": aging_curve(obs, as_of), "cheques": cheques,
            "horizon": horizon, "n_sims": n_sims, "seed": seed, "calib": calib}
     sim = simulate(sim_inv, ctx["Q"], as_of, opening, outflows, horizon, n_sims, seed=seed, aging=ctx["aging"],

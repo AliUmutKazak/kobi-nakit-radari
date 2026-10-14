@@ -374,3 +374,30 @@ def test_mailer_sends_only_valid_complete_requests(monkeypatch):
     with pytest.raises(mailer.MailError, match="Giriş reddedildi"):
         mailer.send(mailer.MailConfig("smtp.example.com", 587, "ben@example.com", "yanlis"), "a@b.co", "k", "m")
     assert len(sent) == 3                                  # hatalı denemelerde hiçbir ileti gitmedi
+
+
+def test_payables_become_outflows_and_can_be_deferred(tmp_path):
+    from radar import ingest
+    from radar.synthetic import cash_plan, export_samples
+
+    export_samples(tmp_path, seed=3, as_of=AS_OF)
+    pay, notes = ingest.load_payables(tmp_path / "odenecekler.csv")
+    obs = observe(generate(seed=3, as_of=AS_OF), AS_OF)
+    _, plan = cash_plan(obs, AS_OF)
+    supplier_total = plan.loc[plan["label"] == "Tedarikçi ödemeleri", "amount"].sum()
+    assert pay["amount"].sum() == pytest.approx(supplier_total, rel=1e-6) and not notes
+    assert (pay["label"] == ingest.PAYABLES_LABEL).all()
+
+    p = tmp_path / "borc.csv"
+    p.write_text("Tedarikçi;Fatura Tarihi;Vade;Tutar;Kalan\nA Ltd;01.08.2026;15.09.2026;1000;400\n"
+                 "B AŞ;20.09.2026;;500;\n", encoding="utf-8")
+    small, notes = ingest.load_payables(p)
+    assert list(small["amount"]) == [400, 500] and small.at[1, "date"] == pd.Timestamp("2026-10-20")
+    flows, late = ingest.payables_to_outflows(small, AS_OF)
+    assert flows.at[0, "date"] == pd.Timestamp(AS_OF) + pd.Timedelta(days=1) and late
+
+    out = ingest.load_schedule(tmp_path / "giderler.csv")
+    flows, _ = ingest.payables_to_outflows(pay, AS_OF)
+    res = pipeline.forecast(obs, AS_OF, 0.0, pd.concat([out, flows], ignore_index=True), n_sims=200)
+    later = pipeline.scenario(res, delay_labels=[ingest.PAYABLES_LABEL], delay_days=30)
+    assert later.p50[20] > res["sim"].p50[20]

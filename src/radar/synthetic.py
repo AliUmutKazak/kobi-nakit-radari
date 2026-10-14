@@ -113,7 +113,19 @@ def export_samples(folder, seed: int = 7, as_of: str = "2026-10-01") -> None:
     paid.rename(columns={"paid_date": "Tarih", "amount": "Tutar"})[["Tarih", "Tutar", "Açıklama"]]         .sort_values("Tarih").to_csv(folder / "ekstre.csv", **tr)
 
     opening, outflows = cash_plan(obs, as_of)
-    outflows.rename(columns={"date": "Tarih", "amount": "Tutar", "label": "Kalem"}).to_csv(folder / "giderler.csv", **tr)
+    supplier = outflows["label"] == "Tedarikçi ödemeleri"
+    outflows[~supplier].rename(columns={"date": "Tarih", "amount": "Tutar", "label": "Kalem"}) \
+        .to_csv(folder / "giderler.csv", **tr)
+    # Haftalık tedarikçi ödemeleri, ayrı borç faturaları olarak (her hafta 2-3 fatura).
+    vendors = ["Delta Hammadde Ltd.", "Kuzey Ambalaj A.Ş.", "Ege Nakliyat Ltd.", "Marmara Enerji A.Ş."]
+    rows = []
+    for k, r in enumerate(outflows[supplier].itertuples()):
+        parts = rng.dirichlet(np.ones(int(rng.integers(2, 4))))
+        for j, share in enumerate(parts):
+            rows.append({"Fatura No": f"ALS{2026000 + 10 * k + j}", "Tedarikçi": vendors[(k + j) % len(vendors)],
+                         "Fatura Tarihi": r.date - pd.Timedelta(days=30), "Vade": r.date,
+                         "Tutar": round(r.amount * share, 2)})
+    pd.DataFrame(rows).to_csv(folder / "odenecekler.csv", **tr)
 
     as_of = pd.Timestamp(as_of)
     names = obs["customer_name"].drop_duplicates().sample(8, random_state=seed).to_numpy()
@@ -121,7 +133,9 @@ def export_samples(folder, seed: int = 7, as_of: str = "2026-10-01") -> None:
                   "Tutar": rng.lognormal(np.log(120_000), 0.5, 8).round(2), "Keşideci": names})         .sort_values("Vade").to_csv(folder / "cekler.csv", **tr)
     (folder / "OKU.txt").write_text("\n".join([
         f"Örnek dosyalar {as_of:%d.%m.%Y} tarihine göre üretildi; panelde 'Bugünün tarihi' olarak bunu seçin.",
-        f"Açılış kasası için {opening:.0f} TL girebilirsiniz.", ""]), encoding="utf-8")
+        f"Açılış kasası için {opening:.0f} TL girebilirsiniz.",
+        "Tedarikçi ödemeleri odenecekler.csv dosyasındadır; gerçekçi bir tablo için giderler.csv ile birlikte yükleyin.",
+        ""]), encoding="utf-8")
 
 
 def to_ubl_xml(row, with_due_date: bool = True) -> str:
