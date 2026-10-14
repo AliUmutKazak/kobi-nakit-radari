@@ -4,21 +4,22 @@ Açık faturaların ne zaman tahsil edileceğini olasılıksal olarak tahmin ede
 
 Şu an sentetik veriyle çalışır. Tasarım kararlarının gerekçesi: [docs/ARASTIRMA.md](docs/ARASTIRMA.md). Rakip karşılaştırması: [docs/RAKIPLER.md](docs/RAKIPLER.md). Doğrulama sonuçları: [docs/DOGRULAMA.md](docs/DOGRULAMA.md).
 
-## Kurulum
+## Kullanım
 
-Windows'ta yol uzunluğu sınırına takılmamak için sanal ortamı kısa bir yola kurun:
+İşletme sahibi için: [docs/KULLANIM_KILAVUZU.md](docs/KULLANIM_KILAVUZU.md). Kısaca: Python 3.13'ü kurun, `KOBI_Radar_Baslat.bat` dosyasına çift tıklayın. İlk açılışta gerekli paketler kurulur; panel tarayıcıda http://localhost:8501 adresinde açılır ve yalnızca bu bilgisayardan erişilebilir.
+
+Güvenlik ayarları ve gözden geçirme: [docs/GUVENLIK.md](docs/GUVENLIK.md). Veriler `%LOCALAPPDATA%\KobiRadar\radar.db` dosyasında saklanır (OneDrive gibi eşitlenen klasörlerin dışında).
+
+## Geliştirme
+
+Sanal ortam, Windows yol uzunluğu sınırına takılmamak için kısa bir yolda durur:
 
 ```bash
 python -m venv C:\Users\HP\.venvs\kobi-radar
 C:\Users\HP\.venvs\kobi-radar\Scripts\python -m pip install -r requirements.txt
-```
-
-## Çalıştırma
-
-```bash
-C:\Users\HP\.venvs\kobi-radar\Scripts\python run_demo.py
-C:\Users\HP\.venvs\kobi-radar\Scripts\python -m streamlit run app.py
 C:\Users\HP\.venvs\kobi-radar\Scripts\python -m pytest -q
+C:\Users\HP\.venvs\kobi-radar\Scripts\python run_demo.py
+C:\Users\HP\.venvs\kobi-radar\Scripts\python run_validation.py 48
 ```
 
 ## Modüller
@@ -51,4 +52,4 @@ C:\Users\HP\.venvs\kobi-radar\Scripts\python -m pytest -q
 - Ödenecek faturalar ayrı dosyayla girer ve kasa çıkışına çevrilir; vadesi geçmiş borç ertesi gün ödenecek sayılır. Borç tarafında model yok: ödeme tarihini kullanıcı belirler.
 - Dövizli faturalar kullanıcının girdiği kurla TL'ye çevrilir; kur değişimi tahmin bandına dahil değildir. İade faturaları müşterinin en eski açık faturalarından düşülür.
 - E-posta, kullanıcının kendi SMTP hesabı üzerinden ve yalnızca düğmeye basınca gönderilir; gerçek bir sunucuyla denenmedi (sahte sunucuyla test edildi). WhatsApp gönderimi yok.
-- Veriler `data/radar.db` dosyasında, yalnızca bu bilgisayarda saklanır; kullanıcı hesabı, yetki ve yedekleme yok.
+- Veriler yalnızca bu bilgisayarda, şifrelenmemiş bir dosyada saklanır; kullanıcı girişi, yetki ve yedekleme yok.

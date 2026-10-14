@@ -26,7 +26,8 @@ STAGES = {"hatirlatma": "Hatırlatma", "mutabakat": "Mutabakat", "resmi": "Resm�
 
 st.set_page_config(page_title="KOBİ Nakit Akışı Radarı", layout="wide")
 st.title("KOBİ Nakit Akışı Radarı")
-st.caption("Mesajlar taslaktır; bu panel hiçbir mesajı kendiliğinden göndermez.")
+st.caption("Mesajlar taslaktır; bu panel hiçbir mesajı kendiliğinden göndermez. "
+           "Nasıl kullanılacağı: proje klasöründeki docs/KULLANIM_KILAVUZU.md")
 
 
 @st.cache_resource
