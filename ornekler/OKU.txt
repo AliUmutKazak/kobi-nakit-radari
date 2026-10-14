@@ -1,3 +1,4 @@
 Örnek dosyalar 01.10.2026 tarihine göre üretildi; panelde 'Bugünün tarihi' olarak bunu seçin.
 Açılış kasası için 2108055 TL girebilirsiniz.
 Tedarikçi ödemeleri odenecekler.csv dosyasındadır; gerçekçi bir tablo için giderler.csv ile birlikte yükleyin.
+cari_ekstre.csv aynı satışları cari hesap ekstresi biçiminde içerir; faturalar.csv + ekstre.csv yerine tek başına yüklenebilir.

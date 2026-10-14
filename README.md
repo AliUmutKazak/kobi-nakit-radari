@@ -26,7 +26,7 @@ C:\Users\HP\.venvs\kobi-radar\Scripts\python -m pytest -q
 | Dosya | Görev |
 |---|---|
 | `src/radar/synthetic.py` | Sentetik fatura verisi, kasa planı, örnek UBL-TR üretimi |
-| `src/radar/ingest.py` | CSV / Excel / UBL-TR dosyalarını standart tabloya çevirme (Türkçe başlık ve sayı biçimi) |
+| `src/radar/ingest.py` | CSV / Excel / UBL-TR dosyalarını, banka ekstresini ve cari hesap ekstresini / muavin defteri standart tabloya çevirme (Türkçe başlık ve sayı biçimi, başlık satırı tespiti) |
 | `ornekler/` | Kendi verini yükleme akışını denemek için örnek dosyalar |
 | `src/radar/ubl.py` | UBL-TR e-fatura ayrıştırıcı (vade alanı boşsa yedek kurallar) |
 | `src/radar/reconcile.py` | Banka tahsilatı ile fatura eşleştirme (birebir, sonra FIFO ve kısmi) |

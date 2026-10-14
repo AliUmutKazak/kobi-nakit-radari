@@ -112,6 +112,13 @@ def export_samples(folder, seed: int = 7, as_of: str = "2026-10-01") -> None:
                         + np.where(with_vkn, paid["vkn"], "") + " CARI HESAP ODEMESI")
     paid.rename(columns={"paid_date": "Tarih", "amount": "Tutar"})[["Tarih", "Tutar", "Açıklama"]]         .sort_values("Tarih").to_csv(folder / "ekstre.csv", **tr)
 
+    # Aynı veri, Mikro cari hareket föyü biçiminde: borç = fatura, alacak = tahsilat.
+    sales = pd.DataFrame({"Evrak Tarihi": obs["issue_date"], "Evrak No": obs["invoice_id"], "Cari İsmi": obs["customer_name"],
+                          "Vade Tarihi": obs["due_date"], "Açıklama": "Satış Faturası", "Borç": obs["amount"], "Alacak": 0.0})
+    receipts = pd.DataFrame({"Evrak Tarihi": paid["paid_date"], "Evrak No": "", "Cari İsmi": paid["customer_name"],
+                             "Vade Tarihi": pd.NaT, "Açıklama": "Gelen havale", "Borç": 0.0, "Alacak": paid["amount"]})
+    pd.concat([sales, receipts]).sort_values("Evrak Tarihi", kind="stable").to_csv(folder / "cari_ekstre.csv", **tr)
+
     opening, outflows = cash_plan(obs, as_of)
     supplier = outflows["label"] == "Tedarikçi ödemeleri"
     outflows[~supplier].rename(columns={"date": "Tarih", "amount": "Tutar", "label": "Kalem"}) \
@@ -135,6 +142,7 @@ def export_samples(folder, seed: int = 7, as_of: str = "2026-10-01") -> None:
         f"Örnek dosyalar {as_of:%d.%m.%Y} tarihine göre üretildi; panelde 'Bugünün tarihi' olarak bunu seçin.",
         f"Açılış kasası için {opening:.0f} TL girebilirsiniz.",
         "Tedarikçi ödemeleri odenecekler.csv dosyasındadır; gerçekçi bir tablo için giderler.csv ile birlikte yükleyin.",
+        "cari_ekstre.csv aynı satışları cari hesap ekstresi biçiminde içerir; faturalar.csv + ekstre.csv yerine tek başına yüklenebilir.",
         ""]), encoding="utf-8")
 
 

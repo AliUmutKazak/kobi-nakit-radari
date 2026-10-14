@@ -36,7 +36,7 @@ ALIASES = {
     "currency": ["para birimi", "doviz", "doviz cinsi", "doviz turu", "pb"],
     "invoice_type": ["fatura tipi", "fatura turu", "belge tipi"],
     "promised_date": ["odeme sozu", "soz tarihi", "odeme sozu tarihi", "taahhut tarihi"],
-    "description": ["aciklama", "islem aciklamasi", "detay"],
+    "description": ["aciklama", "islem aciklamasi", "aciklama islem turu", "detay", "islem turu"],
     "label": ["kalem", "gider", "aciklama", "tur"],
     "drawer": ["kesideci", "cek sahibi", "borclu", "musteri", "cari"],
     "supplier": ["tedarikci", "satici", "tedarikci unvan", "cari", "cari unvan", "firma", "unvan"],
@@ -327,6 +327,86 @@ def payables_to_outflows(payables: pd.DataFrame, as_of) -> tuple[pd.DataFrame, l
         notes.append(f"Vadesi geçmiş {flows.loc[late, 'amount'].sum():,.0f} TL borç, yarın ödenecek sayıldı.")
         flows.loc[late, "date"] = as_of + pd.Timedelta(days=1)
     return flows, notes
+
+
+LEDGER_DEBIT = ["borc", "ana doviz borc", "borc tutari"]
+LEDGER_CREDIT = ["alacak", "ana doviz alacak", "alacak tutari"]
+
+
+def _ledger_columns(columns) -> tuple[str, str] | None:
+    keys = {_key(c): c for c in columns}
+    debit = next((keys[k] for k in LEDGER_DEBIT if k in keys), None)
+    credit = next((keys[k] for k in LEDGER_CREDIT if k in keys), None)
+    return (debit, credit) if debit is not None and credit is not None else None
+
+
+def is_ledger(file) -> bool:
+    """Borç ve alacak sütunları olan cari hesap ekstresi / muavin defter / cari hareket föyü mü?"""
+    return _ledger_columns(_read(file).columns) is not None
+
+
+def load_ledger(file, default_terms: int = 30, fallback_customer: str | None = None):
+    """Cari hesap hareketlerinden fatura listesi çıkarır.
+
+    Borç satırları alacak doğurur (fatura, devir); alacak satırları onu kapatır (havale, çek, iade).
+    Kapama, her müşteride en eski açık kalemden başlar (FIFO). Çek ya da senetle yapılan tahsilat
+    cari hesabı kapatır ama para çekin vadesinde gelir; bu satırlar ayrıca çek listesi olarak döner.
+    Dönen değer: (faturalar, notlar, çekler)."""
+    notes: list[str] = []
+    raw = _read(file)
+    cols = _ledger_columns(raw.columns)
+    if cols is None:
+        raise ValueError("Borç ve alacak sütunları bulunamadı; bu dosya cari hesap ekstresi gibi görünmüyor.")
+    debit, credit = _num(raw[cols[0]]).fillna(0), _num(raw[cols[1]]).fillna(0)
+    df = _pick(raw.drop(columns=list(cols)), ["invoice_id", "customer_name", "vkn", "issue_date", "due_date",
+                                             "description"], ["issue_date"])
+    df["issue_date"] = _date(df["issue_date"])
+    df["due_date"] = _date(df["due_date"]) if "due_date" in df else pd.NaT
+    if "customer_name" not in df:
+        if not fallback_customer:
+            raise ValueError("Ekstrede müşteri (cari) sütunu yok; tek müşterili ekstrelerde müşteri adını belirtin.")
+        df["customer_name"] = fallback_customer
+        notes.append(f"Ekstrede müşteri sütunu yoktu; tüm hareketler '{fallback_customer}' carisine yazıldı.")
+    df["customer_name"] = df["customer_name"].ffill()
+    df["debit"], df["credit"] = debit.to_numpy(), credit.to_numpy()
+    df["description"] = df["description"].fillna("") if "description" in df else ""
+    df = df.dropna(subset=["issue_date"]).sort_values("issue_date", kind="stable").reset_index(drop=True)
+
+    invoices, cheques, advance = [], [], 0.0
+    for name, rows in df.groupby("customer_name", sort=False):
+        queue = []                                     # bu müşterinin açık kalemleri, eskiden yeniye
+        for r in rows.itertuples():
+            if r.debit > 0:
+                number = str(r.invoice_id).strip() if "invoice_id" in df and pd.notna(r.invoice_id) else ""
+                item = {"invoice_id": number or f"CARI-{_key(name)[:20]}-{r.issue_date:%Y%m%d}-{r.Index}",
+                        "customer_name": name, "vkn": getattr(r, "vkn", None), "issue_date": r.issue_date,
+                        "due_date": r.due_date, "amount": r.debit, "open_amount": r.debit, "paid_date": pd.NaT}
+                invoices.append(item)
+                queue.append(item)
+            if r.credit > 0:
+                remaining = r.credit
+                while remaining > 0.005 and queue:
+                    take = min(remaining, queue[0]["open_amount"])
+                    queue[0]["open_amount"] -= take
+                    remaining -= take
+                    if queue[0]["open_amount"] <= 0.005:
+                        queue[0]["open_amount"], queue[0]["paid_date"] = 0.0, r.issue_date
+                        queue.pop(0)
+                advance += remaining
+                text = _key(r.description)
+                if re.search(r"\b(cek|senet|bono)\b", text) and pd.notna(r.due_date) and r.due_date > r.issue_date:
+                    cheques.append({"date": r.due_date, "amount": r.credit, "label": name})
+    if advance > 0.005:
+        notes.append(f"Alacak satırlarından {advance:,.2f} TL karşılık gelen açık kalem bulunmadan kaldı (avans ya da "
+                     "devir eksikliği); açık bakiyeyi kontrol edin.")
+    out = pd.DataFrame(invoices)
+    if out.empty:
+        raise ValueError("Ekstrede borç (fatura) satırı bulunamadı.")
+    cheque_frame = pd.DataFrame(cheques, columns=["date", "amount", "label"])
+    if len(cheque_frame):
+        notes.append(f"Ekstredeki {len(cheque_frame)} çek/senet tahsilatı ({cheque_frame['amount'].sum():,.0f} TL) "
+                     "vadesinde kasaya girecek şekilde çek listesine eklendi.")
+    return _finish_invoices(out, default_terms, notes), notes, cheque_frame
 
 
 CHEQUE_EXCLUDED = ("ciro", "iskonto", "faktoring", "tahsil edildi", "odendi", "karsiliksiz", "iade")

@@ -66,8 +66,14 @@ def save_upload(store: Store, name: str, uploads, parse) -> None:
 def parse_invoices(uploads, terms, rates):
     frames, notes = [], []
     xml = [_open(u) for u in uploads if u.name.lower().endswith(".xml")]
+    ledger_cheques = []
     for u in uploads:
-        if not u.name.lower().endswith(".xml"):
+        if not u.name.lower().endswith(".xml") and ingest.is_ledger(_open(u)):
+            df, n, chq = ingest.load_ledger(_open(u), terms, fallback_customer=Path(u.name).stem)
+            frames.append(df)
+            notes += n
+            ledger_cheques.append(chq)
+        elif not u.name.lower().endswith(".xml"):
             df, n = ingest.load_invoices(_open(u), terms, json.loads(get_store().get("map_invoices", "{}")), rates)
             frames.append(df)
             notes += n
@@ -78,6 +84,9 @@ def parse_invoices(uploads, terms, rates):
     frames = [f for f in frames if len(f)]
     if not frames:
         raise ValueError("Yüklenen dosyalardan okunabilen fatura çıkmadı.")
+    found = [c for c in ledger_cheques if len(c)]
+    if found and get_store().load("cheques") is None:
+        get_store().save("cheques", pd.concat(found, ignore_index=True))
     return pd.concat(frames, ignore_index=True).drop_duplicates("invoice_id"), notes
 
 
@@ -158,7 +167,7 @@ with st.sidebar:
             store.set(key, value)
         st.caption("Yüklenen her dosya, o türdeki kayıtlı verinin yerine geçer ve bu bilgisayarda saklanır.")
         save_upload(store, "invoices",
-                    st.file_uploader("Kesilen faturalar (CSV / Excel / e-Fatura XML)", ["csv", "xlsx", "xls", "xml"],
+                    st.file_uploader("Kesilen faturalar ya da cari hesap ekstresi (CSV / Excel / e-Fatura XML)", ["csv", "xlsx", "xls", "xml"],
                                      accept_multiple_files=True),
                     lambda ups: parse_invoices(ups, int(terms), ingest.parse_rates(rates_text)))
         save_upload(store, "payments", st.file_uploader("Banka ekstresi (isteğe bağlı)", ["csv", "xlsx", "xls"]),
@@ -231,10 +240,12 @@ if not own:
 elif store.load("invoices") is None:
     st.info("Başlamak için soldan fatura listenizi (CSV / Excel) ya da e-fatura XML dosyalarınızı yükleyin. "
             "Fatura listesinde en az şu sütunlar olmalı: Fatura No, Cari Unvan, Fatura Tarihi, Tutar. "
-            "Vade Tarihi, VKN, Ödeme Tarihi ve Kalan sütunları varsa kullanılır.")
+            "Vade Tarihi, VKN, Ödeme Tarihi ve Kalan sütunları varsa kullanılır. Muhasebe programınızın cari hesap "
+            "ekstresi ya da muavin defteri (Borç / Alacak sütunlarıyla) de doğrudan yüklenebilir.")
     if SAMPLES.exists():
         st.write("Biçimi görmek için örnek dosyalar:")
-        for col, name in zip(st.columns(5), ["faturalar.csv", "ekstre.csv", "giderler.csv", "odenecekler.csv", "cekler.csv"]):
+        for col, name in zip(st.columns(6), ["faturalar.csv", "ekstre.csv", "cari_ekstre.csv", "giderler.csv",
+                                             "odenecekler.csv", "cekler.csv"]):
             col.download_button(name, (SAMPLES / name).read_bytes(), name)
         st.caption((SAMPLES / "OKU.txt").read_text(encoding="utf-8"))
     st.stop()

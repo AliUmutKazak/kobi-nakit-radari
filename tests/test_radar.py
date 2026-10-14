@@ -488,3 +488,50 @@ def test_dashboard_script_compiles():
     from pathlib import Path
 
     ast.parse((Path(__file__).parents[1] / "app.py").read_text(encoding="utf-8"))
+
+
+def test_ledger_import_mikro_style_with_cheque(tmp_path):
+    from radar import ingest
+
+    p = tmp_path / "mikro_foy.csv"
+    p.write_text(
+        "Evrak Tarihi;Evrak No;Evrak Tipi;Cari Kodu;Cari İsmi;Vade Tarihi;Açıklama;Borç;Alacak;Bakiye\n"
+        "02.08.2026;MKR001;Satış Faturası;120.01;Ege Plastik A.Ş.;01.09.2026;Fatura;318.000,00;0;318.000,00\n"
+        "15.08.2026;MKR002;Satış Faturası;120.01;Ege Plastik A.Ş.;14.09.2026;Fatura;100.000,00;0;418.000,00\n"
+        "06.09.2026;CEK082;Çek Giriş Bordrosu;120.01;Ege Plastik A.Ş.;15.12.2026;Çek tahsilatı;0;200.000,00;218.000,00\n"
+        "10.09.2026;EFT1;Havale;120.01;Ege Plastik A.Ş.;;Gelen EFT;0;150.000,00;68.000,00\n"
+        "11.09.2026;MKR003;Satış Faturası;120.02;Bursa Oto Ltd.;;Fatura;50.000,00;0;50.000,00\n",
+        encoding="utf-8")
+    assert ingest.is_ledger(p)
+    inv, notes, chq = ingest.load_ledger(p, default_terms=30)
+    by = inv.set_index("invoice_id")
+    # 200.000 çek + 150.000 havale en eski faturadan başlayarak kapatır: MKR001 kapanır, MKR002'de 68.000 kalır.
+    assert by.at["MKR001", "open_amount"] == 0 and by.at["MKR001", "paid_date"] == pd.Timestamp("2026-09-10")
+    assert by.at["MKR002", "open_amount"] == 68000 and by.at["MKR003", "open_amount"] == 50000
+    assert by.at["MKR003", "due_date"] == pd.Timestamp("2026-10-11")              # vade yok: +30 gün
+    assert list(chq["amount"]) == [200000] and chq.at[0, "date"] == pd.Timestamp("2026-12-15")
+    assert any("çek" in n for n in notes)
+
+
+def test_ledger_single_customer_bizimhesap_style(tmp_path):
+    from radar import ingest
+
+    p = tmp_path / "Delta Elektrik.csv"
+    p.write_text("Tarih;Belge Numarası;Vade Tarihi;Açıklama (İşlem Türü);Borç (TL);Alacak (TL);Bakiye (TL);B/A\n"
+                 "01.10.2026;BZH512;31.10.2026;Mal Satış Faturası;96.000,00;0,00;96.000,00;B\n"
+                 "09.10.2026;EFT-948;09.10.2026;Banka Havale Tahsilatı;0,00;146.000,00;-50.000,00;A\n", encoding="utf-8")
+    with pytest.raises(ValueError, match="müşteri"):
+        ingest.load_ledger(p)
+    inv, notes, chq = ingest.load_ledger(p, fallback_customer="Delta Elektrik")
+    assert inv.at[0, "open_amount"] == 0 and inv.at[0, "customer_name"] == "Delta Elektrik" and chq.empty
+    assert any("50,000.00" in n for n in notes)                                    # fazla ödeme bildirildi
+
+
+def test_sample_ledger_reproduces_open_receivables(tmp_path):
+    from radar import ingest
+    from radar.synthetic import export_samples
+
+    export_samples(tmp_path, seed=3, as_of=AS_OF)
+    inv, notes, chq = ingest.load_ledger(tmp_path / "cari_ekstre.csv")
+    truth = observe(generate(seed=3, as_of=AS_OF), AS_OF)
+    assert len(inv) == len(truth) and inv["open_amount"].sum() == pytest.approx(truth["open_amount"].sum(), rel=1e-6)
