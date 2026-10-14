@@ -14,9 +14,11 @@ Tahminler müşterilerinizin geçmişte nasıl ödediğine dayanır. Geçmiş ne
 
 1. **Python'u kurun.** python.org adresinden Python 3.13'ü indirin. Kurulumun ilk ekranında **"Add python.exe to PATH"** kutusunu işaretleyin.
 2. **Paneli başlatın.** Proje klasöründeki **`KOBI_Radar_Baslat.bat`** dosyasına çift tıklayın. İlk açılışta gerekli programlar internetten kurulur; birkaç dakika sürer. Sonraki açılışlar birkaç saniyedir.
-3. Panel tarayıcınızda kendiliğinden açılır (adres: http://localhost:8501). Açılmazsa bu adresi tarayıcıya yazın.
+3. Panel hazır olunca tarayıcınızda kendiliğinden açılır (adres: http://127.0.0.1:8501).
 
 Paneli kapatmak için siyah pencereyi kapatın. Panel yalnızca sizin bilgisayarınızdan açılabilir; ağdaki başka bir cihaz bağlanamaz.
+
+Panel açıkken dosyaya yeniden tıklarsanız ikinci bir panel başlatılmaz, açık olan tarayıcıda gösterilir. Tarayıcı kendiliğinden açılmazsa siyah pencerede yazan adresi (http://127.0.0.1:8501) tarayıcıya yazın. Siyah pencere kapanmadan önce bir hata mesajı gösterirse o pencerenin ekran görüntüsünü saklayın.
 
 ## 2. Önce demo ile tanışın
 

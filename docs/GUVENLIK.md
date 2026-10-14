@@ -12,6 +12,7 @@ Tarih: 14 Ekim 2026. Kapsam: panelin bu bilgisayarda tek kullanıcıyla çalış
 | 4 | e-Fatura XML'i Python'un standart ayrıştırıcısıyla okunuyordu; kötü niyetli bir XML varlık genişletmesiyle belleği tüketebilir. | Test: iç içe varlık içeren XML. | `defusedxml`; böyle bir dosya reddediliyor. |
 | 5 | E-posta konusuna satır sonu girerse ek başlık (ör. gizli alıcı) eklenebilirdi. | Test: konuya "\nBcc: ..." eklendi. | Başlıklar tek satıra indiriliyor; test gizli alıcı oluşmadığını doğruluyor. |
 | 6 | Veritabanı tablo adı kontrolü `assert` ile yapılıyordu; Python iyileştirme kipinde (-O) `assert` çalışmaz. | Kod okuma. | Açık kontrol ve hata. |
+| 8 | Başlatıcı, Streamlit'in ilk çalıştırmada siyah pencerede sorduğu e-posta sorusuna takılıyordu: yeni bir bilgisayarda panel hiç açılmıyordu. | Kimlik dosyası geçici olarak kaldırılıp eski ayarla başlatıldı: 25 saniyede açılmadı, süreç soruda bekledi. | Sunucu soru sormayan kipte başlıyor; tarayıcıyı başlatıcı, sunucu hazır olunca kendisi açıyor. Aynı koşulda 8 saniyede açıldı. Panel açıkken ikinci tıklama yeni sunucu başlatmıyor, açık olanı gösteriyor. |
 | 7 | Paket sürümleri sabit değildi; her kurulum farklı sürüm çekebilirdi. | `requirements.txt`. | Sürümler sabitlendi. |
 
 ## Gözden geçirilip sorun görülmeyenler

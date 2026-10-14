@@ -4,10 +4,13 @@
 address = "127.0.0.1"
 port = 8501
 maxUploadSize = 50
+# Başlarken terminalde soru sormaz (ilk çalıştırmadaki e-posta sorusu paneli bekletiyordu);
+# tarayıcıyı başlatıcı açar.
+headless = true
 enableXsrfProtection = true
 
 [browser]
-serverAddress = "localhost"
+serverAddress = "127.0.0.1"
 # Streamlit'e kullanım istatistiği gönderilmez.
 gatherUsageStats = false
 
