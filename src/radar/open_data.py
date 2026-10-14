@@ -20,7 +20,7 @@ import pandas as pd
 
 from .features import build_features
 from .model import QS, fit_model, training_frame
-from .pipeline import backtest_own, censor
+from .pipeline import backtest_collections, censor
 
 CANONICAL = ["invoice_id", "customer_id", "customer_name", "vkn", "issue_date", "due_date", "amount", "paid_date",
              "open_amount"]
@@ -45,10 +45,16 @@ def load_ibm(path) -> pd.DataFrame:
     return _finish(df)
 
 
-def load_payment_date(path, max_per_customer: int | None = 50) -> pd.DataFrame:
+def load_payment_date(path, max_per_customer: int | None = None) -> pd.DataFrame:
     """Payment Date Dataset: cust_number, invoice_id/doc_id, posting_date, due_in_date (YYYYMMDD),
-    total_open_amount, clear_date. Makaledeki gibi müşteri başına en fazla `max_per_customer` fatura."""
+    total_open_amount, clear_date. İstenirse makaledeki gibi müşteri başına en fazla `max_per_customer`
+    fatura alınır; bu sınır büyük müşterilerin eski faturalarını attığı için kasa düzeyindeki testi
+    bozar, varsayılan olarak kapalıdır."""
     raw = pd.read_csv(path, dtype=str)
+    # isOpen=1 satırları ödenmemiş fatura değil: veri setinin yarışma için etiketi gizlenmiş test bölümü.
+    # "Ödenmedi" sayılırsa tahsilat olduğundan düşük görünür; değerlendirmeden çıkarılır.
+    if "isOpen" in raw:
+        raw = raw[raw["isOpen"].astype(str).str.strip().isin(["0", "0.0"])]
     ymd = lambda c: pd.to_datetime(raw[c].str.replace(r"\.0$", "", regex=True), format="%Y%m%d", errors="coerce")
     invoice = raw["invoice_id"] if "invoice_id" in raw else raw["doc_id"]
     df = pd.DataFrame({"invoice_id": invoice.fillna(raw.get("doc_id")).str.replace(r"\.0$", "", regex=True),
@@ -101,13 +107,36 @@ def delay_study(obs: pd.DataFrame, origins: int = 6, step: int = 60, mature_days
     return pd.DataFrame(rows)
 
 
+def cash_study(obs: pd.DataFrame, end, horizons=(14, 30), origins: int = 8, step: int = 21,
+               n_sims: int = 500) -> pd.DataFrame:
+    """Kasa düzeyi: o gün açık faturalardan önümüzdeki `h` günde tahsil edilecek tutar.
+
+    Sapma, tüm tahmin tarihlerindeki mutlak hataların toplamının gerçekleşen tahsilat toplamına oranıdır;
+    tek tek tarih yüzdeleri, tahsilatın küçük olduğu tarihlerde anlamsız büyür."""
+    full = obs.assign(true_paid_date=obs["paid_date"])
+    rows = []
+    for h in horizons:
+        bt = backtest_collections(full, end + pd.Timedelta(days=h), horizon=h, origins=origins, step=step,
+                                  n_sims=n_sims)
+        total = bt["actual"].sum()
+        rows.append({"ufuk_gun": h, "tahmin_tarihi_sayisi": len(bt),
+                     "sapma_model_%": (bt["p50"] - bt["actual"]).abs().sum() / total * 100,
+                     "sapma_medyan_%": (bt["naive_median"] - bt["actual"]).abs().sum() / total * 100,
+                     "sapma_vade_%": (bt["naive_due"] - bt["actual"]).abs().sum() / total * 100,
+                     "bant_ici": bt["inside"].mean()})
+    return pd.DataFrame(rows)
+
+
 def run(dataset: str, path) -> dict:
-    """Bir açık veri setinde fatura ve kasa (tahsilat) düzeyinde tam değerlendirme."""
+    """Bir açık veri setinde fatura ve kasa düzeyinde tam değerlendirme.
+
+    Tahmin tarihleri, sonucu tam bilinen dönemle sınırlıdır: son fatura tarihinden sonraki
+    tahsilatlar ancak o tarihe kadar kesilmiş faturalar için bilinir."""
     obs = load_ibm(path) if dataset == "ibm" else load_payment_date(path)
-    end = obs[["issue_date", "paid_date"]].max().max()
+    last_issue = obs["issue_date"].max()
     return {"veri": dataset, "fatura": len(obs), "müşteri": obs["customer_id"].nunique(),
-            "aralık": (obs["issue_date"].min().date(), end.date()),
-            "gecikme": delay_study(obs), "tahsilat": backtest_own(obs, end, origins=6)}
+            "aralık": (obs["issue_date"].min().date(), last_issue.date()),
+            "gecikme": delay_study(obs), "tahsilat": cash_study(obs, last_issue)}
 
 
 if __name__ == "__main__":
@@ -119,9 +148,10 @@ if __name__ == "__main__":
             print(f"{file} yok; atlanıyor.")
             continue
         r = run(name, file)
+        g = r["gecikme"]
         print(f"\n=== {r['veri']}: {r['fatura']} fatura, {r['müşteri']} müşteri, {r['aralık'][0]} – {r['aralık'][1]}")
-        print("Fatura düzeyinde gecikme (gün; düşük iyi):")
-        print(r["gecikme"].round(2).to_string(index=False))
-        if r["tahsilat"] is not None:
-            print("Kasa düzeyinde 90 günlük tahsilat (sapma %):")
-            print(r["tahsilat"][["origin", "err_p50_pct", "err_due_pct", "err_median_pct", "inside"]].round(1).to_string(index=False))
+        print("Fatura düzeyinde gecikme, ortalama mutlak hata (gün; düşük iyi):",
+              {c[4:]: round(g[c].mean(), 2) for c in g.columns if c.startswith("mae_")},
+              "| P10-P90 kapsama:", round(g["kapsama_p10_p90"].mean(), 2))
+        print("Kasa düzeyinde tahsilat sapması:")
+        print(r["tahsilat"].round(2).to_string(index=False))

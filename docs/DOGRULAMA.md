@@ -2,6 +2,49 @@
 
 Tarih: 14 Ekim 2026. Yeniden üretmek için: `python run_validation.py 24` (yaklaşık 3 dakika).
 
+## Gerçek açık verilerle doğrulama (14 Ekim 2026)
+
+Sentetik çalışma (aşağıda) kurgunun kendi içinde tutarlı olduğunu gösterir; gerçek dünyada işe yarayıp yaramadığını göstermez. Bunun ilk kanıtı için Małkus, Bobek ve Nalepa'nın (arXiv:2511.03631) KOBİ çalışmasında da kullanılan iki herkese açık gerçek veri seti kullanıldı. Yeniden üretmek için: dosyaları `data/acik/` klasörüne koyup `python -m radar.open_data` (src yolu tanımlıyken).
+
+| Veri seti | Fatura | Müşteri | Dönem |
+|---|---|---|---|
+| IBM Late Payment Histories (Kaggle: hhenry) | 2.466 | 100 | 01.2012 – 12.2013 |
+| Payment Date Dataset (Kaggle: rajattomar132) | 39.158 | 1.056 | 12.2018 – 02.2020 |
+
+Yöntem: geçmiş tarihlere dönülür, o gün bilinen veriyle tahmin yapılır, sonra gerçekleşenle karşılaştırılır (sızıntı yok). Fatura düzeyinde: vadesi henüz gelmemiş faturaların gecikmesi. Kasa düzeyinde: o gün açık faturalardan önümüzdeki 14 ve 30 günde tahsil edilen tutar.
+
+**Fatura düzeyinde gecikme, ortalama mutlak hata (gün; düşük iyi):**
+
+| Veri | Model | Müşteri medyanı | Son 4 fatura ort. | Son 2 fatura ort. | Vadesinde öder | Model P10–P90 kapsama (hedef %80) |
+|---|---|---|---|---|---|---|
+| IBM | 6,27 | **6,03** | 6,53 | 7,13 | 9,22 | %86 |
+| Payment Date | 3,53 | **3,23** | 4,54 | 4,61 | 4,04 | %78 |
+
+**Kasa düzeyinde tahsilat sapması (mutlak hata toplamı / gerçekleşen tahsilat; düşük iyi):**
+
+| Veri | Ufuk | Model | Müşteri medyanı | Vadesinde öder | Tahsilatın bant içinde kaldığı tarih (8 tarihten) |
+|---|---|---|---|---|---|
+| IBM | 14 gün | **%9,6** | %17,9 | %19,3 | %100 |
+| IBM | 30 gün | %4,6 | **%3,8** | %10,9 | %75 |
+| Payment Date | 14 gün | %2,7 | **%2,6** | %8,5 | %75 |
+| Payment Date | 30 gün | %1,8 | **%1,4** | %2,1 | %62 |
+
+**Sonuç.** Gerçek veride model, "müşteri her zamanki kadar geç öder" basit yöntemiyle aşağı yukarı başa baş; bir durumda belirgin şekilde önde (IBM, 14 gün), çoğunda biraz geride. KOBİ'lerin çoğunun fiilen kullandığı "vadesinde ödenir" varsayımını ise her durumda yeniyor. Sentetik çalışmadaki büyük üstünlük (aşağıda) gerçek veride tekrarlanmadı; "akıllı tahmin" iddiası bu sonuçlarla desteklenmiyor. Fatura gecikmesi için tahmin aralığı gerçek veride de yaklaşık doğru (%78–86); kasa düzeyindeki bant Payment Date'te gerektiğinden dar (%62–75).
+
+**Veri tuzakları ve alınan önlemler.**
+- Payment Date'teki 10.000 "açık" fatura gerçekte ödenmemiş fatura değil; veri setinin, etiketi bilerek gizlenmiş test bölümü (27.02.2020 sonrası). Çıkarıldı; tahmin tarihleri etiketin tam olduğu döneme sınırlandı. Bu yapılmadan ilk ölçümde model %8,4, medyan %2,9 çıkmıştı.
+- Bu iki veri setinde hiç ödenmeyen fatura yok (etiketli faturaların hepsi ödenmiş). Gerçek KOBİ alacaklarında var; bu durum, hiç ödenmeme olasılığını hesaba katan modeli bu testte cezalandırır.
+- Makaledeki "müşteri başına en fazla 50 fatura" sınırı büyük müşterilerin eski faturalarını attığı için kasa testini bozuyor; kullanılmadı.
+
+**Bu veride denenip reddedilen iki düzeltme:**
+
+| Deneme | Fikir | Sonuç |
+|---|---|---|
+| Taban tahminden başlama | Model, müşterinin ham medyanından başlayıp yalnızca düzeltmeyi öğrenir (gradyan artırmada başlangıç değeri) | Fatura hatası IBM 6,19 → 6,26, Payment Date 3,43 → 3,51; kasa sapması IBM 14 gün %10,8 → %13,5. Reddedildi. |
+| Şirket bazında yöntem seçimi | Geçmiş tarihlerde model ile basit yöntem yarıştırılır, kazanan kullanılır | Kasa sapması Payment Date 14 gün %2,7 → %5,6, bant içi %75 → %62; IBM 14 gün %9,9 → %11,8. Basit yöntemin olasılıklı hâli bütün müşterilere aynı genişlikte belirsizlik verdiği için kasa simülasyonunda daha kötü. Reddedildi. |
+
+**Ürüne yansıması.** Panel, kullanıcının kendi verisinde modeli bu basit yöntemlere karşı sınıyor ve geride kalırsa söylüyor ("Tahmin doğruluğu" sekmesi); bu, gerçek veride en önemli güvence. Ürünün değeri, tek fatura isabetinden çok giderler, borçlar, çekler ve vergi takvimiyle birlikte kasanın aralığını ve eksiye düşme riskini göstermesinde ve "vadesinde ödenir" varsayımının yarattığı iyimserliği düzeltmesinde aranmalı.
+
 ## Neyi ölçüyor, neyi ölçmüyor
 
 Gerçek işletme verisi gelene kadar tahminin sınanabileceği tek yer, gerçeği bilinen sentetik şirketlerdir. Her şirket için veri tahmin tarihinden 90 gün sonrasına kadar üretilir; tahmin yalnızca o güne kadarki bilgiyle yapılır ve sonra gerçekleşen kasa yoluyla karşılaştırılır. Tahmin tarihinden sonra kesilen faturalar da gerçekleşen yola dahildir.
