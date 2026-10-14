@@ -144,6 +144,10 @@ def forecast(obs: pd.DataFrame, as_of, opening: float, outflows: pd.DataFrame, h
     return {"as_of": as_of, "model": model, "simple_model": isinstance(model, FallbackModel), "n_train": len(X),
             "sim": sim, "ranked": ranked, "gap_day": gap_day, "metrics": actions.metrics(obs, as_of),
             "opening": opening, "outflows": outflows, "obs": obs, "ctx": ctx,
+            "info": {"n_invoices": int(len(obs)), "n_train": int(len(X)), "n_customers": int(obs["customer_id"].nunique()),
+                     "history_from": obs["issue_date"].min(), "simple_model": isinstance(model, FallbackModel),
+                     "n_calibration": int(calib["fresh"]["n"] + calib["overdue"]["n"]),
+                     "rho_market": calib["rho_market"], "rho_customer": calib["rho_customer"]},
             "disputed_total": float(obs.loc[is_open & obs["disputed"], "open_amount"].sum())}
 
 
@@ -196,6 +200,37 @@ def gap_summary(res: dict, max_k: int = 40, collect_in_days: int = 7) -> dict:
     return out | {"k": lo, "amount": float(todo["open_amount"].head(lo).sum())}
 
 
+def weekly_table(res: dict, weeks: int = 13) -> pd.DataFrame:
+    """13 haftalık haftalık plan. Bilinen kalemler (giderler, borçlar) ile tahmine dayananlar
+    (açık faturalardan ve henüz kesilmemiş satışlardan beklenen tahsilat) ayrı sütunlardadır."""
+    sim, ctx, as_of = res["sim"], res["ctx"], res["as_of"]
+    inv = ctx["sim_inv"]
+    amount = inv["open_amount"].to_numpy(float)
+    projected = inv["projected"].to_numpy(bool)
+    out = res["outflows"]
+    out_off = (pd.to_datetime(out["date"]) - as_of).dt.days.to_numpy() if len(out) else np.array([])
+    out_amt = out["amount"].to_numpy(float) if len(out) else np.array([])
+    cheques = ctx.get("cheques")
+    rows = []
+    for w in range(weeks):
+        lo, hi = 7 * w + 1, min(7 * (w + 1), len(sim.p50) - 1)
+        if lo > hi:
+            break
+        in_week = ((sim.pay_day >= lo) & (sim.pay_day <= hi)).mean(axis=1) * amount
+        chq = 0.0
+        if cheques is not None and len(cheques):
+            c_off = (pd.to_datetime(cheques["date"]) - as_of).dt.days.to_numpy()
+            chq = float(cheques["amount"].to_numpy(float)[(c_off >= lo) & (c_off <= hi)].sum() * (1 - 0.034))
+        rows.append({"Hafta": f"{(as_of + pd.Timedelta(days=lo)):%d.%m} – {(as_of + pd.Timedelta(days=hi)):%d.%m}",
+                     "Açık faturalardan beklenen (TL)": float(in_week[~projected].sum()) + chq,
+                     "Yeni satışlardan beklenen (TL)": float(in_week[projected].sum()),
+                     "Bilinen çıkışlar (TL)": float(out_amt[(out_off >= lo) & (out_off <= hi)].sum()),
+                     "Hafta sonu kasa, beklenen (TL)": float(sim.p50[hi]),
+                     "Hafta sonu kasa, kötümser (TL)": float(sim.p10[hi]),
+                     "Eksiye düşme olasılığı": float(sim.prob_negative[lo:hi + 1].max())})
+    return pd.DataFrame(rows)
+
+
 def backtest_model(full: pd.DataFrame, as_of, holdout_days: int = 240) -> dict:
     """Zaman bazlı ayrım: kesim tarihine kadar eğit, sonrasında kesilen olgun faturalarda ölç."""
     as_of = pd.Timestamp(as_of)
@@ -219,11 +254,23 @@ def backtest_collections(full: pd.DataFrame, as_of, horizon: int = 90, origins: 
         res = forecast(obs, t, 0.0, pd.DataFrame({"date": [], "amount": []}), horizon, n_sims,
                        include_projected=False, seed=k)
         was_open = (full["issue_date"] <= t) & ~(full["true_paid_date"] <= t)
-        got = was_open & (full["true_paid_date"] <= t + pd.Timedelta(days=horizon))
+        end = t + pd.Timedelta(days=horizon)
+        got = was_open & (full["true_paid_date"] <= end)
         actual = full.loc[got, "amount"].sum()
         lo, mid, hi = np.percentile(res["sim"].collections, [10, 50, 90])
+        # Basit yöntemler: vadesi ufuk içinde (ya da geçmiş) her fatura ödenir / müşteri medyanı kadar geç ödenir.
+        book = full[was_open]
+        paid = obs.dropna(subset=["paid_date"])
+        med = (paid["paid_date"] - paid["due_date"]).dt.days.groupby(paid["customer_id"]).median()
+        overall = float((paid["paid_date"] - paid["due_date"]).dt.days.median()) if len(paid) else 0.0
+        delay = pd.to_timedelta(book["customer_id"].map(med).fillna(overall).round(), unit="D")
+        naive_due = book.loc[book["due_date"] <= end, "amount"].sum()
+        naive_median = book.loc[book["due_date"] + delay <= end, "amount"].sum()
         rows.append({"origin": t.date(), "actual": actual, "p10": lo, "p50": mid, "p90": hi,
-                     "inside": lo <= actual <= hi, "err_p50_pct": (mid - actual) / actual * 100})
+                     "inside": lo <= actual <= hi, "err_p50_pct": (mid - actual) / actual * 100,
+                     "naive_due": naive_due, "naive_median": naive_median,
+                     "err_due_pct": (naive_due - actual) / actual * 100,
+                     "err_median_pct": (naive_median - actual) / actual * 100})
     return pd.DataFrame(rows)
 
 

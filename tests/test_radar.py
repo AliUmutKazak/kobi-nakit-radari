@@ -668,3 +668,50 @@ def test_dashboard_renders_demo_and_own_data_without_errors(tmp_path, monkeypatc
     assert not any("en son hareket" in e.value for e in at.error)
     at.sidebar.date_input[0].set_value(datetime.date(2026, 10, 20)).run()
     assert any("en son hareket" in e.value for e in at.error)             # 19 gün eski veri uyarısı
+
+
+def test_upload_undo_and_backup(tmp_path):
+    import sqlite3
+
+    from radar.store import Store
+
+    store = Store(tmp_path / "s.db")
+    store.save("invoices", pd.DataFrame({"invoice_id": ["A"], "amount": [1.0]}))
+    assert not store.can_undo("invoices")
+    store.save("invoices", pd.DataFrame({"invoice_id": ["B", "C"], "amount": [2.0, 3.0]}))
+    assert store.can_undo("invoices") and list(store.load("invoices")["invoice_id"]) == ["B", "C"]
+    store.undo("invoices")
+    assert list(store.load("invoices")["invoice_id"]) == ["A"] and not store.can_undo("invoices")
+    copy = tmp_path / "yedek.db"
+    copy.write_bytes(store.backup_bytes())
+    assert sqlite3.connect(copy).execute("SELECT invoice_id FROM invoices").fetchall() == [("A",)]
+
+
+def test_weekly_plan_adds_up():
+    res = pipeline.demo(seed=7, as_of=AS_OF, n_sims=300)
+    week = pipeline.weekly_table(res)
+    assert len(week) == 13 and week["Hafta"].iloc[0].startswith("02.10")
+    out = res["outflows"]
+    off = (out["date"] - pd.Timestamp(AS_OF)).dt.days
+    assert week["Bilinen çıkışlar (TL)"].sum() == pytest.approx(out.loc[(off >= 1) & (off <= 91), "amount"].sum())
+    assert (week["Hafta sonu kasa, kötümser (TL)"] <= week["Hafta sonu kasa, beklenen (TL)"]).all()
+    assert week["Eksiye düşme olasılığı"].between(0, 1).all()
+
+
+def test_message_outcomes_and_backtest_baselines(full):
+    from radar.actions import message_outcomes
+
+    obs = observe(full, AS_OF)
+    paid = obs.dropna(subset=["paid_date"]).iloc[-1]
+    open_ = obs[obs["paid_date"].isna()].iloc[0]
+    events = pd.DataFrame({"ts": [paid["paid_date"] - pd.Timedelta(days=5), pd.Timestamp(AS_OF) - pd.Timedelta(days=30)],
+                           "invoice_id": [paid["invoice_id"], open_["invoice_id"]], "kind": ["message", "message"],
+                           "value": ["", ""]})
+    out = message_outcomes(events, obs, AS_OF).set_index("Fatura")
+    assert out.at[paid["invoice_id"], "Mesajdan sonra (gün)"] == 5
+    assert out.at[paid["invoice_id"], "Durum"] == "14 gün içinde ödendi"
+    assert out.at[open_["invoice_id"], "Durum"] == "14 günden uzun süredir açık"
+
+    bt = pipeline.backtest_own(obs, AS_OF, origins=2)
+    assert {"naive_due", "naive_median", "err_due_pct", "err_median_pct"} <= set(bt.columns)
+    assert bt["err_p50_pct"].abs().mean() < bt["err_due_pct"].abs().mean()

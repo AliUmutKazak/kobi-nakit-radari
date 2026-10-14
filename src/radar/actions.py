@@ -45,6 +45,27 @@ def metrics(obs: pd.DataFrame, as_of) -> dict:
     }
 
 
+def message_outcomes(events: pd.DataFrame, obs: pd.DataFrame, as_of, window: int = 14) -> pd.DataFrame:
+    """Kayda geçirilen her mesajdan sonra fatura ödendi mi, kaç günde? Kontrol grubu olmadığı için
+    bu bir etki ölçümü değil, takip listesidir: mesaj olmasa da ödenecek olanlar da burada görünür."""
+    msgs = events[events["kind"] == "message"].drop_duplicates("invoice_id", keep="last")
+    if msgs.empty:
+        return pd.DataFrame()
+    inv = obs.drop_duplicates("invoice_id").set_index("invoice_id")
+    msgs = msgs[msgs["invoice_id"].isin(inv.index)]
+    paid = inv.loc[msgs["invoice_id"], "paid_date"].to_numpy()
+    sent = msgs["ts"].dt.normalize().to_numpy()
+    days = (pd.to_datetime(paid) - pd.to_datetime(sent)).days
+    return pd.DataFrame({
+        "Fatura": msgs["invoice_id"].to_numpy(), "Müşteri": inv.loc[msgs["invoice_id"], "customer_name"].to_numpy(),
+        "Mesaj tarihi": pd.to_datetime(sent), "Ödeme tarihi": pd.to_datetime(paid),
+        "Mesajdan sonra (gün)": days,
+        "Durum": np.where(pd.isna(paid), np.where((pd.Timestamp(as_of) - pd.to_datetime(sent)).days > window,
+                                                  f"{window} günden uzun süredir açık", "Bekleniyor"),
+                          np.where(days <= window, f"{window} gün içinde ödendi", "Geç ödendi")),
+    })
+
+
 def concentration(obs: pd.DataFrame, top: int = 3) -> dict:
     """Açık alacağın müşterilere dağılımı. Herfindahl-Hirschman endeksi (paylar karesi toplamı) ve
     "eşdeğer müşteri sayısı" (1 / HHI): alacak, eşit büyüklükte kaç müşteriye yayılmış gibi davranıyor."""

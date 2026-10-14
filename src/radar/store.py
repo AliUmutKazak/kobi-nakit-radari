@@ -65,10 +65,40 @@ class Store:
         if name not in TABLES:          # tablo adı SQL'e yazıldığı için yalnızca bilinen adlar
             raise ValueError(f"Bilinmeyen tablo: {name}")
 
+    def _exists(self, table: str) -> bool:
+        return bool(self.db.execute("SELECT 1 FROM sqlite_master WHERE name = ?", (table,)).fetchone())
+
     def save(self, name: str, df: pd.DataFrame) -> None:
+        """Yeni yükleme eskisinin yerine geçer; eskisi bir önceki sürüm olarak saklanır (geri alınabilir)."""
         self._check(name)
+        if self._exists(name):
+            self.db.execute(f"DROP TABLE IF EXISTS {name}__onceki")
+            self.db.execute(f"ALTER TABLE {name} RENAME TO {name}__onceki")
         df.to_sql(name, self.db, if_exists="replace", index=False)
         self._bump()
+
+    def can_undo(self, name: str) -> bool:
+        self._check(name)
+        return self._exists(f"{name}__onceki")
+
+    def undo(self, name: str) -> None:
+        """Son yüklemeyi geri alır: bir önceki sürüm yeniden geçerli olur."""
+        self._check(name)
+        if not self.can_undo(name):
+            raise ValueError("Geri alınacak önceki yükleme yok.")
+        self.db.execute(f"DROP TABLE IF EXISTS {name}")
+        self.db.execute(f"ALTER TABLE {name}__onceki RENAME TO {name}")
+        self.db.commit()
+        self._bump()
+
+    def backup_bytes(self) -> bytes:
+        """Veritabanının tutarlı bir kopyası (kullanıcının indirip saklaması için)."""
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            target = sqlite3.connect(Path(tmp) / "yedek.db")
+            self.db.backup(target)
+            target.close()
+            return (Path(tmp) / "yedek.db").read_bytes()
 
     def load(self, name: str) -> pd.DataFrame | None:
         self._check(name)
@@ -88,6 +118,7 @@ class Store:
         """Yüklenen tabloları siler; olay günlüğü ve ayarlar kalır."""
         for name in TABLES:
             self.db.execute(f"DROP TABLE IF EXISTS {name}")
+            self.db.execute(f"DROP TABLE IF EXISTS {name}__onceki")
         self._bump()
 
     def add_event(self, invoice_id: str, kind: str, value: str = "", ts=None) -> None:

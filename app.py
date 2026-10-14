@@ -19,7 +19,7 @@ from radar.store import Store  # noqa: E402
 ROOT = Path(__file__).parent
 SAMPLES = ROOT / "ornekler"
 KEEP = ("sim", "ranked", "metrics", "opening", "gap_day", "simple_model", "n_train", "disputed_total", "obs", "as_of",
-        "ctx", "outflows")
+        "ctx", "outflows", "info")
 MAPPABLE = {"invoices": ("Fatura dosyası", ingest.INVOICE_FIELDS, ingest.INVOICE_REQUIRED),
             "payments": ("Banka ekstresi", ingest.PAYMENT_FIELDS, ingest.PAYMENT_REQUIRED)}
 STAGES = {"hatirlatma": "Hatırlatma", "mutabakat": "Mutabakat", "resmi": "Resmî bildirim"}
@@ -235,6 +235,18 @@ with st.sidebar:
                                        placeholder="USD=41,50; EUR=48,20",
                                        help="Dövizli faturalar bu kurla TL'ye çevrilir. Kur girilmeyen döviz tahmine katılmaz.")
             st.caption(f"Verilerin saklandığı dosya: {store.path}")
+            undoable = [n for n in ("invoices", "payments", "outflows", "payables", "cheques") if store.can_undo(n)]
+            if undoable:
+                names = {"invoices": "Satışlar", "payments": "Banka ekstresi", "outflows": "Planlı giderler",
+                         "payables": "Ödenecek faturalar", "cheques": "Çek / senet"}
+                which = st.selectbox("Son yüklemeyi geri al", undoable, format_func=names.get)
+                if st.button("Önceki dosyaya dön"):
+                    store.undo(which)
+                    store.set(f"hash_{which}", "")
+                    st.rerun()
+            st.download_button("Verilerimin yedeğini indir", store.backup_bytes(),
+                               f"kobi_radar_yedek_{pd.Timestamp.now():%Y%m%d}.db",
+                               help="Tüm yüklenen tablolar, ayarlar ve kayıtlar tek dosyada. Güvenli bir yerde saklayın.")
             st.write("**Kayıtlı veriyi sil.** Yüklenen tablolar silinir; itiraz, ödeme sözü ve mesaj kayıtları korunur.")
             sure = st.checkbox("Eminim")
             if st.button("Tabloları sil", disabled=not sure):
@@ -369,6 +381,11 @@ with tab_cash:
     st.plotly_chart(fig, width="stretch")
     st.caption("Mavi bant: kasanızın %80 olasılıkla içinde kalacağı aralık. Bandın alt kenarı kötümser, üst kenarı "
                "iyimser durumdur. Kırmızı kesikli çizgi sıfır.")
+    with st.expander("13 haftalık plan"):
+        st.caption("Bilinen çıkışlar (giderler, borçlar) kesin kabul edilir. Tahsilat sütunları tahmindir: açık faturalar "
+                   "müşterilerin geçmiş ödeme davranışından, yeni satışlar son 90 günün satış hızından gelir.")
+        show_table(pipeline.weekly_table(res), width="stretch", hide_index=True,
+                   help={"Eksiye düşme olasılığı": "O hafta içinde kasanın en az bir gün eksiye düşme olasılığı."})
 
     st.subheader("Açığı kapatmak için ne gerekir?")
     gap = run_gap(res_key, res)
@@ -405,6 +422,18 @@ with tab_cash:
                  f"(bugünkü durumda %{sim.prob_any_breach * 100:.0f}).")
 
 with tab_accuracy:
+    info = res["info"]
+    st.write("**Bu tahmin neye dayanıyor?**")
+    st.write(f"• {info['n_invoices']} fatura, {info['n_customers']} müşteri; geçmiş {info['history_from']:%d.%m.%Y} tarihinden başlıyor.")
+    st.write(f"• Ödeme davranışını öğrenmek için vadesi dolmuş {info['n_train']} fatura kullanıldı"
+             + (" (az olduğu için basit yöntem: müşterinin geçmiş medyanı)." if info["simple_model"]
+                else " (öğrenen model: LightGBM kantil regresyonu)."))
+    st.write(f"• Tahmin aralığının genişliği, sistemin geçmiş dört çeyrekte {info['n_calibration']} faturada yaptığı "
+             "ileriye dönük tahminlerin hatasından ayarlandı."
+             + (" Bu sayı az; aralıklar varsayılan değerlere yakın." if info["n_calibration"] < 100 else ""))
+    st.write(f"• Müşterilerin birlikte gecikme eğilimi: piyasa geneli {info['rho_market']:.2f}, aynı müşterinin faturaları "
+             f"{info['rho_customer']:.2f} (0 = bağımsız, 1 = tamamen birlikte).")
+    st.divider()
     st.write("Geçmişteki birkaç tarihe dönülür, o gün eldeki bilgiyle 90 günlük tahsilat tahmin edilir "
              "ve sonradan gerçekleşenle karşılaştırılır.")
     if st.button("Geri testi çalıştır"):
@@ -415,10 +444,19 @@ with tab_accuracy:
             st.write(f"{len(bt)} test tarihinin {int(bt['inside'].sum())} tanesinde gerçekleşen tahsilat, "
                      f"tahmin bandının içinde kaldı. Beklenen değerin ortalama sapması: "
                      f"%{bt['err_p50_pct'].mean():+.0f}.")
+            mae = {k: bt[c].abs().mean() for k, c in (("model", "err_p50_pct"), ("vade", "err_due_pct"),
+                                                      ("medyan", "err_median_pct"))}
+            better = mae["model"] < min(mae["vade"], mae["medyan"])
+            st.write(f"Basit yöntemlerle karşılaştırma (ortalama mutlak sapma): model %{mae['model']:.0f}, "
+                     f"\"her fatura vadesinde ödenir\" %{mae['vade']:.0f}, \"müşteri her zamanki kadar geç öder\" "
+                     f"%{mae['medyan']:.0f}. "
+                     + ("Model sizin verinizde basit yöntemlerden daha isabetli." if better else
+                        "**Model sizin verinizde basit yöntemlerden daha isabetli değil;** tahminlere temkinli yaklaşın."))
             show_table(bt.rename(columns={
                 "origin": "Tahmin tarihi", "actual": "Gerçekleşen (TL)", "p10": "Kötümser (TL)",
                 "p50": "Beklenen (TL)", "p90": "İyimser (TL)", "inside": "Bant içinde",
-                "err_p50_pct": "Sapma (%)"}).assign(**{"Tahmin tarihi": lambda d: pd.to_datetime(d["Tahmin tarihi"])}),
+                "err_p50_pct": "Sapma (%)", "naive_due": "Vade yöntemi (TL)", "naive_median": "Medyan yöntemi (TL)",
+                "err_due_pct": "Vade yöntemi sapma (%)", "err_median_pct": "Medyan yöntemi sapma (%)"}).assign(**{"Tahmin tarihi": lambda d: pd.to_datetime(d["Tahmin tarihi"])}),
                 width="stretch", hide_index=True)
 
 with tab_collect:
@@ -462,6 +500,15 @@ with tab_collect:
                 aliases[key] = str(target)
                 store.set("sender_aliases", json.dumps(aliases, ensure_ascii=False))
                 st.rerun()
+
+    if own:
+        outcomes = actions.message_outcomes(store.events(), res["obs"], res["as_of"])
+        if len(outcomes):
+            paid14 = (outcomes["Durum"] == "14 gün içinde ödendi").mean()
+            with st.expander(f"Gönderilen mesajların sonucu: {len(outcomes)} mesaj, %{paid14 * 100:.0f}'i 14 gün içinde ödendi"):
+                st.caption("Bu bir etki ölçümü değildir: mesaj olmasa da ödenecek faturalar da burada görünür. "
+                           "Mesajın gerçek etkisi, ancak benzer faturalarla karşılaştırarak ölçülebilir.")
+                show_table(outcomes, width="stretch", hide_index=True)
 
     doubtful = ranked[ranked["stage"] == "supheli"]
     if len(doubtful):

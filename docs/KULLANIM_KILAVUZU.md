@@ -61,7 +61,7 @@ Biçimi görmek için panelin ilk ekranında örnek dosyaları indirebilirsiniz.
 
 **4. Mesaj ayarları.** İmzanız (ticaret unvanı ve MERSİS no), tahsilat IBAN'ınız ve isterseniz e-posta hesabınız.
 
-**Diğer ayarlar.** Vadesi yazmayan faturalar için varsayılan vade, döviz kurları (ör. `USD=41,50; EUR=48,20`; kuru girilmeyen döviz tahmine katılmaz), verilerin saklandığı dosyanın yeri ve kayıtlı veriyi silme.
+**Diğer ayarlar.** Vadesi yazmayan faturalar için varsayılan vade, döviz kurları (ör. `USD=41,50; EUR=48,20`; kuru girilmeyen döviz tahmine katılmaz), verilerin saklandığı dosyanın yeri, **son yüklemeyi geri alma** (yanlış dosya yüklerseniz bir önceki dosyaya döner), **verilerin yedeğini indirme** ve kayıtlı veriyi silme.
 
 ## 4. Paneli okumak
 
@@ -71,6 +71,7 @@ Biçimi görmek için panelin ilk ekranında örnek dosyaları indirebilirsiniz.
 - Mavi bant, kasanızın %80 olasılıkla içinde kalacağı aralıktır; ortadaki çizgi beklenen durumdur. Kırmızı kesikli çizgi sıfırdır.
 - **"Açığı kapatmak için ne gerekir?"** bölümü, kötümser durumdaki en derin açığı ve onu kapatmak için listenin ilk kaç faturasının bu hafta tahsil edilmesi gerektiğini söyler.
 - Kaydırma çubuklarıyla "şu kadar fatura tahsil edilirse" ya da "şu gideri şu kadar ertelersem" senaryolarını deneyebilirsiniz.
+- **13 haftalık plan:** her hafta için açık faturalardan ve yeni satışlardan beklenen tahsilat, bilinen çıkışlar ve hafta sonu kasası. Bilinen kalemler ile tahmine dayananlar ayrı sütunlardadır.
 
 **"Tahsilat işleri" sekmesi.**
 - **Öncelikli tahsilat listesi:** en üstteki fatura, açığınız açısından en riskli olandır. Müşterinin sabit bir ödeme günü varsa (ör. "ayın 15'i", "her Cuma") panel ona göre iletişim tarihi önerir.
@@ -78,9 +79,10 @@ Biçimi görmek için panelin ilk ekranında örnek dosyaları indirebilirsiniz.
 - Gönderdikten sonra **"Gönderildi olarak kaydet"** deyin. O fatura 7 gün listede yeniden önerilmez.
 - Müşteri itiraz ettiyse ya da ödeme sözü verdiyse ilgili düğmelerle kaydedin; söz tarihi geçene kadar hatırlatma önerilmez.
 - **Eşleşmeyen banka tahsilatları:** kimden geldiği bulunamayan paraları bir kez müşteriye bağlarsanız aynı gönderen sonraki ekstrelerde otomatik tanınır.
+- **Gönderilen mesajların sonucu:** kaydettiğiniz her mesajdan sonra faturanın kaç günde ödendiği. Bu bir takip listesidir; mesaj olmasa da ödenecek faturalar da burada görünür.
 - **Şüpheli alacaklar:** çok gecikmiş ve tahsil edilme olasılığı düşük faturalar ayrı gösterilir. Bunlar için hatırlatma yerine hukuki yolları değerlendirin.
 
-**"Tahmin doğruluğu" sekmesi.** Panel geçmişteki birkaç tarihe dönüp "o gün tahmin etseydim ne kadar tutardı" diye kendini sınar. En az 9 aylık geçmiş gerekir.
+**"Tahmin doğruluğu" sekmesi.** Üstte tahminin neye dayandığı yazar: kaç fatura, ne kadar geçmiş, hangi yöntem. Altta panel geçmişteki birkaç tarihe dönüp "o gün tahmin etseydim ne kadar tutardı" diye kendini sınar ve sonucu iki basit yöntemle ("her fatura vadesinde ödenir", "müşteri her zamanki kadar geç öder") karşılaştırır. Model sizin verinizde bu basit yöntemlerden daha isabetli değilse panel bunu açıkça söyler. En az 9 aylık geçmiş gerekir.
 
 ## 5. Mesajlar hakkında bilmeniz gerekenler
 
