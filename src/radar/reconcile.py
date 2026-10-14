@@ -56,13 +56,21 @@ def sender_key(description: str) -> str:
 
     Kullanıcı eşleşmeyen bir tahsilatı bir kez müşteriye bağladığında bu anahtar saklanır ve aynı
     gönderen sonraki ekstrelerde otomatik tanınır."""
+    iban = IBAN.search(str(description).upper().replace(" ", ""))
+    if iban:                         # IBAN, unvan yazımından bağımsız ve değişmeyen en sağlam anahtardır
+        return "iban:" + iban.group(0)
     words = [w for w in _norm(description).split() if w not in _NOISE and not w.isdigit() and len(w) >= 2]
     return " ".join(dict.fromkeys(words))
 
 
 def _alias_match(description: str, aliases: dict[str, str]) -> str | None:
+    compact = str(description).upper().replace(" ", "")
+    for key, cid in aliases.items():
+        if key.startswith("iban:") and key[5:] in compact:
+            return cid
     words = set(_norm(description).split())
-    hits = [(len(k.split()), cid) for k, cid in aliases.items() if k and set(k.split()) <= words]
+    hits = [(len(k.split()), cid) for k, cid in aliases.items()
+            if k and not k.startswith("iban:") and set(k.split()) <= words]
     return max(hits)[1] if hits else None
 
 

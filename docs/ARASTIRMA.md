@@ -204,3 +204,30 @@ Rakipler
 Rapor sayesinde bir hata da bulundu: "200.000" gibi binlik ayraçlı ama ondalıksız Türkçe tutarlar 200 okunuyordu. Düzeltildi ve teste bağlandı.
 
 Kaynak: [GİB vergi takvimi](https://gib.gov.tr/vergi-takvimi), [beyanname verme ve ödeme süreleri](https://cdn.gib.gov.tr/api/gibportal-file/file/getFileResources?objectKey=arsiv%2Fyardim-kaynaklar%2Fyararli-bilgiler%2FBeyannameVermeveOdemeSureleri.pdf), [Ticaret Bakanlığı yönetmelik metni](https://kayseri.ticaret.gov.tr/yayinlar/tuketici/ticari-iletisim-ve-ticari-elektronik-iletiler-hakkinda-yonetmelik).
+
+## Ek: Ayrıştırıcı kodu, geliştirici spesifikasyonu ve avukat paketi (14 Ekim 2026)
+
+**kobi_parser_engine.py ve geliştirici spesifikasyonu.** Önceki raporun içeriğini çalışan koda döküyor. Yeni ve kullanılanlar:
+
+- Excel'in 0 ile başlayan VKN'nin baştaki sıfırını silmesi: 9 haneye düşmüş VKN artık 10 haneye tamamlanıyor; "1234567890.0" biçimi de düzeltiliyor.
+- Luca muavininde hesap adının hesap koduyla başlaması ("120.01.004 Marmara Kimya"): kod atılıyor.
+- Para birimi "TRL" / "YTL" yazımı TL sayılıyor.
+- Gönderen IBAN'ının hafızaya alınması: eşleşmeyen bir tahsilatın açıklamasında IBAN varsa müşteriye bağlama IBAN üzerinden yapılıyor; unvanın farklı yazılması eşleşmeyi bozmuyor.
+
+Bilerek alınmayanlar:
+
+- **Puanlı eşleştirme (fatura no +60, VKN +50, unvan +25/+40, tutar +45; 85 üstü otomatik).** Ağırlıklar ve eşikler hiçbir veriyle ayarlanmamış. Ayrıca unvan benzerliği ve tutar uyumu birlikte 85'i geçebildiği için, aynı tutarda faturası olan benzer adlı yanlış müşteriye otomatik kapama yapabiliyor. Mevcut sıralı kural (fatura no, VKN/TCKN, kullanıcının öğrettiği gönderen, iki kelime ve tekil unvan eşleşmesi; eşit puanda tahmin yok) daha temkinli.
+- **Etiketsiz 10–11 haneli sayıyı VKN/TCKN sayma.** Sorgu ve referans numaraları da bu uzunlukta; kod bunu "2026 ile başlamıyorsa" gibi bir yamayla ayıklıyor. Bizde etiketsiz bir sayı ancak bilinen bir müşterinin VKN'sine birebir eşitse kullanılıyor.
+- **"FAT/NO" kalıbıyla iç fatura numarası yakalama.** "NO" öneki "SORGUNO:0482910" içindeki sorgu numarasını fatura numarası diye yakalıyor.
+- **Program başına sabit başlık imzası.** Bizde başlık eşanlamlı sözlükle, programdan bağımsız tanınıyor; tanınmazsa kullanıcı elle eşleştiriyor.
+
+**Avukat paketi.** Biçimi iyi: üç soru, düzenlenebilir iki şablon, beş maddelik onay çizelgesi ve imza bloğu. Ancak önceki raporda bulunan iki hata aynen geçmişti. Düzeltilmiş kopya `docs/hukuk/avukat_hukuki_inceleme_ve_onay_paketi_duzeltilmis.docx` olarak hazırlandı; orijinal dosyaya dokunulmadı. Yapılan değişiklikler:
+
+| Yer | Orijinal | Düzeltilmiş | Gerekçe |
+|---|---|---|---|
+| Soru 2, Şablon B başlığı ve metni, çizelge madde 3 | Yönetmelik m. 6/1-b | m. 6/2 | Madde 6'da bent yok; borç hatırlatma 2. fıkra |
+| Soru 2 | m. 6/2 (tacir veya esnaf) | m. 6/3 | Tacir/esnaf istisnası 3. fıkra |
+| Şablon B dipnotu | 6563 s. Kanun Yönetmeliği | Ticari İletişim ve Ticari Elektronik İletiler Hakkında Yönetmelik | Yönetmeliğin adı |
+| Soru 1 | alacaklı KOBİ ve borçlu büyük ölçekli | alacaklı KOBİ (ya da tarımsal veya hayvansal üretici) veya borçlu büyük ölçekli | TTK m.1530/5 metni |
+
+Şablon A'dan ürüne alınan iyi uygulama: ödeme bilgisinde IBAN ve banka adıyla birlikte "açıklamaya fatura numarasını yazın" istemi ve "ödemeyi yaptıysanız dikkate almayınız" cümlesi. İlki, gelen paranın banka ekstresinde faturayla otomatik eşleşmesini sağlıyor; panelde IBAN girilince tüm taslaklara ekleniyor.

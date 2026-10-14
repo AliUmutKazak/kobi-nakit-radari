@@ -141,11 +141,22 @@ def whatsapp_link(phone: str, text: str) -> str:
     return f"https://wa.me/{phone}?text={quote(text)}"
 
 
-def draft_message(row, seller: str) -> dict | None:
+def payment_line(invoice_id: str, iban: str = "", bank: str = "") -> str:
+    """Ödeme bilgisi. Açıklamaya fatura numarasının yazılmasını istemek, gelen paranın faturayla
+    banka ekstresinde otomatik eşleşmesini sağlar."""
+    if not iban:
+        return ""
+    where = f"{iban} ({bank})" if bank else iban
+    return f" Ödemeyi {where} hesabımıza, açıklamaya {invoice_id} yazarak yapabilirsiniz."
+
+
+def draft_message(row, seller: str, iban: str = "", bank: str = "") -> dict | None:
     """Aşamaya göre WhatsApp/e-posta taslağı üretir. Tanıtım içeriği eklenmez.
 
     `seller` gönderenin ticaret unvanıdır (varsa MERSİS numarasıyla); ticari iletilerde
     gönderenin kimliğinin açıkça belirtilmesi gerekir."""
+    pay = payment_line(row["invoice_id"], iban, bank)
+    already = " Ödemeyi yaptıysanız bu mesajı dikkate almayınız."
     due, amount = pd.Timestamp(row["due_date"]).strftime("%d.%m.%Y"), _tl(row["open_amount"])
     ref = f"{row['invoice_id']} numaralı, {amount} tutarındaki faturamız"
     if row["stage"] in ("bekle", "soz", "supheli"):
@@ -154,12 +165,12 @@ def draft_message(row, seller: str) -> dict | None:
         habit = (" Bugüne kadarki ödemelerinizin büyük bölümünü vadesinde yaptığınız için teşekkür ederiz."
                  if row.get("cust_n_paid", 0) >= 5 and row.get("cust_on_time", 0) >= 0.7 else "")
         body = (f"Merhaba, {ref} için vade tarihi {due}.{habit} "
-                f"Ödeme planınızda bir değişiklik varsa bize bildirmeniz yeterli. {seller}")
+                f"Ödeme planınızda bir değişiklik varsa bize bildirmeniz yeterli.{pay}{already} {seller}")
         note = None
     elif row["stage"] == "mutabakat":
         body = (f"Merhaba, {ref} {due} tarihinde vadesini doldurdu ve kayıtlarımızda açık görünüyor. "
                 f"Ödeme yapıldıysa dekontu, eksik bir belge (irsaliye, sipariş onayı) varsa bilgisini "
-                f"paylaşabilir misiniz? Kayıtlarımızı birlikte kontrol edelim. {seller}")
+                f"paylaşabilir misiniz? Kayıtlarımızı birlikte kontrol edelim.{pay} {seller}")
         note = None
     else:
         body = (f"Sayın yetkili, aramızdaki mal/hizmet tedariki kapsamında düzenlenen {ref} {due} tarihli vadesi "
@@ -168,7 +179,7 @@ def draft_message(row, seller: str) -> dict | None:
                 f"süresinin aşılmasıyla ihtara gerek olmaksızın temerrüt hükümleri doğmaktadır. Gecikme faizi "
                 f"(2026 için yıllık %{LATE_INTEREST_RATE * 100:.0f}), en az {_tl(MIN_RECOVERY_COST_TL)} tahsil gideri ve "
                 f"kısmi ödemelerde kalan bakiye dahil tüm yasal ve sözleşmesel haklarımız saklıdır. Bakiyenin ödenmesini "
-                f"ya da ödeme yapıldıysa dekontun paylaşılmasını rica ederiz. {seller}")
+                f"ya da ödeme yapıldıysa dekontun paylaşılmasını rica ederiz.{pay} {seller}")
         note = ("Bu metin TTK m.18/3 anlamında ihtarname değildir; şekli ihtar için KEP (güvenli e-imzalı) ya da noter "
                 "kullanın. Göndermeden önce teslimin (irsaliye) belgelendiğini ve sözleşme koşullarını kontrol edin.")
     return {"invoice_id": row["invoice_id"], "customer_name": row["customer_name"], "stage": row["stage"],

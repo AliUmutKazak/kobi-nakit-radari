@@ -163,7 +163,7 @@ def _finish_invoices(df: pd.DataFrame, default_terms: int, notes: list[str],
     df = df.copy()
     # Dövizli fatura, kullanıcının girdiği kurla TL'ye çevrilir; kuru girilmemiş döviz TL ile
     # sessizce toplanmaz, dışarıda bırakılıp bildirilir.
-    code = (df["currency"].fillna("TRY").astype(str).str.strip().str.upper().replace({"TL": "TRY", "": "TRY", "₺": "TRY"})
+    code = (df["currency"].fillna("TRY").astype(str).str.strip().str.upper().replace({"TL": "TRY", "TRL": "TRY", "YTL": "TRY", "": "TRY", "₺": "TRY"})
             if "currency" in df else pd.Series("TRY", index=df.index))
     df["currency"] = code
     rate = code.map({"TRY": 1.0} | (rates or {}))
@@ -184,7 +184,13 @@ def _finish_invoices(df: pd.DataFrame, default_terms: int, notes: list[str],
     for col in ("vkn", "customer_name"):
         if col not in df:
             df[col] = None
-    df["vkn"] = df["vkn"].astype("string").str.replace(r"\D", "", regex=True).replace("", pd.NA)
+    # Excel, 0 ile başlayan VKN'yi sayı sanıp baştaki sıfırı siler: 9 haneye düşmüş VKN tamamlanır.
+    vkn = df["vkn"].astype("string").str.replace(r"\.0$", "", regex=True).str.replace(r"\D", "", regex=True)
+    vkn = vkn.where(vkn.str.len() != 9, "0" + vkn)
+    df["vkn"] = vkn.where(vkn.str.len().isin([10, 11]))
+    # Luca muavininde hesap adı hesap koduyla başlar ("120.01.004 Marmara Kimya"); kod atılır.
+    df["customer_name"] = df["customer_name"].astype("string").str.replace(r"^\s*\d{3}(?:\.\d{1,5})+\s*[-:]?\s*", "",
+                                                                            regex=True)
     df["customer_name"] = df["customer_name"].fillna(df["vkn"]).fillna("Bilinmeyen")
     df["customer_id"] = df["vkn"].fillna(df["customer_name"].map(_key))
     df["vkn"] = df["vkn"].fillna("")

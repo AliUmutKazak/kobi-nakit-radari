@@ -559,3 +559,35 @@ def test_concentration_measures():
     c = concentration(obs)
     assert c["top_share"] == pytest.approx(0.9) and c["top_names"][0] == "A"
     assert c["hhi"] == pytest.approx(0.52) and c["effective_n"] == pytest.approx(1 / 0.52)
+
+
+def test_excel_damage_repairs_and_luca_account_names(tmp_path):
+    from radar import ingest
+
+    p = tmp_path / "luca.csv"
+    p.write_text("Evrak Tarihi;Evrak No;Hesap Adı;VKN;Tutar;Döviz\n"
+                 "03.10.2026;E1;120.01.0012 Trakya Tarım Ürünleri Paz. Ltd. Şti.;540123987;108.000,00;TRL\n"
+                 "04.10.2026;E2;120.01.0034 - Başkent Medikal A.Ş.;1920384756.0;72.000,00;TL\n", encoding="utf-8")
+    inv, notes = ingest.load_invoices(p)
+    assert list(inv["vkn"]) == ["0540123987", "1920384756"] and not any("atlandı" in n for n in notes)
+    assert list(inv["customer_name"]) == ["Trakya Tarım Ürünleri Paz. Ltd. Şti.", "Başkent Medikal A.Ş."]
+
+
+def test_iban_alias_and_payment_instructions():
+    from radar.actions import draft_message
+    from radar.reconcile import sender_key
+
+    desc = "FAST GELEN - AHMET YILMAZ - TR440001000482910482910001 - CARI ODEME"
+    assert sender_key(desc) == "iban:TR440001000482910482910001"
+    inv = pd.DataFrame({"invoice_id": ["A1"], "customer_id": ["C1"], "customer_name": ["Yılmaz Mühendislik"],
+                        "vkn": [""], "due_date": pd.to_datetime(["2026-09-01"]), "open_amount": [500.0]})
+    pay = pd.DataFrame({"date": pd.to_datetime(["2026-10-07"]), "amount": [500.0],
+                        "description": ["FAST GELEN - A. YILMAZ - TR44 0001 0004 8291 0482 9100 01"]})
+    out, _, unmatched = reconcile(inv, pay, aliases={sender_key(desc): "C1"})
+    assert out.at[0, "open_amount"] == 0 and len(unmatched) == 0             # yazım farklı, IBAN aynı
+
+    row = {"invoice_id": "GIB2026000000142", "customer_name": "X", "due_date": "2026-10-05", "open_amount": 100.0,
+           "stage": "mutabakat", "days_overdue": 5}
+    body = draft_message(row, "S", "TR12 3456", "Ziraat")["body"]
+    assert "TR12 3456 (Ziraat) hesabımıza, açıklamaya GIB2026000000142 yazarak" in body
+    assert "hesabımıza" not in draft_message(row, "S")["body"]

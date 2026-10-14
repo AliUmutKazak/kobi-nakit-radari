@@ -161,10 +161,14 @@ with st.sidebar:
         terms = st.number_input("Vadesi yazmayan faturalar için vade (gün)", 0, 365, int(store.get("terms", 30)),
                                 help="TTK m.1530: vade yazmıyorsa borçlu, faturayı aldıktan 30 gün sonra temerrüde düşer.")
         seller = st.text_input("Mesajlardaki imza (ticaret unvanı ve MERSİS no)", store.get("seller", ""))
+        iban = st.text_input("Tahsilat IBAN'ı (mesajlara eklenir)", store.get("iban", ""),
+                             placeholder="TR00 0000 0000 0000 0000 0000 00")
+        bank = st.text_input("Banka adı", store.get("bank", ""))
         rates_text = st.text_input("Döviz kurları (dövizli fatura varsa)", store.get("rates", ""),
                                    placeholder="USD=41,50; EUR=48,20",
                                    help="Dövizli faturalar bu kurla TL'ye çevrilir. Kur girilmeyen döviz tahmine katılmaz.")
-        for key, value in (("opening", opening), ("terms", int(terms)), ("seller", seller), ("rates", rates_text)):
+        for key, value in (("opening", opening), ("terms", int(terms)), ("seller", seller), ("rates", rates_text),
+                           ("iban", iban), ("bank", bank)):
             store.set(key, value)
         st.caption("Yüklenen her dosya, o türdeki kayıtlı verinin yerine geçer ve bu bilgisayarda saklanır.")
         save_upload(store, "invoices",
@@ -406,7 +410,7 @@ with tab_collect:
     if len(todo):
         by_id = todo.set_index("invoice_id", drop=False)
         pick = st.selectbox("Fatura", todo["invoice_id"], format_func=lambda i: f"{i} · {by_id.at[i, 'customer_name']}")
-        draft = actions.draft_message(by_id.loc[pick], seller)
+        draft = actions.draft_message(by_id.loc[pick], seller, *((iban, bank) if own else ("", "")))
         body = st.text_area("Taslak (düzenleyebilirsiniz)", draft["body"], height=140, key=f"draft_{pick}")
         if draft["note"]:
             st.info(draft["note"])
