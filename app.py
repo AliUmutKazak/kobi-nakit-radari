@@ -103,6 +103,13 @@ def run_own(rev: int, as_of: str, include_projected: bool):
             notes.append(f"Eşleşmeyen tahsilat tutarı: {unmatched['amount'].sum():,.0f} TL "
                          "(müşterisi bulunamayan ya da fazla ödeme).")
     outflows, cheques, payables = store.load("outflows"), store.load("cheques"), store.load("payables")
+    notes += json.loads(store.get("notes_cheques", "[]"))
+    fixed = {k: float(store.get(f"fixed_{k}", 0)) for k in ("payroll", "muhtasar", "sgk", "kdv", "rent")}
+    if any(fixed.values()):
+        plan = ingest.fixed_cost_plan(as_of, payroll_day=int(float(store.get("fixed_payroll_day", 1))),
+                                      rent_day=int(float(store.get("fixed_rent_day", 1))), **fixed)
+        notes.append(f"Aylık sabit giderlerden {len(plan)} ödeme ({plan['amount'].sum():,.0f} TL) eklendi.")
+        outflows = plan if outflows is None else pd.concat([outflows, plan], ignore_index=True)
     if payables is not None:
         flows, n = ingest.payables_to_outflows(payables, as_of)
         notes += n + [f"Ödenecek faturalar: {len(payables)} adet, {payables['amount'].sum():,.0f} TL."]
@@ -161,7 +168,17 @@ with st.sidebar:
         save_upload(store, "payables", st.file_uploader("Ödenecek faturalar (isteğe bağlı)", ["csv", "xlsx", "xls"]),
                     lambda ups: ingest.load_payables(_open(ups[0]), int(terms)))
         save_upload(store, "cheques", st.file_uploader("Çek / senet portföyü (isteğe bağlı)", ["csv", "xlsx", "xls"]),
-                    lambda ups: (ingest.load_schedule(_open(ups[0]), "drawer"), []))
+                    lambda ups: ingest.load_cheques(_open(ups[0])))
+        with st.expander("Gider dosyanız yoksa: aylık sabit giderler"):
+            st.caption("Vergi takvimine göre yerleştirilir: muhtasar ayın 26'sı, KDV 28'i, SGK primi ay sonu; "
+                       "hafta sonuna denk gelen son gün ilk iş gününe kayar. Yüklenen gider dosyasına eklenir.")
+            fixed = {k: st.number_input(lbl, 0.0, value=float(store.get(f"fixed_{k}", 0)), step=1000.0, key=f"fx_{k}")
+                     for k, lbl in (("payroll", "Net maaşlar (TL/ay)"), ("muhtasar", "Muhtasar (TL/ay)"),
+                                    ("sgk", "SGK primi (TL/ay)"), ("kdv", "KDV (TL/ay, tahmini)"), ("rent", "Kira (TL/ay)"))}
+            fixed["payroll_day"] = st.number_input("Maaş günü", 1, 31, int(store.get("fixed_payroll_day", 1)))
+            fixed["rent_day"] = st.number_input("Kira günü", 1, 31, int(store.get("fixed_rent_day", 1)))
+            for k, v in fixed.items():
+                store.set(f"fixed_{k}", v)
         with st.expander("E-posta gönderimi (isteğe bağlı)"):
             st.caption("Taslakları kendi e-posta hesabınızdan göndermek için. Parola kaydedilmez; paneli kapatınca silinir. "
                        "Gmail ve Outlook'ta hesap parolası yerine uygulama parolası gerekir.")
@@ -328,7 +345,7 @@ with tab_collect:
     st.subheader("Öncelikli tahsilat listesi")
     ranked = res["ranked"]
     todo = ranked[ranked["actionable"]].copy()
-    todo["payday_label"] = todo["payday"].map(actions.payday_label)
+    todo["payday_label"] = [actions.payday_label(d, w) for d, w in zip(todo["payday"], todo["payweekday"])]
     todo["stage_label"] = todo["stage"].map(STAGES)
     st.dataframe(
         todo[["invoice_id", "customer_name", "due_date", "open_amount", "days_overdue", "p_late", "stage_label",
@@ -360,6 +377,12 @@ with tab_collect:
         if own:
             st.caption("Mesajı kendi e-posta ya da WhatsApp hesabınızdan gönderdikten sonra aşağıdan kayda geçirin. "
                        f"Kayda geçen fatura {actions.CONTACT_COOLDOWN_DAYS} gün boyunca listede yeniden önerilmez.")
+            phones = res["obs"].set_index("invoice_id")["phone"] if "phone" in res["obs"] else {}
+            phone = ingest.normalize_phone(st.text_input("Müşterinin cep telefonu (WhatsApp)", phones.get(pick, ""),
+                                                         key=f"tel_{pick}", placeholder="05XX XXX XX XX"))
+            if phone:
+                st.link_button("WhatsApp'ta taslağı aç", actions.whatsapp_link(phone, body))
+                st.caption("WhatsApp kendi hesabınızda, mesaj yazılmış hâlde açılır; gönderdikten sonra aşağıdan kayda geçirin.")
             if mail.ready:
                 emails = res["obs"].set_index("invoice_id")["email"] if "email" in res["obs"] else {}
                 to = st.text_input("Alıcı e-posta adresi", emails.get(pick, ""), key=f"to_{pick}")

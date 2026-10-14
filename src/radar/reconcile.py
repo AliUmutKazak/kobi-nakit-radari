@@ -16,20 +16,39 @@ def _norm(s: str) -> str:
     return re.sub(r"[^a-z0-9 ]", " ", str(s).translate(table).lower())
 
 
+# GİB fatura numarası: 3 karakter seri + 4 haneli yıl + 9 haneli sıra (ör. GIB202600000142).
+INVOICE_NO = re.compile(r"\b([A-Z0-9]{3}20\d{2}\d{9})\b")
+TAX_ID = re.compile(r"(?:VKN|VERGI NO|V\.?K\.?N\.?)[\s:.]*(\d{10})\b|(?:TCKN|T\.?C\.?)[\s:.]*(\d{11})\b")
+IBAN = re.compile(r"\bTR\d{24}\b")
+# Banka önekleri ve şirket ekleri unvan karşılaştırmasından önce atılır.
+_NOISE = {"gelen", "giden", "eft", "fast", "havale", "tt", "para", "transferi", "sorguno", "ref", "dekont", "odemesi",
+          "odeme", "cari", "hesap", "hesabi", "hesaba", "mahsuben", "fatura", "faturasi", "nolu", "bedeli", "ltd", "sti",
+          "tic", "san", "as", "ve", "pazarlama", "paz"}
+
+
 def identify_customer(description: str, customers: pd.DataFrame) -> str | None:
-    """Açıklamada VKN geçiyorsa onu, yoksa unvanın ayırt edici kelimelerini kullanır."""
+    """Sırasıyla: açıklamadaki VKN/TCKN, açıklamada geçen VKN rakamları, unvanın ayırt edici kelimeleri."""
+    upper = str(description).translate(str.maketrans("çğıöşüi", "ÇĞIÖŞÜİ")).upper()
+    ids = {g for m in TAX_ID.finditer(upper.replace("İ", "I")) for g in m.groups() if g}
+    by_vkn = {str(c.vkn): c.customer_id for c in customers.itertuples() if c.vkn}
+    for tax_id in ids:
+        if tax_id in by_vkn:
+            return by_vkn[tax_id]
     text = _norm(description)
+    for vkn, cid in by_vkn.items():
+        if vkn in text:
+            return cid
+    best, best_score, runner_up = None, 0, 0
+    words = set(text.split()) - _NOISE
     for c in customers.itertuples():
-        if c.vkn and str(c.vkn) in text:
-            return c.customer_id
-    best, best_score = None, 0
-    words = set(text.split())
-    for c in customers.itertuples():
-        tokens = {t for t in _norm(c.customer_name).split() if len(t) >= 2 and t not in {"ltd", "sti", "tic", "san", "as", "ve"}}
+        tokens = {t for t in _norm(c.customer_name).split() if len(t) >= 2} - _NOISE
         score = len(tokens & words)
         if score > best_score:
-            best, best_score = c.customer_id, score
-    return best if best_score >= 2 else None
+            best, best_score, runner_up = c.customer_id, score, best_score
+        elif score == best_score:
+            runner_up = score
+    # İki müşteri aynı puanı alıyorsa tahmin etmek yerine eşleşmeyen sayılır.
+    return best if best_score >= 2 and best_score > runner_up else None
 
 
 def reconcile(invoices: pd.DataFrame, payments: pd.DataFrame, tol: float = 0.01):
@@ -42,15 +61,21 @@ def reconcile(invoices: pd.DataFrame, payments: pd.DataFrame, tol: float = 0.01)
         inv["paid_date"] = pd.NaT
     customers = inv.drop_duplicates("customer_id")[["customer_id", "customer_name", "vkn"]]
     allocations, unmatched = [], []
+    by_number = {str(v).upper(): i for i, v in inv["invoice_id"].items()}
     for p in payments.sort_values("date").itertuples():
-        cid = identify_customer(p.description, customers)
+        # Açıklamada fatura numarası geçiyorsa müşteri ve fatura doğrudan bellidir.
+        named = [by_number[n] for n in INVOICE_NO.findall(str(p.description).upper()) if n in by_number]
+        cid = inv.at[named[0], "customer_id"] if named else identify_customer(p.description, customers)
         if cid is None:
             unmatched.append(p._asdict())
             continue
         cand = inv[(inv["customer_id"] == cid) & (inv["open_amount"] > tol)].sort_values("due_date")
         exact = cand[(cand["open_amount"] - p.amount).abs() <= tol]
+        first = [i for i in named if inv.at[i, "open_amount"] > tol]
+        order = first + [i for i in (exact.index[:1] if len(exact) else cand.index) if i not in first]
+        method = "fatura_no" if first else ("exact" if len(exact) else "fifo")
         remaining = float(p.amount)
-        for idx in (exact.index[:1] if len(exact) else cand.index):
+        for idx in order:
             if remaining <= tol:
                 break
             take = min(remaining, inv.at[idx, "open_amount"])
@@ -60,7 +85,7 @@ def reconcile(invoices: pd.DataFrame, payments: pd.DataFrame, tol: float = 0.01)
                 inv.at[idx, "open_amount"] = 0.0
                 inv.at[idx, "paid_date"] = p.date
             allocations.append({"date": p.date, "invoice_id": inv.at[idx, "invoice_id"], "amount": take,
-                                "method": "exact" if len(exact) else "fifo"})
+                                "method": method})
         if remaining > tol:  # müşteri avansı / fazla ödeme
             unmatched.append({**p._asdict(), "amount": remaining, "customer_id": cid})
     return inv, pd.DataFrame(allocations), pd.DataFrame(unmatched)

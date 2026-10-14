@@ -52,8 +52,24 @@ def payment_habits(obs: pd.DataFrame) -> pd.DataFrame:
     for cid, g in paid.groupby("customer_id"):
         d = g["paid_date"]
         rows[cid] = {"payday": payday_habit(d.dt.day.to_numpy(), (d.dt.days_in_month - d.dt.day).to_numpy()),
+                     "payweekday": weekday_habit(d.dt.dayofweek.to_numpy()),
                      "cust_on_time": float((d <= g["due_date"]).mean()), "cust_n_paid": len(g)}
-    return pd.DataFrame.from_dict(rows, orient="index", columns=["payday", "cust_on_time", "cust_n_paid"])
+    return pd.DataFrame.from_dict(rows, orient="index", columns=["payday", "payweekday", "cust_on_time", "cust_n_paid"])
+
+
+WEEKDAYS = ["Pazartesi", "Salı", "Çarşamba", "Perşembe", "Cuma", "Cumartesi", "Pazar"]
+
+
+def weekday_habit(weekdays, min_n: int = 6, share: float = 0.6) -> int:
+    """Haftanın sabit bir gününde (ör. Cuma ödeme listesi) ödeme alışkanlığı: -1 = yok, 0-6 = gün.
+
+    Rastgele ödemede her gün ~%20 pay alır (hafta içi); %60 eşiği bunun üç katıdır."""
+    weekdays = np.asarray(weekdays, int)
+    if len(weekdays) < min_n:
+        return -1
+    counts = np.bincount(weekdays, minlength=7)
+    day = int(np.argmax(counts))
+    return day if counts[day] / len(weekdays) >= share else -1
 
 
 def prioritize(open_inv: pd.DataFrame, pay_day: np.ndarray, as_of, gap_day: int,
@@ -80,12 +96,18 @@ def prioritize(open_inv: pd.DataFrame, pay_day: np.ndarray, as_of, gap_day: int,
     df["actionable"] = ~df["stage"].isin(["bekle", "soz", "supheli"]) & ~contacted
     if habits is not None and len(habits):
         df = df.join(habits, on="customer_id")
-    for col, default in (("payday", 0), ("cust_on_time", np.nan), ("cust_n_paid", 0)):
+    for col, default in (("payday", 0), ("payweekday", -1), ("cust_on_time", np.nan), ("cust_n_paid", 0)):
         df[col] = df[col].fillna(default) if col in df else default
     # Sabit ödeme günü olan müşteriye, o günden 3 gün önce ulaşmak ödeme listesine girmeyi sağlar.
     today, lead = np.datetime64(as_of.date()), np.timedelta64(3, "D")
-    df["contact_date"] = [pd.Timestamp(max(today, next_payday(today + lead, int(h)) - lead)) if h else as_of
-                          for h in df["payday"]]
+    def contact(day_habit, week_habit):
+        if day_habit:
+            return pd.Timestamp(max(today, next_payday(today + lead, int(day_habit)) - lead))
+        if week_habit >= 0:          # haftalık ödeme listesinden 2 gün önce
+            ahead = (int(week_habit) - (as_of + pd.Timedelta(days=2)).dayofweek) % 7
+            return as_of + pd.Timedelta(days=ahead)
+        return as_of
+    df["contact_date"] = [contact(h, w) for h, w in zip(df["payday"], df["payweekday"])]
     return df.sort_values(["actionable", "amount_at_risk"], ascending=False).reset_index(drop=True)
 
 
@@ -93,8 +115,17 @@ def _tl(x: float) -> str:
     return f"{x:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".") + " TL"
 
 
-def payday_label(habit: int) -> str:
-    return "" if not habit else ("ay sonu" if habit == MONTH_END else f"ayın {int(habit)}. günü")
+def payday_label(habit: int, weekday: int = -1) -> str:
+    if habit:
+        return "ay sonu" if habit == MONTH_END else f"ayın {int(habit)}. günü"
+    return f"her {WEEKDAYS[int(weekday)]}" if weekday is not None and weekday >= 0 else ""
+
+
+def whatsapp_link(phone: str, text: str) -> str:
+    """Tıklanınca kullanıcının kendi WhatsApp'ında taslak hazır bir sohbet açan bağlantı.
+    Gönderme işini kullanıcı yapar; API ya da Meta şablon onayı gerekmez."""
+    from urllib.parse import quote
+    return f"https://wa.me/{phone}?text={quote(text)}"
 
 
 def draft_message(row, seller: str) -> dict | None:
@@ -118,12 +149,16 @@ def draft_message(row, seller: str) -> dict | None:
                 f"paylaşabilir misiniz? Kayıtlarımızı birlikte kontrol edelim. {seller}")
         note = None
     else:
-        body = (f"Sayın yetkili, {ref} {due} vadesinden bu yana {int(row['days_overdue'])} gündür ödenmemiştir. "
-                f"Ödemenin yapılmasını veya ödeme tarihinin yazılı olarak bildirilmesini rica ederiz. "
-                f"Türk Ticaret Kanunu m.1530 uyarınca geç ödemelerde gecikme faizi "
-                f"(2026 için yıllık %{LATE_INTEREST_RATE * 100:.0f}) ve en az {_tl(MIN_RECOVERY_COST_TL)} "
-                f"tahsil gideri talep hakkımız saklıdır. {seller}")
-        note = "Resmî bildirim: göndermeden önce sözleşme koşulları ve hukukçu görüşüyle teyit edin."
+        body = (f"Sayın yetkili, aramızdaki mal/hizmet tedariki kapsamında düzenlenen {ref} {due} tarihli vadesi "
+                f"dolmuş olup {int(row['days_overdue'])} gündür kayıtlarımızda açık görünmektedir. "
+                f"Türk Ticaret Kanunu m.1530 uyarınca ticari işletmeler arasındaki mal ve hizmet tedariklerinde ödeme "
+                f"süresinin aşılmasıyla ihtara gerek olmaksızın temerrüt hükümleri doğmaktadır. Gecikme faizi "
+                f"(2026 için yıllık %{LATE_INTEREST_RATE * 100:.0f}), en az {_tl(MIN_RECOVERY_COST_TL)} tahsil gideri ve "
+                f"kısmi ödemelerde kalan bakiye dahil tüm yasal ve sözleşmesel haklarımız saklıdır. Bakiyenin ödenmesini "
+                f"ya da ödeme yapıldıysa dekontun paylaşılmasını rica ederiz. {seller}")
+        note = ("Bu metin TTK m.18/3 anlamında ihtarname değildir; şekli ihtar için KEP (güvenli e-imzalı) ya da noter "
+                "kullanın. Göndermeden önce teslimin (irsaliye) belgelendiğini ve sözleşme koşullarını kontrol edin.")
     return {"invoice_id": row["invoice_id"], "customer_name": row["customer_name"], "stage": row["stage"],
-            "subject": f"{row['invoice_id']} numaralı fatura hakkında", "body": body,
+            "subject": (f"Vade aşımı ve TTK m.1530 kapsamında ödeme bildirimi: {row['invoice_id']}"
+                        if row["stage"] == "resmi" else f"{row['invoice_id']} numaralı fatura hakkında"), "body": body,
             "requires_approval": True, "note": note}

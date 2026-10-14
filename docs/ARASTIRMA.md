@@ -165,3 +165,42 @@ Rakipler
 - [Kolleno fiyat](https://pricingsaas.com/companies/kolleno), [Chaser ve Kolleno karşılaştırması](https://erpresearch.com/erp-add-ons/ar-collections/chaser-vs-kolleno)
 - [Monk](https://www.automate.org/ai/news/monk-brings-ai-powered-ar-automation-to-automate-2026-surpasses-1b-in-receivables-under-management-monk)
 - [Xero Analytics Plus](https://www.xero.com/media-releases/xero-unveils-new-product-features-xerocon/), [QuickBooks Cash Flow Planner](https://insightfulaccountant.com/accounting-tech/general-ledger/quickbooks-cash-flow-planner-enhancements/)
+
+## Ek: Kullanıcının saha ve mevzuat raporunun değerlendirmesi (14 Ekim 2026)
+
+İncelenen belge: "KOBİ Tahsilat ve Nakit Akışı Otomasyonu İçin Altı Kritik Alanın Teknik, Saha ve Hukuki İnceleme Raporu" (12 sayfa).
+
+### Güvenilirlik
+
+- **Saha profilleri (bölüm 3.1) gerçek görüşme değil.** Metin, sekiz profili "saha verilerini temsil eden" profiller olarak tanımlıyor; kişi, tarih ya da görüşme kaydı yok. Ürün kararında kanıt değil, sınanacak hipotez sayıldı. Gerçek görüşme ihtiyacı sürüyor.
+- **Kaynaksız rakamlar:** SMMM bürolarının %70'inin Luca kullandığı, müşterilerin ortalama +12–25 gün geç ödediği ve ödeme istekliliği aralıkları birincil kaynağa bağlanmıyor. Kullanılmadı.
+- **Örnek fatura numaraları hatalı biçimde.** Raporun örnekleri (ör. GIB202600000142) 15 karakter; GİB fatura numarası 16 karakterdir (3 harf + 4 haneli yıl + 9 haneli sıra). Kodda 16 karakterlik kural kullanıldı.
+- **Mevzuat maddesi numaraları yanlış.** Rapor borç hatırlatma istisnasını "m.6/1-b", tacir istisnasını "m.6/2" olarak veriyor. Ticaret Bakanlığı'nın yayımladığı metinde madde 6 bentsiz dört fıkradan oluşuyor; borç hatırlatma 2. fıkra, tacir/esnaf 3. fıkra. İçerik doğru, atıf yanlış.
+- **Vergi takvimi kısmen yanlış.** Rapor "ayın 26'sındaki Muhtasar/KDV ödemeleri" diyor. GİB vergi takvimine göre muhtasar ve prim hizmet beyannamesi ayın 26'sında, KDV ise 28'inde ödenir.
+- **TTK 1530/5'in dar okunması.** Rapor "alacaklı KOBİ ve borçlu büyük ölçekli" diyor; kanun metni "veya" der (bkz. yukarıdaki teyit tablosu).
+
+### Doğrulanan ya da kendi içinde tutarlı olanlar
+
+- TTK m.1530'da ihtarsız temerrüt, vade yazmıyorsa 30 gün kuralı, 2026 için %43 ve 2.020 TL: TCMB ve kanun metniyle uyumlu.
+- TTK m.18/3: tacirler arasında temerrüde düşürme ihtarının noter, taahhütlü mektup, telgraf ya da KEP ile yapılması gerektiği; düz e-posta ve WhatsApp bu şekli karşılamaz. Panel metni buna göre değiştirildi.
+- KVKK: tüzel kişi verisinin kişisel veri olmadığı, şahıs şirketi sahibinin telefon ve e-postasının kişisel veri olduğu, borç takibinin sözleşmenin ifası ve meşru menfaate dayanabileceği, yazılımın "veri işleyen" olarak sözleşme gerektirdiği. Kanunun genel yapısıyla tutarlı; ürün çok kullanıcılı hâle gelmeden önce avukatla teyit edilmeli.
+- Entegratörlerde "alındı" işaretinin değiştirilmemesi gerektiği: kaynak olarak bir entegrasyon belgesinden alıntı var ve mantıken zorunlu. Otomatik bağlantı yapılırken uyulacak tasarım kuralı olarak kaydedildi.
+
+### Koda geçenler
+
+| Rapordaki bulgu | Uygulanan |
+|---|---|
+| Banka ve muhasebe dosyalarında tablo birkaç bilgi satırından sonra başlar | Başlık satırı otomatik bulunur |
+| Ekstrelerde tek tutar + B/A sütunu ya da ayrı Borç/Alacak sütunları | Yalnızca "A" (giriş) satırları alınır |
+| Açıklamada fatura no, VKN/TCKN, IBAN geçer; banka önekleri gürültüdür | Önce fatura numarası, sonra VKN/TCKN, sonra öneksiz unvan; iki müşteri aynı puanı alırsa tahmin edilmez |
+| Mikro'da fatura no seri + sıra iki sütundadır | Birleştirilir |
+| Programların başlık adları | Eşanlamlı sözlüğe eklendi (ör. Düzenleme Tarihi, Kalan Meblağ, Cari İsmi, Hesap Adı); sonundaki "(TL)" yok sayılır |
+| Cirolanan çek kasaya girmez | Çek dosyasında durum sütunu varsa ciro, iskonto, faktoring ve sonuçlanmış evrak tahmine katılmaz |
+| Cuma ödeme listeleri | Haftanın sabit günü alışkanlığı tespit edilir, iletişim tarihi ona göre önerilir |
+| Birincil kanal WhatsApp | Taslak, müşterinin cep telefonuyla kullanıcının kendi WhatsApp'ında yazılmış hâlde açılır (API gerekmez) |
+| Resmî bildirimde yanıltıcı başlık, teslim ve kısmi ödeme riski | Konu "Vade aşımı ve TTK m.1530 kapsamında ödeme bildirimi"; metin teslime ve kısmi ödemede hakların saklılığına atıf yapar; panel bunun ihtarname olmadığını ve KEP/noter gerektiğini söyler |
+| En çok unutulan kalemler vergi ve SGK | Dosyası olmayan için aylık sabit gider şablonu: GİB takvimine göre muhtasar 26, KDV 28, SGK ay sonu; hafta sonu ilk iş gününe kayar |
+
+Rapor sayesinde bir hata da bulundu: "200.000" gibi binlik ayraçlı ama ondalıksız Türkçe tutarlar 200 okunuyordu. Düzeltildi ve teste bağlandı.
+
+Kaynak: [GİB vergi takvimi](https://gib.gov.tr/vergi-takvimi), [beyanname verme ve ödeme süreleri](https://cdn.gib.gov.tr/api/gibportal-file/file/getFileResources?objectKey=arsiv%2Fyardim-kaynaklar%2Fyararli-bilgiler%2FBeyannameVermeveOdemeSureleri.pdf), [Ticaret Bakanlığı yönetmelik metni](https://kayseri.ticaret.gov.tr/yayinlar/tuketici/ticari-iletisim-ve-ticari-elektronik-iletiler-hakkinda-yonetmelik).

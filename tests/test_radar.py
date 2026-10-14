@@ -401,3 +401,90 @@ def test_payables_become_outflows_and_can_be_deferred(tmp_path):
     res = pipeline.forecast(obs, AS_OF, 0.0, pd.concat([out, flows], ignore_index=True), n_sims=200)
     later = pipeline.scenario(res, delay_labels=[ingest.PAYABLES_LABEL], delay_days=30)
     assert later.p50[20] > res["sim"].p50[20]
+
+
+def test_bank_statement_with_preamble_direction_and_rich_descriptions(tmp_path):
+    from radar import ingest
+
+    p = tmp_path / "ziraat.csv"
+    p.write_text(
+        "Hesap No;12345678\nIBAN;TR000000000000000000000000\nDönem;01.10.2026 - 31.10.2026\n\n"
+        "İşlem Tarihi;Açıklama;İşlem Tutarı (TL);B/A;Bakiye (TL)\n"
+        "05.10.2026;GELEN EFT - ÖRNEK LOJİSTİK A.Ş. - VKN:6480591234 - GIB2026000000142 NOLU FATURA;144.000,00;A;412.500,00\n"
+        "07.10.2026;FAST GELEN - KUZEY YILDIZI MAKİNA SAN. LTD. ŞTİ. - SORGUNO:0482910;60.000,00;A;472.500,00\n"
+        "09.10.2026;GİDEN EFT - MARMARA ENERJİ - EKİM;18.450,00;B;454.050,00\n"
+        "10.10.2026;ÜYE İŞYERİ POS BLOKE ÇÖZÜMÜ;24.375,00;A;478.425,00\n", encoding="utf-8")
+    pay, notes = ingest.load_payments(p)
+    assert len(pay) == 3 and pay["amount"].sum() == 144000 + 60000 + 24375      # giden EFT düştü
+
+    inv = pd.DataFrame({
+        "invoice_id": ["GIB2026000000141", "GIB2026000000142", "K1", "K2"],
+        "customer_id": ["6480591234", "6480591234", "K", "K"],
+        "customer_name": ["Örnek Lojistik ve Depolama A.Ş.", "Örnek Lojistik ve Depolama A.Ş.",
+                          "Kuzey Yıldızı Makina San. Ltd. Şti.", "Kuzey Yıldızı Makina San. Ltd. Şti."],
+        "vkn": ["6480591234", "6480591234", "", ""],
+        "due_date": pd.to_datetime(["2026-09-01", "2026-10-01", "2026-09-05", "2026-09-20"]),
+        "open_amount": [50000.0, 144000.0, 40000.0, 40000.0]})
+    out, alloc, unmatched = reconcile(inv, pay)
+    by = out.set_index("invoice_id")["open_amount"]
+    # Fatura numarası açıklamada geçtiği için daha eski fatura değil, adı geçen fatura kapandı.
+    assert by["GIB2026000000142"] == 0 and by["GIB2026000000141"] == 50000
+    assert by["K1"] == 0 and by["K2"] == 20000                                  # unvanla bulundu, FIFO
+    assert list(alloc["method"])[:1] == ["fatura_no"] and len(unmatched) == 1   # POS satırı müşteriye bağlanmadı
+
+
+def test_ambiguous_names_are_not_guessed():
+    from radar.reconcile import identify_customer
+
+    customers = pd.DataFrame({"customer_id": ["A", "B"], "vkn": ["", ""],
+                              "customer_name": ["Anadolu Yapı Market A.Ş.", "Anadolu Yapı Malzeme Ltd. Şti."]})
+    assert identify_customer("GELEN EFT ANADOLU YAPI", customers) is None
+    assert identify_customer("GELEN EFT ANADOLU YAPI MARKET", customers) == "A"
+    assert identify_customer("HAVALE VKN: 1234567890", customers.assign(vkn=["1234567890", ""])) == "A"
+
+
+def test_mikro_series_number_phone_and_cheque_status(tmp_path):
+    from radar import ingest
+
+    p = tmp_path / "mikro.csv"
+    p.write_text("Evrak Tarihi;Evrak Seri;Evrak Sıra;Cari İsmi;Vade Tarihi;Genel Toplam;Telefon\n"
+                 "02.10.2026;MKR;2026000418;Ege Plastik Kalıp A.Ş.;01.12.2026;318.000,00;0532 123 45 67\n",
+                 encoding="utf-8")
+    inv, _ = ingest.load_invoices(p)
+    assert inv.at[0, "invoice_id"] == "MKR2026000418" and inv.at[0, "phone"] == "905321234567"
+    assert ingest.normalize_phone("5321234567") == "905321234567" and ingest.normalize_phone("0212 555 11 22") == ""
+
+    c = tmp_path / "cek.csv"
+    c.write_text("Vade;Tutar;Keşideci;Durum\n15.12.2026;200.000;Ege Plastik;Portföyde\n"
+                 "20.12.2026;100.000;Bursa Oto;Tedarikçiye ciro edildi\n10.01.2027;50.000;Delta;Bankaya tahsile verildi\n"
+                 "12.01.2027;70.000;Delta;Faktoringe iskonto\n", encoding="utf-8")
+    chq, notes = ingest.load_cheques(c)
+    assert list(chq["amount"]) == [200000, 50000] and "170,000" in notes[0]
+
+
+def test_weekday_habit_and_whatsapp_link():
+    from radar.actions import WEEKDAYS, payday_label, weekday_habit, whatsapp_link
+
+    fridays = pd.date_range("2026-01-02", periods=8, freq="7D").dayofweek
+    assert weekday_habit(fridays) == 4 and WEEKDAYS[4] == "Cuma" and payday_label(0, 4) == "her Cuma"
+    assert weekday_habit(pd.date_range("2026-01-01", periods=10, freq="D").dayofweek) == -1
+    link = whatsapp_link("905321234567", "Merhaba, 1.250,00 TL & fatura")
+    assert link.startswith("https://wa.me/905321234567?text=Merhaba%2C%201.250%2C00%20TL%20%26")
+
+
+def test_fixed_cost_plan_follows_tax_calendar():
+    from radar.ingest import fixed_cost_plan
+
+    plan = fixed_cost_plan("2026-10-14", 60, payroll=100, payroll_day=31, muhtasar=10, sgk=20, kdv=30)
+    got = {(r.label, r.date.strftime("%d.%m")) for r in plan.itertuples()}
+    assert ("Muhtasar", "26.10") in got and ("KDV", "28.10") in got
+    assert ("SGK primi", "02.11") in got           # 31 Ekim 2026 Cumartesi -> Pazartesi
+    assert ("KDV", "30.11") in got                  # 28 Kasım Cumartesi -> 30 Kasım Pazartesi
+    assert ("Maaş", "31.10") in got and ("Maaş", "30.11") in got   # 31 olmayan ayda ay sonu
+
+
+def test_dashboard_script_compiles():
+    import ast
+    from pathlib import Path
+
+    ast.parse((Path(__file__).parents[1] / "app.py").read_text(encoding="utf-8"))
