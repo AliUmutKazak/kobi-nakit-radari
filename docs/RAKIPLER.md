@@ -52,6 +52,9 @@ Kaynaklar: [Logo İşbaşı](https://isbasi.com/), [BizimHesap](https://bizimhes
 3. **Çek/senet ve cari hesap mantığı.** Yabancı ürünlerde yok; Finrota sayfasında belirtilmemiş.
 4. **Kendini sınayan tahmin.** Geçmiş tarihlerde tahmin üretip gerçekleşenle karşılaştıran geri test kodda var. Panelde "Bu tahmin geçmişte ne kadar tuttu?" bölümünde kullanıcının kendi verisiyle çalışır.
 
+5. **Açığı kapatma hesabı.** Panel, kötümser senaryodaki en derin açığı ve onu kapatmak için listenin ilk kaç faturasının tahsil edilmesi gerektiğini söyler; gider erteleme ve tahsilat senaryoları aynı rastgele senaryolar üzerinde yeniden hesaplanır. Finrota'da senaryo var ama elle kuruluyor ve tahsilat listesine bağlı değil.
+6. **Şüpheli alacağın ayrılması.** 90 günden fazla gecikmiş ve geçmiş veriye göre tahsil olasılığı %15'in altında kalan faturalar hatırlatma listesinden çıkarılıp ayrı gösterilir. Eşikler iş kuralıdır, bilimsel bir sabit değildir; gerçek veriyle ayarlanmalı. İncelenen ürün sayfalarında bu ayrım geçmiyor.
+
 ## Rakiplerde olup bizde olmayan (öncelik sırasıyla)
 
 | Eksik | Neden önemli | Engel |

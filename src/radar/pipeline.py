@@ -60,15 +60,58 @@ def forecast(obs: pd.DataFrame, as_of, opening: float, outflows: pd.DataFrame, h
     # gecikme alışkanlığı bu tarihe göre uygulanır (varsayım: söz de vade kadar tutulur).
     promised = target["promised_date"] > as_of
     sim_inv = target.assign(due_date=target["promised_date"].where(promised, target["due_date"]))
-    sim = simulate(sim_inv, model.predict(feats), as_of, opening, outflows, horizon, n_sims, seed=seed,
-                   aging=aging_curve(obs, as_of), cheques=cheques)
+    ctx = {"sim_inv": sim_inv, "Q": model.predict(feats), "aging": aging_curve(obs, as_of), "cheques": cheques,
+           "horizon": horizon, "n_sims": n_sims, "seed": seed}
+    sim = simulate(sim_inv, ctx["Q"], as_of, opening, outflows, horizon, n_sims, seed=seed,
+                   aging=ctx["aging"], cheques=cheques)
     real = ~target["projected"].to_numpy()
     gap_day = sim.breach_day if sim.breach_day is not None else horizon
-    ranked = actions.prioritize(target[real], sim.pay_day[real], as_of, gap_day, actions.payment_habits(obs))
+    ranked = actions.prioritize(target[real], sim.pay_day[real], as_of, gap_day, actions.payment_habits(obs), horizon)
     return {"as_of": as_of, "model": model, "simple_model": isinstance(model, FallbackModel), "n_train": len(X),
             "sim": sim, "ranked": ranked, "gap_day": gap_day, "metrics": actions.metrics(obs, as_of),
-            "opening": opening, "outflows": outflows, "obs": obs,
+            "opening": opening, "outflows": outflows, "obs": obs, "ctx": ctx,
             "disputed_total": float(obs.loc[is_open & obs["disputed"], "open_amount"].sum())}
+
+
+def scenario(res: dict, collect_ids=(), collect_in_days: int = 7, delay_labels=(), delay_days: int = 0):
+    """Aynı rastgele senaryolarla "şu olsaydı" hesabı.
+
+    collect_ids: bu faturalar `collect_in_days` gün içinde kesin tahsil edilmiş sayılır.
+    delay_labels / delay_days: bu gider kalemleri o kadar gün ertelenir (ufkun dışına çıkan düşer)."""
+    ctx, as_of = res["ctx"], res["as_of"]
+    inv = ctx["sim_inv"].copy()
+    hit = inv["invoice_id"].isin(list(collect_ids)) & ~inv["projected"]
+    cash = float(inv.loc[hit, "open_amount"].sum())
+    inv.loc[hit, "open_amount"] = 0.0          # satır yerinde kalır ki rastgele sayılar kaymasın
+    out = res["outflows"].copy()
+    if delay_days and len(out) and "label" in out:
+        late = out["label"].isin(list(delay_labels))
+        out.loc[late, "date"] = pd.to_datetime(out.loc[late, "date"]) + pd.Timedelta(days=delay_days)
+    if cash:
+        out = pd.concat([out, pd.DataFrame({"date": [as_of + pd.Timedelta(days=collect_in_days)],
+                                            "amount": [-cash], "label": ["Tahsilat (senaryo)"]})], ignore_index=True)
+    return simulate(inv, ctx["Q"], as_of, res["opening"], out, ctx["horizon"], ctx["n_sims"], seed=ctx["seed"],
+                    aging=ctx["aging"], cheques=ctx["cheques"])
+
+
+def gap_summary(res: dict, max_k: int = 40, collect_in_days: int = 7) -> dict:
+    """Kötümser senaryodaki açığın derinliği ve onu kapatmak için listeden kaç fatura gerektiği.
+
+    k = None: listedeki ilk `max_k` faturanın tamamı tahsil edilse de açık kapanmıyor."""
+    sim = res["sim"]
+    out = {"gap": float(max(0.0, -sim.p10.min())), "gap_day": int(sim.p10.argmin()), "k": 0, "amount": 0.0}
+    if sim.breach_day is None:
+        return out
+    todo = res["ranked"][res["ranked"]["actionable"]].head(max_k)
+    ids = list(todo["invoice_id"])
+    closes = lambda k: scenario(res, ids[:k], collect_in_days).breach_day is None
+    if not ids or not closes(len(ids)):
+        return out | {"k": None, "amount": float(todo["open_amount"].sum())}
+    lo, hi = 1, len(ids)                       # daha çok tahsilat hiçbir zaman zarar vermez: ikili arama güvenli
+    while lo < hi:
+        mid = (lo + hi) // 2
+        lo, hi = (lo, mid) if closes(mid) else (mid + 1, hi)
+    return out | {"k": lo, "amount": float(todo["open_amount"].head(lo).sum())}
 
 
 def backtest_model(full: pd.DataFrame, as_of, holdout_days: int = 240) -> dict:

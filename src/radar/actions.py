@@ -16,6 +16,10 @@ LATE_INTEREST_RATE = 0.43
 MIN_RECOVERY_COST_TL = 2020
 # Aynı fatura için yeni hatırlatma önermeden önce beklenen süre.
 CONTACT_COOLDOWN_DAYS = 7
+# 90 günden fazla gecikmiş ve simülasyonda ufuk içinde tahsil olasılığı bunun altında kalan fatura
+# "şüpheli alacak" sayılır: hatırlatma listesine girmez, ayrı gösterilir. Eşik bir iş kuralıdır.
+DOUBTFUL_MIN_OVERDUE = 90
+DOUBTFUL_MAX_COLLECT_PROB = 0.15
 
 
 def metrics(obs: pd.DataFrame, as_of) -> dict:
@@ -48,7 +52,7 @@ def payment_habits(obs: pd.DataFrame) -> pd.DataFrame:
 
 
 def prioritize(open_inv: pd.DataFrame, pay_day: np.ndarray, as_of, gap_day: int,
-               habits: pd.DataFrame | None = None) -> pd.DataFrame:
+               habits: pd.DataFrame | None = None, horizon: int = 90) -> pd.DataFrame:
     """Faturaları "açık gününe kadar tahsil edilememe riski taşıyan tutar"a göre sıralar."""
     as_of = pd.Timestamp(as_of)
     df = open_inv[["invoice_id", "customer_id", "customer_name", "due_date", "open_amount"]].copy()
@@ -56,16 +60,19 @@ def prioritize(open_inv: pd.DataFrame, pay_day: np.ndarray, as_of, gap_day: int,
     df["promised_date"] = promised.where(promised > as_of)
     df["days_overdue"] = (as_of - df["due_date"]).dt.days
     df["p_late"] = (pay_day > gap_day).mean(axis=1)
+    df["p_collect"] = (pay_day <= horizon).mean(axis=1)
     df["expected_pay_day"] = np.median(pay_day, axis=1)
     df["amount_at_risk"] = df["open_amount"] * df["p_late"]
     df["stage"] = pd.cut(df["days_overdue"], [-np.inf, -8, 0, 15, np.inf],
                          labels=["bekle", "hatirlatma", "mutabakat", "resmi"]).astype(str)
+    doubtful = (df["days_overdue"] > DOUBTFUL_MIN_OVERDUE) & (df["p_collect"] < DOUBTFUL_MAX_COLLECT_PROB)
+    df.loc[doubtful, "stage"] = "supheli"
     df.loc[df["promised_date"].notna(), "stage"] = "soz"      # söz tarihi geçene kadar hatırlatma yok
     # Vadesine bir haftadan fazla olan faturalar için hatırlatma işe yaramaz; listede sona alınır.
     last = open_inv["last_contact"] if "last_contact" in open_inv else pd.Series(pd.NaT, index=df.index)
     df["last_contact"] = pd.to_datetime(last)
     contacted = (as_of - df["last_contact"]).dt.days < CONTACT_COOLDOWN_DAYS
-    df["actionable"] = ~df["stage"].isin(["bekle", "soz"]) & ~contacted
+    df["actionable"] = ~df["stage"].isin(["bekle", "soz", "supheli"]) & ~contacted
     if habits is not None and len(habits):
         df = df.join(habits, on="customer_id")
     for col, default in (("payday", 0), ("cust_on_time", np.nan), ("cust_n_paid", 0)):
@@ -92,7 +99,7 @@ def draft_message(row, seller: str) -> dict | None:
     gönderenin kimliğinin açıkça belirtilmesi gerekir."""
     due, amount = pd.Timestamp(row["due_date"]).strftime("%d.%m.%Y"), _tl(row["open_amount"])
     ref = f"{row['invoice_id']} numaralı, {amount} tutarındaki faturamız"
-    if row["stage"] in ("bekle", "soz"):
+    if row["stage"] in ("bekle", "soz", "supheli"):
         return None
     if row["stage"] == "hatirlatma":
         habit = (" Bugüne kadarki ödemelerinizin büyük bölümünü vadesinde yaptığınız için teşekkür ederiz."

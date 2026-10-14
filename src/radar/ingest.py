@@ -33,6 +33,14 @@ ALIASES = {
 }
 
 
+FIELD_LABELS = {"invoice_id": "Fatura no", "customer_name": "Müşteri / cari unvan", "issue_date": "Tarih",
+                "amount": "Tutar", "due_date": "Vade tarihi", "vkn": "VKN / TCKN", "paid_date": "Ödeme tarihi",
+                "open_amount": "Kalan tutar", "description": "Açıklama"}
+INVOICE_FIELDS = ["invoice_id", "customer_name", "issue_date", "amount", "due_date", "vkn", "paid_date", "open_amount"]
+INVOICE_REQUIRED = ["invoice_id", "customer_name", "issue_date", "amount"]
+PAYMENT_FIELDS = PAYMENT_REQUIRED = ["issue_date", "amount", "description"]
+
+
 def _key(s) -> str:
     return re.sub(r"[^a-z0-9]+", " ", str(s).translate(_TR).lower()).strip()
 
@@ -50,11 +58,19 @@ def _read(file) -> pd.DataFrame:
     raise ValueError("Dosya okunamadı: desteklenen biçimler CSV ve Excel.")
 
 
-def _pick(df: pd.DataFrame, fields: list[str], required: list[str]) -> pd.DataFrame:
+def columns(file) -> list[str]:
+    """Dosyadaki sütun başlıkları (elle eşleştirme ekranı için)."""
+    return [str(c) for c in _read(file).columns]
+
+
+def _pick(df: pd.DataFrame, fields: list[str], required: list[str], mapping: dict | None = None) -> pd.DataFrame:
+    """Sütunları standart adlara çevirir; `mapping` (alan -> dosyadaki başlık) otomatik tanımanın önüne geçer."""
     cols = {_key(c): c for c in df.columns}
     out = pd.DataFrame(index=df.index)
     for f in fields:
-        src = next((cols[a] for a in [_key(f)] + ALIASES[f] if a in cols), None)
+        src = (mapping or {}).get(f)
+        if src not in df.columns:
+            src = next((cols[a] for a in [_key(f)] + ALIASES[f] if a in cols), None)
         if src is not None:
             out[f] = df[src]
     missing = [f for f in required if f not in out]
@@ -117,12 +133,12 @@ def _finish_invoices(df: pd.DataFrame, default_terms: int, notes: list[str]) -> 
     return df[cols].sort_values("issue_date").reset_index(drop=True)
 
 
-def load_invoices(file, default_terms: int = 30):
+def load_invoices(file, default_terms: int = 30, mapping: dict | None = None):
     """Kesilen faturalar. Zorunlu: fatura no, müşteri, fatura tarihi, tutar."""
     notes: list[str] = []
     df = _pick(_read(file), ["invoice_id", "customer_name", "vkn", "issue_date", "due_date", "amount",
                              "paid_date", "open_amount", "disputed", "promised_date"],
-               ["invoice_id", "customer_name", "issue_date", "amount"])
+               INVOICE_REQUIRED, mapping)
     for c in ("issue_date", "due_date", "paid_date", "promised_date"):
         if c in df:
             df[c] = _date(df[c])
@@ -147,10 +163,10 @@ def load_ubl(files, default_terms: int = 30):
     return _finish_invoices(df, default_terms, notes), notes
 
 
-def load_payments(file):
+def load_payments(file, mapping: dict | None = None):
     """Banka ekstresi. Zorunlu: tarih, tutar, açıklama. Yalnızca hesaba girişler alınır."""
     notes: list[str] = []
-    df = _pick(_read(file), ["issue_date", "amount", "description"], ["issue_date", "amount", "description"])
+    df = _pick(_read(file), PAYMENT_FIELDS, PAYMENT_REQUIRED, mapping)
     df = pd.DataFrame({"date": _date(df["issue_date"]), "amount": _num(df["amount"]),
                        "description": df["description"].fillna("")})
     n = len(df)

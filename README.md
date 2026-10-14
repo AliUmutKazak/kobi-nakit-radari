@@ -45,5 +45,6 @@ C:\Users\HP\.venvs\kobi-radar\Scripts\python -m pytest -q
 - Tahsilat geri testinde P50, gerçekleşenin %1–9 üzerinde; bant içinde kalsa da iyimser bir sapma var.
 - Ödenecek faturalar, döviz ve canlı banka/e-fatura bağlantısı yok. Çeklerde keşideci bazlı risk yok.
 - Koddaki yasal ve piyasa parametreleri (gecikme faizi, tahsil gideri, çek karşılıksızlık oranı) ikincil kaynaklardan alındı; birincil kaynaktan teyit edilmeli (bkz. docs/ARASTIRMA.md).
+- Dosya başlıkları tanınmazsa panel elle sütun eşleştirme ister ve seçimi hatırlar; muhasebe programlarına özel hazır şablon yok.
 - Mesaj gönderimi yok; taslak üretilir, kullanıcı kendi hesabından gönderip panelde kayda geçirir.
 - Veriler `data/radar.db` dosyasında, yalnızca bu bilgisayarda saklanır; kullanıcı hesabı, yetki ve yedekleme yok.

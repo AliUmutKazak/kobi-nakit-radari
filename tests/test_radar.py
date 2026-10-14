@@ -211,3 +211,49 @@ def test_store_persists_tables_and_events(full, tmp_path):
     assert not ranked.at[c, "actionable"]                          # 2 gün önce yazıldı, bekleme süresinde
     later = again.apply_events(again.load("invoices"), "2026-10-10").set_index("invoice_id")
     assert not later.at[a, "disputed"]
+
+
+def test_manual_column_mapping(tmp_path):
+    from radar import ingest
+
+    p = tmp_path / "f.csv"
+    p.write_text("Evrak;Kime Kesildi;Kesim Günü;Net\nA1;Deneme Ltd;05.09.2026;1.250,50\n", encoding="utf-8")
+    with pytest.raises(ValueError, match="Eksik sütun"):
+        ingest.load_invoices(p)
+    assert ingest.columns(p) == ["Evrak", "Kime Kesildi", "Kesim Günü", "Net"]
+    mapping = {"invoice_id": "Evrak", "customer_name": "Kime Kesildi", "issue_date": "Kesim Günü", "amount": "Net"}
+    inv, _ = ingest.load_invoices(p, mapping=mapping)
+    assert inv.at[0, "invoice_id"] == "A1" and inv.at[0, "amount"] == 1250.50
+
+
+def test_scenarios_and_gap_summary():
+    res = pipeline.demo(seed=7, as_of=AS_OF, n_sims=400)
+    sim = res["sim"]
+    same = pipeline.scenario(res)
+    assert np.allclose(same.p10, sim.p10) and np.allclose(same.p50, sim.p50)      # boş senaryo = bugünkü durum
+
+    ids = list(res["ranked"].loc[res["ranked"]["actionable"], "invoice_id"])
+    more = pipeline.scenario(res, ids[:10])
+    assert np.all(more.p10[7:] >= sim.p10[7:] - 1e-6) and more.p10[-1] > sim.p10[-1]
+    labels = ["Maaş"]
+    late = pipeline.scenario(res, delay_labels=labels, delay_days=30)
+    assert late.p50.min() >= sim.p50.min() - 1e-6 and late.p50[10] > sim.p50[10]
+
+    gap = pipeline.gap_summary(res)
+    assert sim.breach_day is not None and gap["gap"] > 0
+    if gap["k"]:
+        assert pipeline.scenario(res, ids[:gap["k"]]).breach_day is None
+        assert gap["k"] == 1 or pipeline.scenario(res, ids[:gap["k"] - 1]).breach_day is not None
+
+
+def test_doubtful_receivables_are_separated():
+    res = pipeline.demo(seed=7, as_of=AS_OF, n_sims=400)
+    ranked = res["ranked"]
+    doubtful = ranked[ranked["stage"] == "supheli"]
+    assert len(doubtful) and not doubtful["actionable"].any()
+    assert (doubtful["days_overdue"] > actions.DOUBTFUL_MIN_OVERDUE).all()
+    assert (doubtful["p_collect"] < actions.DOUBTFUL_MAX_COLLECT_PROB).all()
+    assert actions.draft_message(doubtful.iloc[0], "X") is None
+    # Gerçekte de bunların çoğu sonradan tahsil edilememiş olmalı.
+    truth = res["full"].set_index("invoice_id")["true_paid_date"].reindex(doubtful["invoice_id"])
+    assert truth.isna().mean() > 0.7
