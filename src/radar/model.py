@@ -34,7 +34,7 @@ class DelayModel:
         self.alpha, self.calib_share = alpha, calib_share
         self.params = dict(n_estimators=300, learning_rate=0.05, num_leaves=15,
                            min_child_samples=20, subsample=0.8, subsample_freq=1,
-                           colsample_bytree=0.8, verbose=-1, random_state=0) | params
+                           colsample_bytree=0.8, verbose=-1, random_state=0, n_jobs=1) | params
         self.offset = 0.0
         self.models: dict[float, lgb.LGBMRegressor] = {}
 
@@ -75,8 +75,12 @@ class FallbackModel:
         return X["hist_med"].to_numpy()[:, None] + self.resid[None, :]
 
 
-def fit_model(X: pd.DataFrame, y: pd.Series, min_rows: int = 300):
+MIN_LGBM_ROWS = 300
+
+
+def fit_model(X: pd.DataFrame, y: pd.Series, min_rows: int | None = None):
     """Yeterli olgun fatura varsa LightGBM, yoksa basit kantil modeli."""
+    min_rows = MIN_LGBM_ROWS if min_rows is None else min_rows
     return (DelayModel() if len(X) >= min_rows else FallbackModel()).fit(X, y)
 
 

@@ -12,7 +12,7 @@ import pandas as pd  # noqa: E402
 import plotly.graph_objects as go  # noqa: E402
 import streamlit as st  # noqa: E402
 
-from radar import actions, ingest, pipeline  # noqa: E402
+from radar import actions, ingest, mailer, pipeline  # noqa: E402
 from radar.reconcile import reconcile  # noqa: E402
 from radar.store import Store  # noqa: E402
 
@@ -45,7 +45,7 @@ def save_upload(store: Store, name: str, uploads, parse) -> None:
     uploads = [u for u in (uploads if isinstance(uploads, list) else [uploads]) if u]
     if not uploads:
         return
-    mapping = store.get(f"map_{name}", "{}")
+    mapping = store.get(f"map_{name}", "{}") + (store.get("rates", "") + store.get("terms", "") if name == "invoices" else "")
     digest = hashlib.md5(b"".join(u.getvalue() for u in uploads) + mapping.encode()).hexdigest()
     if digest == store.get(f"hash_{name}"):
         return
@@ -63,16 +63,16 @@ def save_upload(store: Store, name: str, uploads, parse) -> None:
     store.set(f"hash_{name}", digest)
 
 
-def parse_invoices(uploads, terms):
+def parse_invoices(uploads, terms, rates):
     frames, notes = [], []
     xml = [_open(u) for u in uploads if u.name.lower().endswith(".xml")]
     for u in uploads:
         if not u.name.lower().endswith(".xml"):
-            df, n = ingest.load_invoices(_open(u), terms, json.loads(get_store().get("map_invoices", "{}")))
+            df, n = ingest.load_invoices(_open(u), terms, json.loads(get_store().get("map_invoices", "{}")), rates)
             frames.append(df)
             notes += n
     if xml:
-        df, n = ingest.load_ubl(xml, terms)
+        df, n = ingest.load_ubl(xml, terms, rates)
         frames.append(df)
         notes += n
     frames = [f for f in frames if len(f)]
@@ -140,19 +140,32 @@ with st.sidebar:
         terms = st.number_input("Vadesi yazmayan faturalar için vade (gün)", 0, 365, int(store.get("terms", 30)),
                                 help="TTK m.1530: vade yazmıyorsa borçlu, faturayı aldıktan 30 gün sonra temerrüde düşer.")
         seller = st.text_input("Mesajlardaki imza (ticaret unvanı ve MERSİS no)", store.get("seller", ""))
-        for key, value in (("opening", opening), ("terms", int(terms)), ("seller", seller)):
+        rates_text = st.text_input("Döviz kurları (dövizli fatura varsa)", store.get("rates", ""),
+                                   placeholder="USD=41,50; EUR=48,20",
+                                   help="Dövizli faturalar bu kurla TL'ye çevrilir. Kur girilmeyen döviz tahmine katılmaz.")
+        for key, value in (("opening", opening), ("terms", int(terms)), ("seller", seller), ("rates", rates_text)):
             store.set(key, value)
         st.caption("Yüklenen her dosya, o türdeki kayıtlı verinin yerine geçer ve bu bilgisayarda saklanır.")
         save_upload(store, "invoices",
                     st.file_uploader("Kesilen faturalar (CSV / Excel / e-Fatura XML)", ["csv", "xlsx", "xls", "xml"],
                                      accept_multiple_files=True),
-                    lambda ups: parse_invoices(ups, int(terms)))
+                    lambda ups: parse_invoices(ups, int(terms), ingest.parse_rates(rates_text)))
         save_upload(store, "payments", st.file_uploader("Banka ekstresi (isteğe bağlı)", ["csv", "xlsx", "xls"]),
                     lambda ups: ingest.load_payments(_open(ups[0]), json.loads(store.get("map_payments", "{}"))))
         save_upload(store, "outflows", st.file_uploader("Planlı giderler (isteğe bağlı)", ["csv", "xlsx", "xls"]),
                     lambda ups: (ingest.load_schedule(_open(ups[0])), []))
         save_upload(store, "cheques", st.file_uploader("Çek / senet portföyü (isteğe bağlı)", ["csv", "xlsx", "xls"]),
                     lambda ups: (ingest.load_schedule(_open(ups[0]), "drawer"), []))
+        with st.expander("E-posta gönderimi (isteğe bağlı)"):
+            st.caption("Taslakları kendi e-posta hesabınızdan göndermek için. Parola kaydedilmez; paneli kapatınca silinir. "
+                       "Gmail ve Outlook'ta hesap parolası yerine uygulama parolası gerekir.")
+            mail = mailer.MailConfig(
+                host=st.text_input("SMTP sunucusu", store.get("smtp_host", ""), placeholder="smtp.gmail.com"),
+                port=int(st.number_input("Port", 1, 65535, int(store.get("smtp_port", 587)))),
+                username=st.text_input("Kullanıcı adı (e-posta adresiniz)", store.get("smtp_user", "")),
+                password=st.text_input("Parola", type="password"))
+            for key, value in (("smtp_host", mail.host), ("smtp_port", mail.port), ("smtp_user", mail.username)):
+                store.set(key, value)
         with st.expander("Kayıtlı veriyi sil"):
             st.write("Yüklenen tablolar silinir. İtiraz, ödeme sözü ve mesaj kayıtları korunur.")
             sure = st.checkbox("Eminim")
@@ -224,6 +237,9 @@ if res["disputed_total"]:
 if m["over_60_terms"]:
     st.caption(f"• {m['over_60_terms']} açık faturada vade 60 günden uzun. TTK m.1530'a göre alacaklı KOBİ ise ya da "
                "borçlu büyük işletmeyse vade 60 günü aşamaz; bu sözleşmeleri gözden geçirin.")
+if m["delay_trend_days"] >= 3:
+    st.warning(f"Müşterilerinizin ödemeleri son 90 günde, önceki 90 güne göre medyan {m['delay_trend_days']:.0f} gün "
+               "daha geç geliyor. Gecikmeler uzamaya devam ederse tahmin iyimser kalabilir; kötümser çizgiyi esas alın.")
 if res["simple_model"]:
     st.info(f"Vadesi dolmuş {res['n_train']} fatura bulundu. Bu kadar veriyle öğrenen model yerine "
             "müşteri alışkanlığına dayalı basit tahmin kullanılıyor; bant daha geniş ve daha az kişisel olur.")
@@ -334,6 +350,16 @@ if len(todo):
     if own:
         st.caption("Mesajı kendi e-posta ya da WhatsApp hesabınızdan gönderdikten sonra aşağıdan kayda geçirin. "
                    f"Kayda geçen fatura {actions.CONTACT_COOLDOWN_DAYS} gün boyunca listede yeniden önerilmez.")
+        if mail.ready:
+            emails = res["obs"].set_index("invoice_id")["email"] if "email" in res["obs"] else {}
+            to = st.text_input("Alıcı e-posta adresi", emails.get(pick, ""), key=f"to_{pick}")
+            if st.button("E-posta ile gönder", disabled=not mailer.is_address(to)):
+                try:
+                    mailer.send(mail, to, draft["subject"], body)
+                except mailer.MailError as err:
+                    st.error(str(err))
+                else:
+                    record(pick, "message", f"[e-posta: {to.strip()}] {body}")
         b1, b2, b3 = st.columns(3)
         if b1.button("Gönderildi olarak kaydet"):
             record(pick, "message", body)

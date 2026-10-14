@@ -35,6 +35,8 @@ C:\Users\HP\.venvs\kobi-radar\Scripts\python -m pytest -q
 | `src/radar/simulate.py` | Korelasyonlu Monte Carlo kasa simülasyonu |
 | `src/radar/actions.py` | Metrikler, önceliklendirme, mesaj taslakları |
 | `src/radar/store.py` | Kalıcı kayıt (SQLite): yüklenen tablolar, ayarlar, itiraz / ödeme sözü / mesaj günlüğü |
+| `src/radar/mailer.py` | Onaylanan taslağın kullanıcının e-posta hesabından gönderilmesi |
+| `src/radar/validation.py` | 192 sentetik şirkette kalibrasyon çalışması (`run_validation.py`) |
 | `src/radar/pipeline.py` | Uçtan uca akış ve geri testler |
 | `app.py` | Streamlit paneli |
 
@@ -46,6 +48,6 @@ C:\Users\HP\.venvs\kobi-radar\Scripts\python -m pytest -q
 - Ödenecek faturalar, döviz ve canlı banka/e-fatura bağlantısı yok. Çeklerde keşideci bazlı risk yok.
 - Koddaki yasal ve piyasa parametreleri (gecikme faizi, tahsil gideri, çek karşılıksızlık oranı) ikincil kaynaklardan alındı; birincil kaynaktan teyit edilmeli (bkz. docs/ARASTIRMA.md).
 - Dosya başlıkları tanınmazsa panel elle sütun eşleştirme ister ve seçimi hatırlar; muhasebe programlarına özel hazır şablon yok.
-- İade ve dövizli faturalar dışarıda bırakılır ve bildirilir; döviz desteği yok.
-- Mesaj gönderimi yok; taslak üretilir, kullanıcı kendi hesabından gönderip panelde kayda geçirir.
+- Dövizli faturalar kullanıcının girdiği kurla TL'ye çevrilir; kur değişimi tahmin bandına dahil değildir. İade faturaları müşterinin en eski açık faturalarından düşülür.
+- E-posta, kullanıcının kendi SMTP hesabı üzerinden ve yalnızca düğmeye basınca gönderilir; gerçek bir sunucuyla denenmedi (sahte sunucuyla test edildi). WhatsApp gönderimi yok.
 - Veriler `data/radar.db` dosyasında, yalnızca bu bilgisayarda saklanır; kullanıcı hesabı, yetki ve yedekleme yok.

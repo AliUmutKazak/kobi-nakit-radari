@@ -1,6 +1,6 @@
 # Doğrulama: Simülasyon Çalışması
 
-Tarih: 14 Ekim 2026. Yeniden üretmek için: `python run_validation.py 8` (yaklaşık 5 dakika).
+Tarih: 14 Ekim 2026. Yeniden üretmek için: `python run_validation.py 24` (yaklaşık 3 dakika).
 
 ## Neyi ölçüyor, neyi ölçmüyor
 
@@ -10,59 +10,76 @@ Bu çalışma şunu gösterir: istatistiksel kurgu kendi içinde tutarlı mı, h
 
 ## Tasarım
 
-216 şirket: 8 rastgele tohum × 27 rejim.
+192 bağımsız tahmin: 24 rastgele tohum × 8 rejim. Her tahminden üç açılış kasası düzeyi türetilir (toplam 576 şirket durumu); açılış kasası yalnızca bütün yolları sabit kadar kaydırdığı için ayrı tahmin gerektirmez.
 
 | Boyut | Değerler | Neden |
 |---|---|---|
-| Müşteri sayısı | 8, 20, 40 | Az müşteri, tek bir gecikmenin kasayı belirlemesi demek |
-| Gecikmelerin kötüleşme hızı | 0, 0,6, 1,2 | Model geçmişten öğrenir; rejim değişirken geride kalabilir |
+| Müşteri sayısı | 8, 40 | Az müşteri, tek bir gecikmenin kasayı belirlemesi demek |
+| Gecikmelerin kötüleşme hızı | 0, 1,2 | 1,2: gecikmeler iki yılda iki katından fazla uzuyor; model geçmişten öğrendiği için geride kalabilir |
+| Çeyreklik piyasa şoku | yok, var | Tüm müşterileri birlikte geciktiren, tahmin döneminde değeri bilinmeyen ortak etki |
 | Açılış kasası (aylık ciro cinsinden) | 0,2, 0,45, 0,8 | Eksiye düşme olasılığının tüm aralığını kapsamak için |
 
-Ölçütler, olasılıksal tahmin literatürünün standart ikilisidir (Gneiting, Balabdaoui, Raftery 2007): önce kalibrasyon (söylenen olasılık gerçekleşen sıklıkla tutuyor mu), sonra keskinlik.
+Ölçütler, olasılıksal tahmin literatürünün standart ikilisidir (Gneiting, Balabdaoui, Raftery 2007): önce kalibrasyon, sonra keskinlik. Her oran standart hatasıyla verilir; standart hatanın içinde kalan fark bulgu sayılmaz.
 
 ## Sonuç
 
-| Ölçüt | Hedef | İlk sürüm | Şimdi |
-|---|---|---|---|
-| Dönem sonu kasa P10–P90 bandında | %80 | %100 (27 şirketlik ön ölçüm) | %86 |
-| Bandın altında kalan | %10 | %0 | %3 |
-| Bandın üstünde kalan | %10 | %0 | %11 |
-| Beklenen değerin sapması (aylık ciro) | 0 | tek tohumla ölçülemedi | −0,03 |
-| Brier skoru (tahminsiz taban 0,250) | düşük | 0,122 | 0,088 |
+| Ölçüt | Hedef | Sonuç |
+|---|---|---|
+| Dönem sonu kasa P10–P90 bandında | %80 | %84 ±3 |
+| Bandın altında kalan | %10 | %10 ±2 |
+| Bandın üstünde kalan | %10 | %5 ±2 |
+| Beklenen değerin sapması (aylık ciro; artı = iyimser) | 0 | +0,09 ±0,03 |
+| Brier skoru (tahminsiz taban 0,229) | düşük | 0,095 |
 
 Eksiye düşme olasılığının kalibrasyonu:
 
-| Söylenen olasılık | Şirket sayısı | Ortalama tahmin | Gerçekleşen sıklık |
+| Söylenen olasılık | Şirket durumu | Ortalama tahmin | Gerçekleşen sıklık |
 |---|---|---|---|
-| %0–10 | 51 | %4 | %0 |
-| %10–30 | 31 | %21 | %10 |
-| %30–70 | 50 | %48 | %54 |
-| %70–90 | 29 | %83 | %93 |
-| %90–100 | 55 | %96 | %96 |
+| %0–10 | 44 | %6 | %2 |
+| %10–30 | 97 | %21 | %11 |
+| %30–70 | 145 | %51 | %54 |
+| %70–90 | 97 | %81 | %93 |
+| %90–100 | 193 | %97 | %99 |
 
-Okuma: panel "%48 olasılıkla eksiye düşer" dediği şirketlerin %54'ü gerçekten düştü. Sıralama doğru ve değerler birbirine yakın; orta bölgede birkaç puanlık fark 30–50 şirketlik gruplarda örnekleme gürültüsünün içinde.
+Okuma: sıralama doğru ve orta bölge isabetli. İki uçta tahmin ortaya doğru çekik: "%21" denen şirketlerin %11'i, "%81" denenlerin %93'ü eksiye düştü. Yani panel düşük riskte biraz fazla, yüksek riskte biraz eksik söylüyor; karar yönünü değiştirmiyor ama düzeltilmesi gereken bir kusur.
 
-## Bu çalışmanın ortaya çıkardığı ve düzeltilen iki kusur
+Rejim kırılımı:
 
-1. **Bant gereğinden genişti.** Faturaların birlikte gecikme derecesi (piyasa ve müşteri korelasyonu) sabit bir varsayımdı. Artık her şirketin kendi geçmişinden ölçülüyor: gerçekleşen gecikmeler tahmin dağılımındaki yerlerine çevriliyor ve çeyrek ile müşteri bazındaki ortak sapma, tek yönlü rastgele etkiler varyans analiziyle ayrıştırılıyor. Veri 200 faturadan azsa ön değer kullanılıyor.
-2. **Yukarı yönlü sürprizler eksik sayılıyordu.** İlk düzeltmeden sonra gerçekleşen kasa, bandın üstüne olması gerekenden sık çıkıyordu (%18). Neden: gelecek satışlar "geçen çeyreğin aynısı" diye sabit alınıyordu. Artık her senaryoda geçmiş dönemin faturaları Poisson(1) ağırlığıyla yeniden örnekleniyor (Poisson bootstrap), yani satışların kendisi de belirsiz. Üst taraf %11'e indi.
+| Rejim | Bant içi | Altında | Üstünde | Sapma (aylık ciro) |
+|---|---|---|---|---|
+| 8 müşteri | %81 ±4 | %15 ±4 | %4 ±2 | +0,14 ±0,05 |
+| 40 müşteri | %88 ±3 | %6 ±2 | %6 ±2 | +0,05 ±0,03 |
+| Gecikmeler sabit | %83 ±4 | %8 ±3 | %8 ±3 | +0,02 ±0,04 |
+| Gecikmeler hızla kötüleşiyor | %85 ±4 | %12 ±3 | %2 ±1 | +0,17 ±0,04 |
+| Piyasa şoku yok | %89 ±3 | %9 ±3 | %2 ±1 | +0,13 ±0,04 |
+| Piyasa şoku var | %80 ±4 | %11 ±3 | %8 ±3 | +0,05 ±0,04 |
+
+## Bu çalışmanın ortaya çıkardığı ve düzeltilen kusurlar
+
+1. **Bant gereğinden genişti (ilk ölçümde bant içi %100).** Faturaların birlikte gecikme derecesi sabit bir varsayımdı; artık veriden ölçülüyor.
+2. **Yukarı yönlü sürprizler eksik sayılıyordu (üstünde %18).** Gelecek satışlar sabit alınıyordu; artık her senaryoda Poisson(1) ağırlığıyla yeniden örnekleniyor.
+3. **Piyasa şokunda bant dardı (bant içi %75).** Belirsizlik, modelin eğitim verisine uyumundan ölçülüyordu; o veri bilinen geçmiştir ve şoku zaten içerir. Artık son dört çeyreğin her birinin başına dönülüp o günkü bilgiyle tahmin yapılıyor ve hata, gerçekleşenle karşılaştırılarak ölçülüyor (ileriye dönük kalibrasyon). Şoklu rejimde bant içi %80'e çıktı.
+4. **Hâlâ ödenmemiş faturalar hatayı gizliyordu.** Kalibrasyonda ödenmemiş faturanın gecikmesi yalnızca alt sınırdır; gerçek değer sayılınca iyimserlik görünmez oluyordu. Sansürlü en çok olabilirlik tahminiyle düzeltildi; vadesi geçmiş ve geçmemiş faturalar ayrı kalibre ediliyor.
+
+## Önceki sürümdeki bir yanlış sonuç
+
+Bu belgenin ilk hâlinde "8 müşterili şirketlerde bant dar ve beklenen değer kötümser" yazıyordu. O ölçüm 8 tohuma dayanıyordu ve aynı tohumun farklı rejimleri bağımsız sayılmıştı. 96 bağımsız şirketle yinelendiğinde bulgu kayboldu (bant içi %82, sapma +0,03 ±0,06). Çalışma bu yüzden daha çok bağımsız tohumla ve standart hatayla yeniden kuruldu.
 
 ## Kalan zayıflıklar
 
-| Bulgu | Değer | Yorum |
+| Bulgu | Değer | Durum |
 |---|---|---|
-| Bandın alt tarafı fazla temkinli | Altında kalan %3 (hedef %10) | Kötümser çizgi gerçekte olduğundan kötü. Yanlış alarm yönünde hata; kaçırılan alarm yönünde değil. |
-| 40 müşterili şirketlerde bant fazla geniş | Bant içi %100 | Piyasa etkisi için kullanılan ön değer sıfır değil; sentetik veride ise ortak piyasa şoku yok. Gerçek dünyada böyle şoklar var, bu yüzden ön değeri sıfırlamadım. |
-| 8 müşterili şirketlerde bant dar ve beklenen değer kötümser | Bant içi %75, sapma −0,15 aylık ciro | Az müşteride tek bir büyük fatura sonucu belirliyor; en zayıf olduğumuz şirket tipi bu. |
-| Gecikmeler hızla kötüleşirken hafif iyimserlik | Sapma +0,06 aylık ciro | Model geçmişten öğrendiği için rejim değişimini geriden izliyor. |
+| Gecikmeler hızla kötüleşirken beklenen değer iyimser | +0,17 ±0,04 aylık ciro | Giderilemedi. Kalibrasyon geçmiş hatayı düzeltiyor ama kötüleşmenin tahmin döneminde de süreceğini öngöremiyor. Eğilimi ileriye uzatmak tahmin literatüründe güvenilmez bulunduğu için yapılmadı. Bunun yerine panel, ödemeler son 90 günde belirgin biçimde gecikmeye başladıysa kullanıcıyı uyarıyor. Bant bu rejimde de %85 kapsıyor. |
+| Genel hafif iyimserlik | +0,09 ±0,03 aylık ciro | Büyük kısmı yukarıdaki rejimden geliyor; gecikmeler sabitken sapma +0,02 ±0,04. |
+| Bandın üst tarafı fazla geniş | Üstünde %5 (hedef %10) | Yukarı yönlü sürpriz olması gerekenden seyrek; hata temkinli yönde. |
+| Olasılık iki uçta ortaya çekik | %21 denilen %11, %81 denilen %93 | Henüz ele alınmadı. |
 
 ## Ek ölçümler (tek şirket, 6 geçmiş tarih)
 
 - Vade aşımı tahmininde ortalama mutlak hata: model 15,1 gün, müşteri medyanı 15,7 gün. Nokta isabetinde kazanç küçük; modelin katkısı dağılımın şeklinde.
 - Tek faturanın gecikmesi için P10–P90 aralığının isabeti: %80 (hedef %80).
-- Açık faturalardan 90 günlük tahsilat: 6 tarihin 6'sında gerçekleşen bant içinde; beklenen değer gerçekleşenin %2–11 üzerinde.
 
 ## Kaynaklar
 
 - Gneiting, Balabdaoui, Raftery (2007), [Probabilistic forecasts, calibration and sharpness](https://sites.stat.washington.edu/people/raftery/Research/PDF/Gneiting2007jrssb.pdf), JRSS-B.
-- Brier skoru ve güvenilirlik tablosu, olasılık tahminlerinin standart değerlendirme araçlarıdır; Poisson bootstrap, klasik yeniden örneklemenin her gözleme bağımsız Poisson(1) ağırlık veren biçimidir. Bu iki yöntem için birincil kaynak taraması henüz yapılmadı; [ARASTIRMA.md](ARASTIRMA.md) içindeki teyit listesine eklenmeli.
+- Brier skoru ve güvenilirlik tablosu, tek yönlü rastgele etkiler varyans analizi, sansürlü normal olabilirlik (Tobit) ve Poisson bootstrap standart istatistik yöntemleridir. Bunlar için birincil kaynak taraması henüz yapılmadı; [ARASTIRMA.md](ARASTIRMA.md) içindeki teyit listesine eklenmeli.

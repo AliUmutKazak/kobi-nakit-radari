@@ -303,3 +303,74 @@ def test_foreign_currency_and_refund_invoices_are_reported_not_mixed(tmp_path, f
     assert df.empty and len(notes) == 2
     ok, notes = ingest.load_ubl([to_ubl_xml(row).encode()])
     assert len(ok) == 1 and not notes
+
+
+def test_censored_fit_recovers_mean_that_naive_average_misses():
+    from radar.simulate import censored_normal_fit
+
+    rng = np.random.default_rng(1)
+    true = rng.normal(0.4, 1.2, 4000)
+    limit = rng.normal(1.0, 0.5, 4000)                    # gözlem penceresi: bundan büyük değerler görülemez
+    censored = true > limit
+    seen = np.where(censored, limit, true)
+    mu, sigma = censored_normal_fit(seen, censored)
+    assert seen.mean() < 0.25 and abs(mu - 0.4) < 0.08 and abs(sigma - 1.2) < 0.08
+    assert censored_normal_fit(true, np.zeros(4000, bool)) == pytest.approx((true.mean(), true.std()))
+
+
+def test_calibration_detects_worsening_payment_behaviour():
+    steady = pipeline.calibrate(observe(generate(seed=5, trend=0.0, as_of=AS_OF), AS_OF), AS_OF)
+    worse = pipeline.calibrate(observe(generate(seed=5, trend=1.5, as_of=AS_OF), AS_OF), AS_OF)
+    assert steady["fresh"]["n"] > 100 and 0 <= steady["rho_market"] <= 0.5
+    assert worse["fresh"]["z_shift"] > steady["fresh"]["z_shift"]
+
+
+def test_refunds_are_netted_and_currency_converted_with_given_rates(tmp_path):
+    from radar import ingest
+
+    p = tmp_path / "f.csv"
+    p.write_text("Fatura No;Cari;Tarih;Vade;Toplam;Para Birimi;Fatura Tipi\n"
+                 "A1;Deneme Ltd;01.08.2026;01.09.2026;1000;TL;SATIS\n"
+                 "A2;Deneme Ltd;05.08.2026;05.09.2026;500;TL;SATIS\n"
+                 "R1;Deneme Ltd;10.09.2026;;1200;TL;IADE\n"
+                 "B1;Baska AS;02.08.2026;02.09.2026;100;USD;SATIS\n"
+                 "B2;Baska AS;03.08.2026;03.09.2026;10;EUR;SATIS\n", encoding="utf-8")
+    inv, notes = ingest.load_invoices(p, rates=ingest.parse_rates("usd = 40,5; GBP=yok"))
+    by = inv.set_index("invoice_id")
+    assert list(by.index) == ["A1", "B1", "A2"]                       # EUR kuru yok: dışarıda; iade satır değil
+    assert by.at["A1", "open_amount"] == 0 and by.at["A2", "open_amount"] == 300      # 1200 TL iade, eskiden yeniye
+    assert by.at["B1", "amount"] == pytest.approx(4050) and by.at["B1", "currency"] == "USD"
+    assert sum("EUR" in n for n in notes) == 1 and any("USD = 40.5" in n for n in notes) and any("iade" in n for n in notes)
+    assert ingest.parse_rates("") == {} and ingest.parse_rates("EUR=48,2\nusd=41") == {"EUR": 48.2, "USD": 41.0}
+
+
+def test_mailer_sends_only_valid_complete_requests(monkeypatch):
+    import smtplib
+
+    from radar import mailer
+
+    sent = []
+
+    class FakeSMTP:
+        def __init__(self, host, port, **kw):
+            self.host, self.port = host, port
+        def __enter__(self): return self
+        def __exit__(self, *a): return False
+        def starttls(self, **kw): sent.append("tls")
+        def login(self, user, password):
+            if password == "yanlis":
+                raise smtplib.SMTPAuthenticationError(535, b"bad")
+        def send_message(self, msg): sent.append(msg)
+
+    monkeypatch.setattr(smtplib, "SMTP", FakeSMTP)
+    cfg = mailer.MailConfig("smtp.example.com", 587, "ben@example.com", "gizli")
+    mailer.send(cfg, " musteri@firma.com.tr ", "Fatura hakkında", "Merhaba, ödeme hatırlatması.")
+    assert sent[0] == "tls" and sent[1]["To"] == "musteri@firma.com.tr" and sent[1]["From"] == "ben@example.com"
+    assert "ödeme hatırlatması" in sent[1].get_content()
+    with pytest.raises(mailer.MailError, match="Alıcı"):
+        mailer.send(cfg, "adres-degil", "k", "m")
+    with pytest.raises(mailer.MailError, match="eksik"):
+        mailer.send(mailer.MailConfig("smtp.example.com", 587, "ben@example.com", ""), "a@b.co", "k", "m")
+    with pytest.raises(mailer.MailError, match="Giriş reddedildi"):
+        mailer.send(mailer.MailConfig("smtp.example.com", 587, "ben@example.com", "yanlis"), "a@b.co", "k", "m")
+    assert len(sent) == 3                                  # hatalı denemelerde hiçbir ileti gitmedi

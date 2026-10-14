@@ -13,7 +13,8 @@ from dataclasses import dataclass
 
 import numpy as np
 import pandas as pd
-from scipy.special import ndtr, ndtri
+from scipy.optimize import minimize
+from scipy.special import log_ndtr, ndtr, ndtri
 
 from .model import QS
 
@@ -51,6 +52,7 @@ class SimResult:
     p90: np.ndarray
     prob_negative: np.ndarray      # o gün kasanın eksiye düşme olasılığı
     prob_any_breach: float         # ufuk içinde en az bir gün eksiye düşme olasılığı
+    min_balance: np.ndarray        # senaryo başına ufuk içindeki en düşük kasa
     breach_day: int | None         # P10 bandının sıfırı kestiği ilk gün
     pay_day: np.ndarray            # (fatura, senaryo) ödeme günü; ufuk dışı = horizon + 1
     collections: np.ndarray        # senaryo başına mevcut açık faturalardan tahsilat
@@ -73,6 +75,63 @@ def _between_share(z: np.ndarray, groups: np.ndarray) -> tuple[float, int]:
     return float(between / (between + msw)) if between + msw > 0 else 0.0, k
 
 
+def normal_scores(Q: np.ndarray, y) -> np.ndarray:
+    """Gerçekleşen gecikmenin tahmin dağılımındaki yerini (0-1) normal skora çevirir.
+
+    Tahmin kusursuzsa skorlar standart normal dağılır: ortalaması 0, sapması 1."""
+    y = np.asarray(y, float)
+    Q = np.sort(np.asarray(Q, float), axis=1) + np.arange(len(P)) * 1e-3
+    u = np.array([cdf(Q[i], y[i]) for i in range(len(y))])
+    return ndtri(np.clip(u, 0.01, 0.99))
+
+
+def conditional_scores(Q: np.ndarray, y, d0, aging: np.ndarray | None = None) -> np.ndarray:
+    """`normal_scores`un açık faturalar için karşılığı: fatura tahmin gününde `d0` gün gecikmiş ve
+    hâlâ ödenmemişken, gerçekleşen gecikmenin koşullu dağılımdaki yeri. Simülasyonla aynı kuralı
+    izler: modelin P90'ını aşmış faturalarda yaşlandırma eğrisi kullanılır."""
+    y, d0 = np.asarray(y, float), np.asarray(d0, float)
+    Q = np.sort(np.asarray(Q, float), axis=1) + np.arange(len(P)) * 1e-3
+    u = np.empty(len(y))
+    for i in range(len(y)):
+        if aging is not None and d0[i] > Q[i, 4]:
+            last = len(aging) - 1
+            s0 = aging[int(min(d0[i], last))]
+            u[i] = 1 - aging[int(min(y[i], last))] / s0 if s0 > 0 else 0.5
+        else:
+            f0 = min(cdf(Q[i], d0[i]), 0.999)
+            u[i] = (cdf(Q[i], y[i]) - f0) / (1 - f0)
+    return ndtri(np.clip(u, 0.01, 0.99))
+
+
+def censored_normal_fit(z: np.ndarray, censored: np.ndarray) -> tuple[float, float]:
+    """Sağdan sansürlü normal örneklemin ortalaması ve sapması (en çok olabilirlik).
+
+    Hâlâ ödenmemiş bir faturanın skoru yalnızca alt sınırdır; bunu gerçek değer saymak
+    ortalamayı aşağı çeker ve iyimserliği gizler."""
+    z, censored = np.asarray(z, float), np.asarray(censored, bool)
+    if not censored.any():
+        return float(z.mean()), float(z.std())
+
+    def nll(params):
+        mu, sigma = params[0], np.exp(params[1])
+        r = (z - mu) / sigma
+        return -(np.sum(-0.5 * r[~censored] ** 2 - np.log(sigma)) + np.sum(log_ndtr(-r[censored])))
+
+    fit = minimize(nll, [z.mean(), np.log(max(z.std(), 0.3))], method="Nelder-Mead")
+    return float(fit.x[0]), float(np.exp(fit.x[1]))
+
+
+def correlation_from_scores(z: np.ndarray, market_group, customer_id, prior_groups: float = 4.0) -> tuple[float, float]:
+    """Skorlardaki ortak hareketi piyasa (grup) ve müşteri (grup içi) paylarına ayırır."""
+    market_group = np.asarray(market_group, str)
+    rho_m, k = _between_share(z, market_group)
+    rho_m = (k * rho_m + prior_groups * PRIOR_RHO[0]) / (k + prior_groups)
+    centered = z - pd.Series(z).groupby(market_group).transform("mean").to_numpy()
+    rho_c, _ = _between_share(centered, np.char.add(np.asarray(customer_id, str), market_group))
+    rho_c *= 1 - rho_m                     # müşteri payı, piyasa etkisi çıkarıldıktan sonra kalan varyans üzerinden
+    return float(min(rho_m, 0.5)), float(min(rho_c, 0.6))
+
+
 def estimate_correlation(Q: np.ndarray, y, customer_id, due_date, min_rows: int = 200,
                          prior_groups: float = 4.0) -> tuple[float, float]:
     """Gecikmelerin birlikte hareketini şirketin kendi geçmişinden ölçer.
@@ -82,20 +141,10 @@ def estimate_correlation(Q: np.ndarray, y, customer_id, due_date, min_rows: int 
     aynı çeyrekteki ortak sapması müşteri etkisidir; simülasyondaki faktörler de 90 günlük
     ufuk boyunca sabit kaldığı için gruplar çeyrek bazındadır. Çeyrek sayısı az olduğundan
     piyasa tahmini ön değere doğru büzülür."""
-    y = np.asarray(y, float)
-    if len(y) < min_rows:
+    if len(np.asarray(y)) < min_rows:
         return PRIOR_RHO
-    Q = np.sort(np.asarray(Q, float), axis=1) + np.arange(len(P)) * 1e-3
-    u = np.array([cdf(Q[i], y[i]) for i in range(len(y))])
-    z = ndtri(np.clip(u, 0.01, 0.99))
     quarter = pd.PeriodIndex(pd.to_datetime(due_date), freq="Q").astype(str).to_numpy()
-    rho_m, k = _between_share(z, quarter)
-    rho_m = (k * rho_m + prior_groups * PRIOR_RHO[0]) / (k + prior_groups)
-    centered = z - pd.Series(z).groupby(quarter).transform("mean").to_numpy()
-    rho_c, _ = _between_share(centered, np.char.add(np.asarray(customer_id, str), quarter))
-    rho_c *= 1 - rho_m                     # müşteri payı, piyasa etkisi çıkarıldıktan sonra kalan varyans üzerinden
-    rho_m, rho_c = min(rho_m, 0.5), min(rho_c, 0.6)
-    return float(rho_m), float(rho_c)
+    return correlation_from_scores(normal_scores(Q, y), quarter, customer_id, prior_groups)
 
 
 def aging_curve(inv: pd.DataFrame, as_of, max_days: int = 720) -> np.ndarray:
@@ -116,7 +165,8 @@ def aging_curve(inv: pd.DataFrame, as_of, max_days: int = 720) -> np.ndarray:
 def simulate(inv: pd.DataFrame, Q: np.ndarray, as_of, opening: float, outflows: pd.DataFrame,
              horizon: int = 90, n_sims: int = 2000, rho_market: float = 0.15,
              rho_customer: float = 0.35, seed: int = 0, aging: np.ndarray | None = None,
-             cheques: pd.DataFrame | None = None, cheque_bounce: float = 0.034) -> SimResult:
+             cheques: pd.DataFrame | None = None, cheque_bounce: float = 0.034,
+             z_shift: float = 0.0, z_scale: float = 1.0) -> SimResult:
     """inv sütunları: customer_id, issue_date, due_date, open_amount, p_default, projected.
 
     cheques (date, amount): portföydeki çek/senetler vade gününde kasaya girer; her biri
@@ -131,7 +181,10 @@ def simulate(inv: pd.DataFrame, Q: np.ndarray, as_of, opening: float, outflows: 
     n_cust = codes.max() + 1 if n else 0
     common = np.sqrt(rho_market) * zm + np.sqrt(rho_customer) * rng.standard_normal((n_cust, n_sims))[codes]
     idio = np.sqrt(1 - rho_market - rho_customer)
-    u_delay = ndtr(common + idio * rng.standard_normal((n, n_sims)))
+    # z_shift / z_scale: geçmişteki ileriye dönük tahminlerin sistematik hatası (bkz. pipeline.calibrate).
+    # Fatura başına ayrı değer de verilebilir (vadesi geçmiş ve geçmemiş faturalar ayrı kalibre edilir).
+    z_shift, z_scale = (np.broadcast_to(np.asarray(v, float), (n,))[:, None] for v in (z_shift, z_scale))
+    u_delay = ndtr(z_shift + z_scale * (common + idio * rng.standard_normal((n, n_sims))))
     u_default = ndtr(-(common + idio * rng.standard_normal((n, n_sims))))
 
     due_off = (inv["due_date"] - as_of).dt.days.to_numpy()
@@ -186,7 +239,7 @@ def simulate(inv: pd.DataFrame, Q: np.ndarray, as_of, opening: float, outflows: 
     return SimResult(
         dates=pd.date_range(as_of, periods=horizon + 1), p10=p10, p50=p50, p90=p90,
         prob_negative=(balance < 0).mean(axis=0),
-        prob_any_breach=float((balance.min(axis=1) < 0).mean()),
+        prob_any_breach=float((balance.min(axis=1) < 0).mean()), min_balance=balance.min(axis=1),
         breach_day=int(below[0]) if len(below) else None,
         pay_day=pay_day, collections=collections,
     )

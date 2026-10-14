@@ -14,12 +14,15 @@ _KINDS = ["Yapı", "Tekstil", "Gıda", "Lojistik", "Makine", "Plastik", "Kimya",
 
 
 def generate(seed: int = 7, n_customers: int = 40, months: int = 24, as_of="2026-10-01",
-             trend: float = 0.6) -> pd.DataFrame:
+             trend: float = 0.6, shock: float = 0.0) -> pd.DataFrame:
     """Tüm gerçeği (true_paid_date dahil) içeren fatura tablosunu üretir."""
     rng = np.random.default_rng(seed)
     as_of = pd.Timestamp(as_of)
     start = as_of - pd.DateOffset(months=months)
     n_days = (as_of - start).days
+    # Piyasa şoku: her çeyrekte tüm müşterilerin gecikmesini birlikte oynatan, önceden bilinemeyen çarpan.
+    quarters = pd.period_range(start, as_of, freq="Q")
+    market = pd.Series(np.exp(shock * rng.standard_normal(len(quarters))), index=quarters)
     frames = []
     for i in range(n_customers):
         terms = int(rng.choice([30, 45, 60, 90], p=[0.35, 0.25, 0.30, 0.10]))
@@ -38,7 +41,8 @@ def generate(seed: int = 7, n_customers: int = 40, months: int = 24, as_of="2026
         issue = start + pd.to_timedelta(offs, unit="D")
         due = issue + pd.Timedelta(days=terms)
         # Finansal sıkılaşma: dönem ilerledikçe gecikmeler uzar; Ocak ve Ağustos'ta ek sarkma.
-        macro = 1 + trend * offs / n_days + 0.25 * np.isin(issue.month, [1, 8])
+        macro = (1 + trend * offs / n_days + 0.25 * np.isin(issue.month, [1, 8])) \
+            * market.reindex((issue + pd.Timedelta(days=terms)).to_period("Q")).to_numpy()
         amount = rng.lognormal(np.log(45_000 * size), 0.8, k)
         z = (np.log(amount) - np.log(45_000 * size)) / 0.8
         ontime = rng.random(k) < p_ontime / macro

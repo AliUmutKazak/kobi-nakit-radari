@@ -7,7 +7,8 @@ import pandas as pd
 from . import actions
 from .features import build_features
 from .model import DelayModel, FallbackModel, evaluate, fit_model, training_frame
-from .simulate import aging_curve, estimate_correlation, simulate
+from .simulate import (PRIOR_RHO, aging_curve, censored_normal_fit, conditional_scores, correlation_from_scores,
+                       simulate)
 from .synthetic import cash_plan, observe
 
 
@@ -32,6 +33,73 @@ def project_sales(obs: pd.DataFrame, as_of, horizon: int) -> pd.DataFrame:
     recent["paid_date"] = pd.NaT
     recent["open_amount"] = recent["amount"]
     return recent
+
+
+def censor(obs: pd.DataFrame, t) -> pd.DataFrame:
+    """Tablonun `t` tarihinde görünen hâli: sonraki faturalar ve ödemeler gizlenir."""
+    t = pd.Timestamp(t)
+    df = obs[obs["issue_date"] <= t].copy()
+    df["paid_date"] = df["paid_date"].where(df["paid_date"] <= t)
+    df["open_amount"] = np.where(df["paid_date"].isna(), df["amount"], 0.0)
+    return df.reset_index(drop=True)
+
+
+def calibrate(obs: pd.DataFrame, as_of, origins: int = 4, step: int = 90, mature_days: int = 60,
+              min_scores: int = 100, shrink_n: float = 200.0) -> dict:
+    """Simülasyonun belirsizlik ayarlarını, geçmişteki ileriye dönük tahminlerin hatasından çıkarır.
+
+    Son `origins` çeyreğin her birinin başına dönülür, o günkü bilgiyle model kurulur ve o gün
+    açık olan faturaların gecikmesi tahmin edilir. Gerçekleşenle karşılaştırınca:
+    - skorların ortalaması sıfırdan sapıyorsa model sistematik olarak geç ya da erken tahmin
+      ediyordur (ör. gecikmeler uzarken geride kalır) -> kayma,
+    - sapması 1'den büyükse aralıklar dardır -> ölçek,
+    - çeyrekler arası ve müşteriler arası ortak hareket -> korelasyonlar.
+    Kayma ve ölçek, vadesi gelmemiş ("fresh") ve vadesi geçmiş ("overdue") faturalar için ayrı
+    ölçülür; ikincisinde tahmin koşullu kuyruğa dayanır ve hatası farklıdır.
+    Modelin kendi eğitim verisindeki uyumu bunları ölçemez; o veri bilinen geçmiştir."""
+    as_of = pd.Timestamp(as_of)
+    neutral = {"z_shift": 0.0, "z_scale": 1.0, "n": 0}
+    default = {"rho_market": PRIOR_RHO[0], "rho_customer": PRIOR_RHO[1], "fresh": neutral, "overdue": neutral}
+    final = obs.set_index("invoice_id")
+    parts = []
+    for k in range(1, origins + 1):
+        t = as_of - pd.Timedelta(days=k * step)
+        past = censor(obs, t)
+        if not len(past):
+            break
+        X, y = training_frame(past, t)
+        if len(X) < 60:
+            break
+        # Sonucu seçim yanlılığı olmadan bilinenler: o gün açık ve bugün itibarıyla olgunlaşmış faturalar.
+        test = past[past["paid_date"].isna() & (past["due_date"] <= as_of - pd.Timedelta(days=mature_days))]
+        if "disputed" in test:
+            test = test[~test["disputed"].fillna(False).astype(bool)]
+        if len(test) < 10:
+            continue
+        outcome = final.loc[test["invoice_id"]]
+        delay = (outcome["paid_date"].fillna(as_of) - outcome["due_date"]).dt.days.to_numpy()
+        d0 = (t - test["due_date"]).dt.days.to_numpy()
+        Q = fit_model(X, y).predict(build_features(past, ref=t).loc[test.index])
+        parts.append(pd.DataFrame({"z": conditional_scores(Q, delay, d0, aging_curve(past, t)), "origin": str(k),
+                                   "customer_id": test["customer_id"].to_numpy(), "overdue": d0 > 0,
+                                   "censored": outcome["paid_date"].isna().to_numpy()}))
+    if not parts:
+        return default
+    scores = pd.concat(parts, ignore_index=True)
+    if len(scores) < min_scores:
+        return default
+
+    def group(part: pd.DataFrame) -> dict:
+        n = len(part)
+        if n < 30:
+            return neutral | {"n": n}
+        mu, sigma = censored_normal_fit(part["z"].to_numpy(), part["censored"].to_numpy())
+        w = n / (n + shrink_n)                               # az gözlemde düzeltme sıfıra / bire büzülür
+        return {"z_shift": float(w * np.clip(mu, -1, 1)), "z_scale": float(1 + w * (np.clip(sigma, 0.7, 1.6) - 1)), "n": n}
+
+    rho_m, rho_c = correlation_from_scores(scores["z"].to_numpy(), scores["origin"], scores["customer_id"])
+    return {"rho_market": rho_m, "rho_customer": rho_c,
+            "fresh": group(scores[~scores["overdue"]]), "overdue": group(scores[scores["overdue"]])}
 
 
 def forecast(obs: pd.DataFrame, as_of, opening: float, outflows: pd.DataFrame, horizon: int = 90,
@@ -60,11 +128,11 @@ def forecast(obs: pd.DataFrame, as_of, opening: float, outflows: pd.DataFrame, h
     # gecikme alışkanlığı bu tarihe göre uygulanır (varsayım: söz de vade kadar tutulur).
     promised = target["promised_date"] > as_of
     sim_inv = target.assign(due_date=target["promised_date"].where(promised, target["due_date"]))
-    rho = estimate_correlation(model.predict(X), y, obs.loc[X.index, "customer_id"], obs.loc[X.index, "due_date"])
+    calib = calibrate(obs, as_of)
     ctx = {"sim_inv": sim_inv, "Q": model.predict(feats), "aging": aging_curve(obs, as_of), "cheques": cheques,
-           "horizon": horizon, "n_sims": n_sims, "seed": seed, "rho": rho}
-    sim = simulate(sim_inv, ctx["Q"], as_of, opening, outflows, horizon, n_sims, rho[0], rho[1], seed=seed,
-                   aging=ctx["aging"], cheques=cheques)
+           "horizon": horizon, "n_sims": n_sims, "seed": seed, "calib": calib}
+    sim = simulate(sim_inv, ctx["Q"], as_of, opening, outflows, horizon, n_sims, seed=seed, aging=ctx["aging"],
+                   cheques=cheques, **_sim_args(calib, sim_inv, as_of))
     real = ~target["projected"].to_numpy()
     gap_day = sim.breach_day if sim.breach_day is not None else horizon
     ranked = actions.prioritize(target[real], sim.pay_day[real], as_of, gap_day, actions.payment_habits(obs), horizon)
@@ -72,6 +140,13 @@ def forecast(obs: pd.DataFrame, as_of, opening: float, outflows: pd.DataFrame, h
             "sim": sim, "ranked": ranked, "gap_day": gap_day, "metrics": actions.metrics(obs, as_of),
             "opening": opening, "outflows": outflows, "obs": obs, "ctx": ctx,
             "disputed_total": float(obs.loc[is_open & obs["disputed"], "open_amount"].sum())}
+
+
+def _sim_args(calib: dict, inv: pd.DataFrame, as_of) -> dict:
+    overdue = (inv["due_date"] < pd.Timestamp(as_of)).to_numpy() & ~inv["projected"].to_numpy()
+    pick = lambda key: np.where(overdue, calib["overdue"][key], calib["fresh"][key])
+    return {"rho_market": calib["rho_market"], "rho_customer": calib["rho_customer"],
+            "z_shift": pick("z_shift"), "z_scale": pick("z_scale")}
 
 
 def scenario(res: dict, collect_ids=(), collect_in_days: int = 7, delay_labels=(), delay_days: int = 0):
@@ -91,8 +166,8 @@ def scenario(res: dict, collect_ids=(), collect_in_days: int = 7, delay_labels=(
     if cash:
         out = pd.concat([out, pd.DataFrame({"date": [as_of + pd.Timedelta(days=collect_in_days)],
                                             "amount": [-cash], "label": ["Tahsilat (senaryo)"]})], ignore_index=True)
-    return simulate(inv, ctx["Q"], as_of, res["opening"], out, ctx["horizon"], ctx["n_sims"], *ctx["rho"],
-                    seed=ctx["seed"],
+    return simulate(inv, ctx["Q"], as_of, res["opening"], out, ctx["horizon"], ctx["n_sims"],
+                    seed=ctx["seed"], **_sim_args(ctx["calib"], inv, as_of),
                     aging=ctx["aging"], cheques=ctx["cheques"])
 
 

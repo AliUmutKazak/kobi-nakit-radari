@@ -29,7 +29,12 @@ def metrics(obs: pd.DataFrame, as_of) -> dict:
     sales_90 = obs.loc[obs["issue_date"] > as_of - pd.Timedelta(days=90), "amount"].sum()
     paid = obs[obs["paid_date"] > as_of - pd.Timedelta(days=180)]
     dbt = (paid["paid_date"] - paid["due_date"]).dt.days
+    # Gecikme eğilimi: son 90 günde yapılan ödemelerin medyan gecikmesi, önceki 90 güne göre kaç gün uzadı.
+    recent = dbt[paid["paid_date"] > as_of - pd.Timedelta(days=90)]
+    before = dbt[paid["paid_date"] <= as_of - pd.Timedelta(days=90)]
+    trend = float(recent.median() - before.median()) if len(recent) >= 20 and len(before) >= 20 else 0.0
     return {
+        "delay_trend_days": trend,
         "open_ar": float(open_inv["open_amount"].sum()),
         "overdue_ar": float(overdue["open_amount"].sum()),
         "dso": float(open_inv["open_amount"].sum() / sales_90 * 90) if sales_90 else float("nan"),
