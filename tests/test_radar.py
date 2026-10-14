@@ -715,3 +715,51 @@ def test_message_outcomes_and_backtest_baselines(full):
     bt = pipeline.backtest_own(obs, AS_OF, origins=2)
     assert {"naive_due", "naive_median", "err_due_pct", "err_median_pct"} <= set(bt.columns)
     assert bt["err_p50_pct"].abs().mean() < bt["err_due_pct"].abs().mean()
+
+
+def test_open_data_loaders_and_study_on_schema_replicas(tmp_path, full):
+    """Gerçek açık veri setlerinin sütun düzeninde üretilmiş dosyalarla yükleyici ve çalışma sınanır."""
+    from radar import open_data
+
+    obs = observe(full, AS_OF).dropna(subset=["paid_date"])
+    ibm = pd.DataFrame({"countryCode": "391", "customerID": obs["customer_id"], "PaperlessDate": "",
+                        "invoiceNumber": obs["invoice_id"], "InvoiceDate": obs["issue_date"].dt.strftime("%m/%d/%Y"),
+                        "DueDate": obs["due_date"].dt.strftime("%m/%d/%Y"), "InvoiceAmount": obs["amount"].round(2),
+                        "Disputed": "No", "SettledDate": obs["paid_date"].dt.strftime("%m/%d/%Y"),
+                        "PaperlessBill": "Paper", "DaysToSettle": 0, "DaysLate": 0})
+    ibm.to_csv(tmp_path / "ibm.csv", index=False)
+    a = open_data.load_ibm(tmp_path / "ibm.csv")
+    assert len(a) == len(obs) and a["paid_date"].notna().all() and (a["due_date"] >= a["issue_date"]).all()
+
+    pdd = pd.DataFrame({"business_code": "U001", "cust_number": obs["customer_id"], "name_customer": obs["customer_name"],
+                        "clear_date": obs["paid_date"].dt.strftime("%Y-%m-%d 00:00:00"), "buisness_year": "2020.0",
+                        "doc_id": obs["invoice_id"].str[3:] + ".0", "posting_date": obs["issue_date"].dt.strftime("%Y-%m-%d"),
+                        "due_in_date": obs["due_date"].dt.strftime("%Y%m%d") + ".0", "invoice_currency": "USD",
+                        "total_open_amount": obs["amount"].round(2), "invoice_id": obs["invoice_id"].str[3:] + ".0",
+                        "isOpen": 0})
+    pdd.to_csv(tmp_path / "pd.csv", index=False)
+    b = open_data.load_payment_date(tmp_path / "pd.csv", max_per_customer=None)
+    assert len(b) == len(obs) and b["due_date"].notna().all()
+
+    study = open_data.delay_study(a, origins=3)
+    assert len(study) >= 2 and {"mae_model", "mae_medyan", "mae_son2", "mae_son4", "mae_vade"} <= set(study.columns)
+    assert study["kapsama_p10_p90"].between(0, 1).all()
+
+
+def test_subset_sum_closes_the_invoices_actually_paid():
+    from radar.reconcile import subset_match
+
+    inv = pd.DataFrame({"invoice_id": ["A1", "A2", "A3", "A4"], "customer_id": "A",
+                        "customer_name": "Toros Makine Sanayi A.Ş.", "vkn": "1111111111",
+                        "due_date": pd.to_datetime(["2026-08-01", "2026-08-10", "2026-08-20", "2026-09-01"]),
+                        "open_amount": [100.0, 250.0, 400.0, 75.0]})
+    pay = pd.DataFrame({"date": pd.to_datetime(["2026-09-05"]), "amount": [475.0],
+                        "description": ["HAVALE 1111111111 iki fatura"]})
+    out, alloc, _ = reconcile(inv, pay)
+    by = out.set_index("invoice_id")["open_amount"]
+    # 475 = 400 + 75 tek çözüm: eski faturalar (A1, A2) değil, gerçekten ödenen A3 ve A4 kapanır.
+    assert by["A3"] == 0 and by["A4"] == 0 and by["A1"] == 100 and by["A2"] == 250
+    assert set(alloc["method"]) == {"toplu"}
+    amounts = pd.Series([100.0, 200.0, 300.0])
+    assert subset_match(amounts, 300.0) == [0, 1]          # yalnızca 2+ faturalık toplamlar aranır; tekli eşleşmeye reconcile önce bakar
+    assert subset_match(pd.Series([100.0, 200.0, 150.0, 150.0]), 300.0) is None   # iki farklı çözüm: belirsiz, tahmin yok

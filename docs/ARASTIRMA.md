@@ -231,3 +231,25 @@ Bilerek alınmayanlar:
 | Soru 1 | alacaklı KOBİ ve borçlu büyük ölçekli | alacaklı KOBİ (ya da tarımsal veya hayvansal üretici) veya borçlu büyük ölçekli | TTK m.1530/5 metni |
 
 Şablon A'dan ürüne alınan iyi uygulama: ödeme bilgisinde IBAN ve banka adıyla birlikte "açıklamaya fatura numarasını yazın" istemi ve "ödemeyi yaptıysanız dikkate almayınız" cümlesi. İlki, gelen paranın banka ekstresinde faturayla otomatik eşleşmesini sağlıyor; panelde IBAN girilince tüm taslaklara ekleniyor.
+
+## Ek: "Yol Haritası" raporunun II. bölümü (14 Ekim 2026)
+
+Raporun 1–5. sayfaları projenin başında incelenen ilk raporla aynı. Yeni olan 6–9. sayfalar (sanal pilot, açık veri, basit yöntemler, karşıolgusal test) birincil kaynaklarla karşılaştırıldı.
+
+| Rapordaki iddia | Birincil kaynak | Sonuç |
+|---|---|---|
+| Małkus vd. (arXiv:2511.03631v2, 2026) KOBİ'ler için alacak ve nakit tahmini | [arXiv](https://arxiv.org/abs/2511.03631): Małkus, Bobek, Nalepa, "Financial Management System for SMEs: Real-World Deployment of Accounts Receivable and Cash Flow Prediction" | Doğru |
+| Makale IBM Late Payment Histories (2.466 fatura) ve Kaggle Payment Date Dataset kullanıyor | Makale, 4.1 | Doğru (Payment Date filtrelenmiş hâliyle 12.071 fatura; müşteri başına en fazla 50 fatura; 7 gün tolerans) |
+| FMA/SMA formülleri "hakemli literatürde tanımlanan basit yöntemler" | Makale, 3.2 | Yanlış. Makalede kısa ve uzun pencereli hareketli ortalamalar modelin girdisi; formüller ve "basit yöntem" kullanımı metinde yok |
+| CF = max(6 aylık ortalama, açık fatura) "basit yöntem" | Makale, denklem 2 | Kısmen. Formül var ama düzensiz gelirler alt modülünün kuralı, karşılaştırma yöntemi değil |
+| "KOBİ kısıtlı alt-örnekleme: 15–40 müşteri, 150–300 fatura, %50 soğuk başlangıç" | Makale | Yok. %50'nin 1–2 faturalı olması makalenin kendi girişim verisinin bir özelliği, örnekleme kuralı değil |
+| "Appel vd., KDD, 6 ülke" | [arXiv:1912.10828](https://arxiv.org/abs/1912.10828), IBM Research Brezilya, 2019 | Kısmen. Yazarlar doğru, ama çalışma KDD değil arXiv/CoRR yayını; çok uluslu bir bankada vaka çalışması; "6 ülke" doğrulanamadı |
+| Mesaj türüne göre etki ("+%25 tahsilat", "%80–95 başarı", "DSO 13–18 gün") ve şekildeki "+385.000 TL" | Kaynak gösterilmemiş | Kullanılamaz. Ürüne etki varsayımı olarak girmedi |
+| Modern Treasury tarzı alt-küme toplamı eşleştirmesi | Yöntem olarak doğru ve yaygın | Uygulandı (aşağıda) |
+
+Makalenin kendi bulgusu ürün için önemli bir gerçeklik ölçüsü: 297 faturalık gerçek bir girişim verisinde gecikme sınıflandırmasının dengeli doğruluğu 0,56 (rastgele 0,50); açık veri setlerinde 0,68–0,72. Az geçmişli KOBİ'lerde fatura bazında gecikme tahmini zordur. Bu da ürünün değerini tek fatura isabetinden çok kasa düzeyinde belirsizliği doğru göstermesine ve basit yöntemlere karşı ölçülmesine bağlar.
+
+### Uygulananlar
+
+- **Toplu ödeme eşleştirmesi.** Bir havale, müşterinin 2–4 açık faturasının toplamına tam eşitse en eski faturalar yerine o faturalar kapanıyor; birden fazla olası kombinasyon varsa tahmin edilmeden en eskiden kapama kuralına dönülüyor. Örnek verilerde doğru ödeme tarihiyle kapanan fatura oranı %73,2'den %83,6'ya çıktı. Modelin öğrendiği ödeme alışkanlıkları bu tarihlerden geldiği için bu doğrudan model kalitesini etkiler.
+- **Açık veriyle gerçek doğrulama altyapısı** (`src/radar/open_data.py`). İki veri setini standart tabloya çeviriyor ve modeli geçmiş tarihlerde, fatura düzeyinde dört basit yönteme (vade, müşteri medyanı, son 2 ve son 4 faturanın ortalaması), kasa düzeyinde iki basit yönteme karşı sınıyor. Veriler Kaggle hesabı gerektirdiği için henüz indirilmedi; dosyalar `data/acik/` klasörüne konunca `python -m radar.open_data` ile çalışır.

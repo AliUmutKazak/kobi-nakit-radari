@@ -7,6 +7,7 @@ faturalarından başlayarak (FIFO) dağıtılır; kısmi ödeme desteklenir.
 from __future__ import annotations
 
 import re
+from itertools import combinations
 
 import pandas as pd
 
@@ -74,6 +75,24 @@ def _alias_match(description: str, aliases: dict[str, str]) -> str | None:
     return max(hits)[1] if hits else None
 
 
+def subset_match(amounts: pd.Series, target: float, tol: float = 0.01, max_items: int = 4, pool: int = 15):
+    """Toplamı tahsilata eşit olan fatura alt kümesi (2..max_items fatura).
+
+    Tek bir çözüm varsa onu döndürür; hiç yoksa ya da birden çok farklı çözüm varsa None
+    (belirsiz durumda tahmin edilmez, FIFO'ya düşülür). Arama, vadesi en eski `pool` faturayla sınırlıdır."""
+    items = list(amounts.head(pool).items())
+    found = None
+    for size in range(2, max_items + 1):
+        for combo in combinations(items, size):
+            if abs(sum(a for _, a in combo) - target) <= tol:
+                if found is not None:
+                    return None
+                found = [i for i, _ in combo]
+        if found is not None:
+            return found
+    return None
+
+
 def reconcile(invoices: pd.DataFrame, payments: pd.DataFrame, tol: float = 0.01, aliases: dict[str, str] | None = None):
     """invoices: invoice_id, customer_id, customer_name, vkn, due_date, open_amount
     payments: date, amount, description
@@ -99,8 +118,11 @@ def reconcile(invoices: pd.DataFrame, payments: pd.DataFrame, tol: float = 0.01,
         cand = inv[(inv["customer_id"] == cid) & (inv["open_amount"] > tol)].sort_values("due_date")
         exact = cand[(cand["open_amount"] - p.amount).abs() <= tol]
         first = [i for i in named if inv.at[i, "open_amount"] > tol]
-        order = first + [i for i in (exact.index[:1] if len(exact) else cand.index) if i not in first]
-        method = "fatura_no" if first else ("exact" if len(exact) else "fifo")
+        # Toplu ödeme: tutar tam olarak birkaç açık faturanın toplamıysa onlar kapanır, en eskiler değil.
+        group = None if first or len(exact) else subset_match(cand["open_amount"], float(p.amount), tol)
+        chosen = first or (list(exact.index[:1]) if len(exact) else group or [])
+        order = chosen + [i for i in cand.index if i not in chosen]
+        method = "fatura_no" if first else ("exact" if len(exact) else ("toplu" if group else "fifo"))
         remaining = float(p.amount)
         for idx in order:
             if remaining <= tol:
