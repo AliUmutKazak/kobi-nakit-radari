@@ -26,11 +26,13 @@ Sol menüde **"Demo şirket"** seçiliyken panel uydurma bir şirketin verisini 
 
 ## 3. Kendi verinizi yükleyin
 
-Sol menüde **"Kendi verim"**i seçin.
+Sol menüde **"Kendi verim"**i seçin. Ayarlar dört bölümde toplanmıştır.
 
-**Bugünün tarihi ve kasa.** Bugünün tarihini ve kasa + bankadaki toplam paranızı girin.
+**1. Temel bilgiler.** Tahmin tarihi (genellikle bugün) ve kasa + bankadaki toplam paranız. Kasa tutarını her kullanımda güncelleyin.
 
-**Satışlarınız (zorunlu).** Aşağıdakilerden **birini** yükleyin:
+**Dosyalarınız güncel olsun.** Dosyalardaki en son hareket tahmin tarihinden bir haftadan eskiyse panel kırmızı bir uyarı verir: aradaki günlerde gelen ödemeleri bilemediği için onları ödenmemiş sayar ve riski olduğundan yüksek gösterir. Ya güncel dosya yükleyin ya da tahmin tarihini dosyalarınızın tarihine çekin.
+
+**2. Dosyalar: satışlarınız (zorunlu).** Aşağıdakilerden **birini** yükleyin:
 
 | Seçenek | Muhasebe programından nasıl alınır (örnek) |
 |---|---|
@@ -40,22 +42,24 @@ Sol menüde **"Kendi verim"**i seçin.
 
 Fatura listesinde en az **fatura no, müşteri, fatura tarihi, tutar** olmalı. Vade tarihi, VKN, kalan tutar, e-posta ve telefon sütunları varsa kullanılır. Panel sütun adlarını tanıyamazsa her alan için dosyanızdaki karşılığını sorar; seçiminizi hatırlar.
 
-**İsteğe bağlı dosyalar:**
+**2. Dosyalar: isteğe bağlı olanlar.**
 
 | Dosya | Ne işe yarar |
 |---|---|
 | Banka ekstresi | Hangi faturanın ödendiğini otomatik bulur. Fatura listesinde ödeme bilgisi yoksa gereklidir. |
-| Planlı giderler | Maaş, kira, kredi taksidi gibi çıkışlar. Yoksa "aylık sabit giderler" kutusuna tutarları yazın; panel vergi takvimine göre yerleştirir. |
+| Planlı giderler | Maaş, kira, kredi taksidi gibi çıkışlar. Yoksa **3. Aylık sabit giderler** bölümüne tutarları yazın; panel vergi takvimine göre yerleştirir. |
 | Ödenecek faturalar | Tedarikçilere borçlarınız ve vadeleri. |
 | Çek / senet portföyü | Elinizdeki müşteri çekleri ve vadeleri. "Durum" sütununda ciro edildi / iskonto yazanlar hesaba katılmaz. |
 
 Biçimi görmek için panelin ilk ekranında örnek dosyaları indirebilirsiniz. Yüklediğiniz her şey yalnızca bu bilgisayarda saklanır; bir sonraki açılışta yeniden yüklemeniz gerekmez.
 
-**Dövizli faturalar.** Döviz kurunu ilgili kutuya yazın (ör. `USD=41,50; EUR=48,20`). Kuru girilmeyen döviz tahmine katılmaz.
+**4. Mesaj ayarları.** İmzanız (ticaret unvanı ve MERSİS no), tahsilat IBAN'ınız ve isterseniz e-posta hesabınız.
+
+**Diğer ayarlar.** Vadesi yazmayan faturalar için varsayılan vade, döviz kurları (ör. `USD=41,50; EUR=48,20`; kuru girilmeyen döviz tahmine katılmaz), verilerin saklandığı dosyanın yeri ve kayıtlı veriyi silme.
 
 ## 4. Paneli okumak
 
-**Üst satır.** Kasa, açık alacak, vadesi geçmiş alacak, DSO (alacakların ortalama kaç günde tahsil edildiği) ve 90 günde kasanın eksiye düşme olasılığı.
+**Üst satır.** Kasa ve banka, açık alacak, vadesi geçmiş alacak, ortalama tahsil süresi ve eksiye düşme riski (önümüzdeki 90 günde kasanın en az bir gün eksiye düşme olasılığı). Her başlığın yanındaki soru işaretinin üzerine gelince açıklaması çıkar. Uyarılar ve veri notları bunların hemen altındadır.
 
 **"Kasa tahmini" sekmesi.**
 - Mavi bant, kasanızın %80 olasılıkla içinde kalacağı aralıktır; ortadaki çizgi beklenen durumdur. Kırmızı kesikli çizgi sıfırdır.

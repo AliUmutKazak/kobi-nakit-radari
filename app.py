@@ -25,6 +25,39 @@ MAPPABLE = {"invoices": ("Fatura dosyası", ingest.INVOICE_FIELDS, ingest.INVOIC
 STAGES = {"hatirlatma": "Hatırlatma", "mutabakat": "Mutabakat", "resmi": "Resmî bildirim"}
 
 st.set_page_config(page_title="KOBİ Nakit Akışı Radarı", layout="wide")
+
+
+def tl(x, compact: bool = False) -> str:
+    """Türkçe para biçimi: 2.108.055 TL; compact=True ise 2,1 mn TL."""
+    x = float(x)
+    if compact and abs(x) >= 1e6:
+        return f"{x / 1e6:,.1f}".replace(",", "X").replace(".", ",").replace("X", ".") + " mn TL"
+    return f"{x:,.0f}".replace(",", ".") + " TL"
+
+
+def show_table(df, help: dict | None = None, **kwargs):
+    """Tabloları Türkçe gösterir: tarih GG.AA.YYYY, "(TL)" sütunları binlik ayraçlı, olasılıklar yüzde."""
+    config, df = {}, df.copy()
+    for col in df.columns:
+        tip = (help or {}).get(col)
+        if pd.api.types.is_datetime64_any_dtype(df[col]):
+            config[col] = st.column_config.DateColumn(col, format="DD.MM.YYYY", help=tip)
+        elif "(TL)" in col:
+            df[col] = df[col].round(0)
+            config[col] = st.column_config.NumberColumn(col, format="localized", help=tip)
+        elif "olasılı" in col.lower() or "risk" in col.lower():
+            df[col] = df[col].round(2)
+            config[col] = st.column_config.NumberColumn(col, format="percent", help=tip)
+        elif tip:
+            config[col] = st.column_config.Column(col, help=tip)
+    return st.dataframe(df, column_config=config, **kwargs)
+
+
+def turkish_axes(fig):
+    """Grafikte Türkçe sayı ayracı ve gün.ay biçimli tarih."""
+    fig.update_layout(separators=",.", yaxis_tickformat=",.0f", xaxis_tickformat="%d.%m", xaxis_hoverformat="%d.%m.%Y",
+                      yaxis_hoverformat=",.0f", legend=dict(orientation="h", y=-0.15))
+    return fig
 st.title("KOBİ Nakit Akışı Radarı")
 st.caption("Mesajlar taslaktır; bu panel hiçbir mesajı kendiliğinden göndermez. "
            "Nasıl kullanılacağı: proje klasöründeki docs/KULLANIM_KILAVUZU.md")
@@ -94,7 +127,7 @@ def parse_invoices(uploads, terms, rates):
 @st.cache_data(show_spinner="Simülasyon çalışıyor...")
 def run_demo(seed: int, include_projected: bool):
     res = pipeline.demo(seed=seed, include_projected=include_projected)
-    return {k: res[k] for k in KEEP} | {"notes": [], "has_outflows": True, "unmatched": None}
+    return {k: res[k] for k in KEEP} | {"notes": [], "has_outflows": True, "unmatched": None, "last_activity": None}
 
 
 @st.cache_data(show_spinner="Veriler işleniyor ve simülasyon çalışıyor...")
@@ -110,7 +143,7 @@ def run_own(rev: int, as_of: str, include_projected: bool):
         obs, _, unmatched = reconcile(obs, payments, aliases=json.loads(store.get("sender_aliases", "{}")))
         notes.append(f"Ekstre: {len(payments)} tahsilatın {len(payments) - len(unmatched)} tanesi faturalarla eşleşti.")
         if len(unmatched):
-            notes.append(f"Eşleşmeyen tahsilat tutarı: {unmatched['amount'].sum():,.0f} TL "
+            notes.append(f"Eşleşmeyen tahsilat tutarı: {tl(unmatched['amount'].sum())} "
                          "(müşterisi bulunamayan ya da fazla ödeme).")
     outflows, cheques, payables = store.load("outflows"), store.load("cheques"), store.load("payables")
     notes += json.loads(store.get("notes_cheques", "[]"))
@@ -118,19 +151,22 @@ def run_own(rev: int, as_of: str, include_projected: bool):
     if any(fixed.values()):
         plan = ingest.fixed_cost_plan(as_of, payroll_day=int(float(store.get("fixed_payroll_day", 1))),
                                       rent_day=int(float(store.get("fixed_rent_day", 1))), **fixed)
-        notes.append(f"Aylık sabit giderlerden {len(plan)} ödeme ({plan['amount'].sum():,.0f} TL) eklendi.")
+        notes.append(f"Aylık sabit giderlerden {len(plan)} ödeme ({tl(plan['amount'].sum())}) eklendi.")
         outflows = plan if outflows is None else pd.concat([outflows, plan], ignore_index=True)
     if payables is not None:
         flows, n = ingest.payables_to_outflows(payables, as_of)
-        notes += n + [f"Ödenecek faturalar: {len(payables)} adet, {payables['amount'].sum():,.0f} TL."]
+        notes += n + [f"Ödenecek faturalar: {len(payables)} adet, {tl(payables['amount'].sum())}."]
         outflows = flows if outflows is None else pd.concat([outflows, flows], ignore_index=True)
     if cheques is not None:
-        notes.append(f"Çek/senet portföyü: {len(cheques)} adet, {cheques['amount'].sum():,.0f} TL.")
+        notes.append(f"Çek/senet portföyü: {len(cheques)} adet, {tl(cheques['amount'].sum())}.")
     res = pipeline.forecast(obs.reset_index(drop=True), as_of, float(store.get("opening", 0)),
                             outflows if outflows is not None else pd.DataFrame({"date": [], "amount": []}),
                             include_projected=include_projected, cheques=cheques)
+    # Verideki son hareket: bundan sonraki ödemeler bilinmez, ödenmemiş görünür.
+    dates = [obs["issue_date"].max(), obs["paid_date"].max()] + ([payments["date"].max()] if payments is not None else [])
+    last = max(d for d in dates if pd.notna(d))
     return {k: res[k] for k in KEEP} | {"notes": notes, "has_outflows": outflows is not None,
-                                        "unmatched": unmatched if payments is not None else None}
+                                        "unmatched": unmatched if payments is not None else None, "last_activity": last}
 
 
 @st.cache_data(show_spinner="Senaryolar hesaplanıyor...")
@@ -151,40 +187,27 @@ def run_backtest(obs, as_of):
 store = get_store()
 with st.sidebar:
     source = st.radio("Veri", ["Demo şirket", "Kendi verim"])
-    include_projected = st.toggle("Henüz kesilmemiş satışları dahil et", True)
+    include_projected = st.toggle("Gelecek satışları hesaba kat", True,
+                                  help="Önümüzdeki 90 günde kesilecek faturaları son 90 günün satış hızına göre tahmine "
+                                       "katar. Kapatırsanız yalnızca bugün açık olan faturalar sayılır.")
     if source == "Demo şirket":
-        seed = st.number_input("Örnek şirket", 1, 99, 7)
+        seed = st.number_input("Demo şirket no", 1, 99, 7, help="Farklı bir uydurma şirket görmek için değiştirin.")
         seller = st.text_input("Mesajlardaki imza (ticaret unvanı ve MERSİS no)", "Örnek Ticaret A.Ş.")
     else:
-        as_of = st.date_input("Bugünün tarihi", format="DD.MM.YYYY")
-        opening = st.number_input("Kasadaki ve bankadaki toplam (TL)", 0.0, value=float(store.get("opening", 0)),
-                                  step=10_000.0)
-        terms = st.number_input("Vadesi yazmayan faturalar için vade (gün)", 0, 365, int(store.get("terms", 30)),
-                                help="TTK m.1530: vade yazmıyorsa borçlu, faturayı aldıktan 30 gün sonra temerrüde düşer.")
-        seller = st.text_input("Mesajlardaki imza (ticaret unvanı ve MERSİS no)", store.get("seller", ""))
-        iban = st.text_input("Tahsilat IBAN'ı (mesajlara eklenir)", store.get("iban", ""),
-                             placeholder="TR00 0000 0000 0000 0000 0000 00")
-        bank = st.text_input("Banka adı", store.get("bank", ""))
-        rates_text = st.text_input("Döviz kurları (dövizli fatura varsa)", store.get("rates", ""),
-                                   placeholder="USD=41,50; EUR=48,20",
-                                   help="Dövizli faturalar bu kurla TL'ye çevrilir. Kur girilmeyen döviz tahmine katılmaz.")
-        for key, value in (("opening", opening), ("terms", int(terms)), ("seller", seller), ("rates", rates_text),
-                           ("iban", iban), ("bank", bank)):
-            store.set(key, value)
-        st.caption("Yüklenen her dosya, o türdeki kayıtlı verinin yerine geçer ve bu bilgisayarda saklanır.")
-        save_upload(store, "invoices",
-                    st.file_uploader("Kesilen faturalar ya da cari hesap ekstresi (CSV / Excel / e-Fatura XML)", ["csv", "xlsx", "xls", "xml"],
-                                     accept_multiple_files=True),
-                    lambda ups: parse_invoices(ups, int(terms), ingest.parse_rates(rates_text)))
-        save_upload(store, "payments", st.file_uploader("Banka ekstresi (isteğe bağlı)", ["csv", "xlsx", "xls"]),
-                    lambda ups: ingest.load_payments(_open(ups[0]), json.loads(store.get("map_payments", "{}"))))
-        save_upload(store, "outflows", st.file_uploader("Planlı giderler (isteğe bağlı)", ["csv", "xlsx", "xls"]),
-                    lambda ups: (ingest.load_schedule(_open(ups[0])), []))
-        save_upload(store, "payables", st.file_uploader("Ödenecek faturalar (isteğe bağlı)", ["csv", "xlsx", "xls"]),
-                    lambda ups: ingest.load_payables(_open(ups[0]), int(terms)))
-        save_upload(store, "cheques", st.file_uploader("Çek / senet portföyü (isteğe bağlı)", ["csv", "xlsx", "xls"]),
-                    lambda ups: ingest.load_cheques(_open(ups[0])))
-        with st.expander("Gider dosyanız yoksa: aylık sabit giderler"):
+        has_data = store.load("invoices") is not None
+        with st.expander("1. Temel bilgiler", expanded=True):
+            as_of = st.date_input("Tahmin tarihi", format="DD.MM.YYYY",
+                                  help="Genellikle bugün. Geçmiş bir tarih seçerseniz o güne kadarki veriyle tahmin yapılır.")
+            opening = st.number_input("Kasa ve bankadaki toplam para (TL)", 0.0, value=float(store.get("opening", 0)),
+                                      step=10_000.0, help="Her kullanımda güncelleyin; tahmin bu tutardan başlar.")
+        with st.expander("2. Dosyalar", expanded=not has_data):
+            st.caption("Yüklediğiniz dosya, aynı türdeki eski dosyanın yerine geçer. Her şey yalnızca bu bilgisayarda saklanır.")
+            invoice_upload = st.file_uploader("Satışlar: fatura listesi, cari hesap ekstresi ya da e-Fatura XML (zorunlu)",
+                                              ["csv", "xlsx", "xls", "xml"], accept_multiple_files=True)
+            uploads = {name: st.file_uploader(label, ["csv", "xlsx", "xls"]) for name, label in (
+                ("payments", "Banka ekstresi"), ("outflows", "Planlı giderler"),
+                ("payables", "Ödenecek faturalar"), ("cheques", "Çek / senet portföyü"))}
+        with st.expander("3. Aylık sabit giderler (gider dosyanız yoksa)"):
             st.caption("Vergi takvimine göre yerleştirilir: muhtasar ayın 26'sı, KDV 28'i, SGK primi ay sonu; "
                        "hafta sonuna denk gelen son gün ilk iş gününe kayar. Yüklenen gider dosyasına eklenir.")
             fixed = {k: st.number_input(lbl, 0.0, value=float(store.get(f"fixed_{k}", 0)), step=1000.0, key=f"fx_{k}")
@@ -192,27 +215,47 @@ with st.sidebar:
                                     ("sgk", "SGK primi (TL/ay)"), ("kdv", "KDV (TL/ay, tahmini)"), ("rent", "Kira (TL/ay)"))}
             fixed["payroll_day"] = st.number_input("Maaş günü", 1, 31, int(store.get("fixed_payroll_day", 1)))
             fixed["rent_day"] = st.number_input("Kira günü", 1, 31, int(store.get("fixed_rent_day", 1)))
-            for k, v in fixed.items():
-                store.set(f"fixed_{k}", v)
-        with st.expander("E-posta gönderimi (isteğe bağlı)"):
-            st.caption("Taslakları kendi e-posta hesabınızdan göndermek için. Parola kaydedilmez; paneli kapatınca silinir. "
-                       "Gmail ve Outlook'ta hesap parolası yerine uygulama parolası gerekir.")
+        with st.expander("4. Mesaj ayarları"):
+            seller = st.text_input("İmza: ticaret unvanı ve MERSİS no", store.get("seller", ""),
+                                   help="Ticari iletilerde gönderenin kimliği açıkça yazılmalıdır.")
+            iban = st.text_input("Tahsilat IBAN'ı", store.get("iban", ""), placeholder="TR00 0000 0000 0000 0000 0000 00",
+                                 help="Girerseniz taslaklara 'açıklamaya fatura numarasını yazın' talimatıyla eklenir.")
+            bank = st.text_input("Banka adı", store.get("bank", ""))
+            st.caption("E-posta ile göndermek için (isteğe bağlı). Parola kaydedilmez. Gmail ve Outlook'ta hesap "
+                       "parolası yerine uygulama parolası gerekir.")
             mail = mailer.MailConfig(
                 host=st.text_input("SMTP sunucusu", store.get("smtp_host", ""), placeholder="smtp.gmail.com"),
                 port=int(st.number_input("Port", 1, 65535, int(store.get("smtp_port", 587)))),
                 username=st.text_input("Kullanıcı adı (e-posta adresiniz)", store.get("smtp_user", "")),
                 password=st.text_input("Parola", type="password"))
-            for key, value in (("smtp_host", mail.host), ("smtp_port", mail.port), ("smtp_user", mail.username)):
-                store.set(key, value)
-        st.caption(f"Verileriniz yalnızca bu bilgisayarda saklanır: {store.path}")
-        with st.expander("Kayıtlı veriyi sil"):
-            st.write("Yüklenen tablolar silinir. İtiraz, ödeme sözü ve mesaj kayıtları korunur.")
+        with st.expander("Diğer ayarlar"):
+            terms = st.number_input("Vadesi yazmayan faturalar için vade (gün)", 0, 365, int(store.get("terms", 30)),
+                                    help="TTK m.1530: vade yazmıyorsa borçlu, faturayı aldıktan 30 gün sonra temerrüde düşer.")
+            rates_text = st.text_input("Döviz kurları (dövizli fatura varsa)", store.get("rates", ""),
+                                       placeholder="USD=41,50; EUR=48,20",
+                                       help="Dövizli faturalar bu kurla TL'ye çevrilir. Kur girilmeyen döviz tahmine katılmaz.")
+            st.caption(f"Verilerin saklandığı dosya: {store.path}")
+            st.write("**Kayıtlı veriyi sil.** Yüklenen tablolar silinir; itiraz, ödeme sözü ve mesaj kayıtları korunur.")
             sure = st.checkbox("Eminim")
             if st.button("Tabloları sil", disabled=not sure):
                 store.clear()
                 for name in ("invoices", "payments", "outflows", "cheques", "payables"):
                     store.set(f"hash_{name}", "")
                 st.rerun()
+
+        for key, value in (("opening", opening), ("terms", int(terms)), ("seller", seller), ("rates", rates_text),
+                           ("iban", iban), ("bank", bank), ("smtp_host", mail.host), ("smtp_port", mail.port),
+                           ("smtp_user", mail.username)):
+            store.set(key, value)
+        for k, v in fixed.items():
+            store.set(f"fixed_{k}", v)
+        save_upload(store, "invoices", invoice_upload,
+                    lambda ups: parse_invoices(ups, int(terms), ingest.parse_rates(rates_text)))
+        save_upload(store, "payments", uploads["payments"],
+                    lambda ups: ingest.load_payments(_open(ups[0]), json.loads(store.get("map_payments", "{}"))))
+        save_upload(store, "outflows", uploads["outflows"], lambda ups: (ingest.load_schedule(_open(ups[0])), []))
+        save_upload(store, "payables", uploads["payables"], lambda ups: ingest.load_payables(_open(ups[0]), int(terms)))
+        save_upload(store, "cheques", uploads["cheques"], lambda ups: ingest.load_cheques(_open(ups[0])))
 
 own = source == "Kendi verim"
 for name, (title, fields, required) in MAPPABLE.items():
@@ -271,13 +314,12 @@ def record(invoice_id, kind, value=""):
     st.rerun()
 
 
-for note in res["notes"]:
-    st.caption("• " + note)
-if res["disputed_total"]:
-    st.caption(f"• İtirazlı {res['disputed_total']:,.0f} TL alacak tahmine ve hatırlatma listesine dahil edilmedi.")
-if m["over_60_terms"]:
-    st.caption(f"• {m['over_60_terms']} açık faturada vade 60 günden uzun. TTK m.1530'a göre alacaklı KOBİ ise ya da "
-               "borçlu büyük işletmeyse vade 60 günü aşamaz; bu sözleşmeleri gözden geçirin.")
+stale = res.get("last_activity")
+if stale is not None and (pd.Timestamp(res["as_of"]) - stale).days > 7:
+    st.error(f"Verinizdeki en son hareket {stale:%d.%m.%Y} tarihli, tahmin tarihinden "
+             f"{(pd.Timestamp(res['as_of']) - stale).days} gün önce. Bu arada gelen ödemeler bilinmediği için ödenmemiş "
+             f"sayılıyor; vadesi geçmiş alacak ve risk olduğundan yüksek görünür. Güncel dosyaları yükleyin ya da "
+             f"tahmin tarihini {stale:%d.%m.%Y} yapın.")
 if m["delay_trend_days"] >= 3:
     st.warning(f"Müşterilerinizin ödemeleri son 90 günde, önceki 90 güne göre medyan {m['delay_trend_days']:.0f} gün "
                "daha geç geliyor. Gecikmeler uzamaya devam ederse tahmin iyimser kalabilir; kötümser çizgiyi esas alın.")
@@ -288,28 +330,45 @@ if not res["has_outflows"]:
     st.warning("Gider planı yüklenmedi: grafik yalnızca tahsilatları gösteriyor, kasa açığı hesaplanamaz.")
 
 c = st.columns(5)
-c[0].metric("Kasa", f"{res['opening']:,.0f} TL")
-c[1].metric("Açık alacak", f"{m['open_ar']:,.0f} TL")
-c[2].metric("Vadesi geçmiş", f"{m['overdue_ar']:,.0f} TL")
-c[3].metric("DSO", f"{m['dso']:.0f} gün")
-c[4].metric("90 günde eksiye düşme olasılığı", f"%{sim.prob_any_breach * 100:.0f}")
+c[0].metric("Kasa ve banka", tl(res["opening"], compact=True), help="Bugün kasada ve bankada olan toplam para.")
+c[1].metric("Açık alacak", tl(m["open_ar"], compact=True), help="Müşterilerin henüz ödemediği faturaların toplamı.")
+c[2].metric("Vadesi geçmiş", tl(m["overdue_ar"], compact=True), help="Açık alacağın vadesi dolmuş kısmı.")
+c[3].metric("Ortalama tahsil süresi", f"{m['dso']:.0f} gün",
+            help="Alacaklarınız ortalama kaç günlük satışa denk geliyor (DSO). Düşük olması iyidir.")
+c[4].metric("Eksiye düşme riski", f"%{sim.prob_any_breach * 100:.0f}",
+            help="Önümüzdeki 90 gün içinde kasanın en az bir gün eksiye düşme olasılığı.")
 
 if sim.breach_day is not None:
-    st.warning(f"Kötümser senaryoda kasa {sim.breach_day}. günde ({sim.dates[sim.breach_day]:%d.%m.%Y}) eksiye düşüyor.")
+    st.warning(f"Kötümser senaryoda kasa {sim.breach_day}. günde ({sim.dates[sim.breach_day]:%d.%m.%Y}) eksiye düşüyor. "
+               "Ne yapılabileceği aşağıda, \"Kasa tahmini\" sekmesindeki \"Açığı kapatmak için ne gerekir?\" bölümünde.")
 elif res["has_outflows"]:
     st.success("Kötümser senaryoda bile kasa 90 gün boyunca artıda kalıyor.")
+
+notes = list(res["notes"])
+if res["disputed_total"]:
+    notes.append(f"İtirazlı {tl(res['disputed_total'])} alacak tahmine ve hatırlatma listesine dahil edilmedi.")
+if m["over_60_terms"]:
+    notes.append(f"{m['over_60_terms']} açık faturada vade 60 günden uzun. TTK m.1530'a göre alacaklı KOBİ ise ya da "
+                 "borçlu büyük işletmeyse vade 60 günü aşamaz; bu sözleşmeleri gözden geçirin.")
+if notes:
+    with st.expander(f"Veri notları ({len(notes)})"):
+        for note in notes:
+            st.write("• " + note)
 
 tab_cash, tab_collect, tab_accuracy = st.tabs(["Kasa tahmini", "Tahsilat işleri", "Tahmin doğruluğu"])
 
 with tab_cash:
     fig = go.Figure()
     fig.add_scatter(x=sim.dates, y=sim.p90, line=dict(width=0), showlegend=False, hoverinfo="skip")
-    fig.add_scatter(x=sim.dates, y=sim.p10, fill="tonexty", line=dict(width=0), name="P10–P90 bandı",
+    fig.add_scatter(x=sim.dates, y=sim.p10, fill="tonexty", line=dict(width=0), name="Olası aralık (%80)",
                     fillcolor="rgba(31,119,180,0.2)")
-    fig.add_scatter(x=sim.dates, y=sim.p50, name="Beklenen (P50)", line=dict(color="rgb(31,119,180)"))
+    fig.add_scatter(x=sim.dates, y=sim.p50, name="Beklenen", line=dict(color="rgb(31,119,180)"))
     fig.add_hline(y=0, line_dash="dash", line_color="crimson")
     fig.update_layout(height=380, margin=dict(l=0, r=0, t=10, b=0), yaxis_title="Kasa (TL)", hovermode="x unified")
+    turkish_axes(fig)
     st.plotly_chart(fig, width="stretch")
+    st.caption("Mavi bant: kasanızın %80 olasılıkla içinde kalacağı aralık. Bandın alt kenarı kötümser, üst kenarı "
+               "iyimser durumdur. Kırmızı kesikli çizgi sıfır.")
 
     st.subheader("Açığı kapatmak için ne gerekir?")
     gap = run_gap(res_key, res)
@@ -317,12 +376,13 @@ with tab_cash:
         st.write("Kötümser senaryoda kasa açığı görünmüyor.")
     else:
         day = sim.dates[gap["gap_day"]]
-        text = f"Kötümser senaryoda en derin açık **{gap['gap']:,.0f} TL** ({day:%d.%m.%Y}). "
+        text = f"Kötümser senaryoda en derin açık **{tl(gap['gap'])}** ({day:%d.%m.%Y}). "
         if gap["k"]:
-            text += (f"Aşağıdaki listenin ilk **{gap['k']} faturası** ({gap['amount']:,.0f} TL) bir hafta içinde "
+            which = "ilk faturası" if gap["k"] == 1 else f"ilk {gap['k']} faturası"
+            text += (f"Aşağıdaki listenin **{which}** ({tl(gap['amount'])}) bir hafta içinde "
                      "tahsil edilirse kötümser senaryoda da kasa artıda kalır.")
         else:
-            text += (f"Listedeki öncelikli faturaların tamamı ({gap['amount']:,.0f} TL) tahsil edilse de açık kapanmıyor; "
+            text += (f"Listedeki öncelikli faturaların tamamı ({tl(gap['amount'])}) tahsil edilse de açık kapanmıyor; "
                      "gider ertelemesi ya da ek finansman gerekir.")
         st.write(text)
     labels = sorted(set(res["outflows"]["label"].dropna())) if "label" in res["outflows"] else []
@@ -339,6 +399,7 @@ with tab_cash:
         fig2.add_scatter(x=alt.dates, y=alt.p50, name="Beklenen, senaryo", line=dict(color="rgb(31,119,180)"))
         fig2.add_hline(y=0, line_dash="dash", line_color="gray")
         fig2.update_layout(height=320, margin=dict(l=0, r=0, t=10, b=0), yaxis_title="Kasa (TL)", hovermode="x unified")
+        turkish_axes(fig2)
         st.plotly_chart(fig2, width="stretch")
         st.write(f"Senaryoda 90 günde eksiye düşme olasılığı: **%{alt.prob_any_breach * 100:.0f}** "
                  f"(bugünkü durumda %{sim.prob_any_breach * 100:.0f}).")
@@ -354,10 +415,11 @@ with tab_accuracy:
             st.write(f"{len(bt)} test tarihinin {int(bt['inside'].sum())} tanesinde gerçekleşen tahsilat, "
                      f"tahmin bandının içinde kaldı. Beklenen değerin ortalama sapması: "
                      f"%{bt['err_p50_pct'].mean():+.0f}.")
-            st.dataframe(bt.rename(columns={
+            show_table(bt.rename(columns={
                 "origin": "Tahmin tarihi", "actual": "Gerçekleşen (TL)", "p10": "Kötümser (TL)",
                 "p50": "Beklenen (TL)", "p90": "İyimser (TL)", "inside": "Bant içinde",
-                "err_p50_pct": "Sapma (%)"}).round(0), width="stretch", hide_index=True)
+                "err_p50_pct": "Sapma (%)"}).assign(**{"Tahmin tarihi": lambda d: pd.to_datetime(d["Tahmin tarihi"])}),
+                width="stretch", hide_index=True)
 
 with tab_collect:
     st.subheader("Öncelikli tahsilat listesi")
@@ -365,12 +427,16 @@ with tab_collect:
     todo = ranked[ranked["actionable"]].copy()
     todo["payday_label"] = [actions.payday_label(d, w) for d, w in zip(todo["payday"], todo["payweekday"])]
     todo["stage_label"] = todo["stage"].map(STAGES)
-    st.dataframe(
+    show_table(
         todo[["invoice_id", "customer_name", "due_date", "open_amount", "days_overdue", "p_late", "stage_label",
               "payday_label", "contact_date"]].rename(columns={
             "invoice_id": "Fatura", "customer_name": "Müşteri", "due_date": "Vade", "open_amount": "Tutar (TL)",
-            "days_overdue": "Gecikme (gün)", "p_late": "Açık gününe kadar gelmeme olasılığı", "stage_label": "Aşama",
+            "days_overdue": "Gecikme (gün)", "p_late": "Risk", "stage_label": "Aşama",
             "payday_label": "Müşterinin ödeme günü", "contact_date": "Önerilen iletişim tarihi"}),
+        help={"Risk": "Kasa açığı oluşmadan önce bu faturanın ödenmemiş olma olasılığı. Liste, tutar × risk'e göre sıralıdır.",
+              "Gecikme (gün)": "Vadeden bu yana geçen gün. Eksi değer: vadesine kalan gün.",
+              "Aşama": "Hatırlatma: vadesine 7 günden az kaldı. Mutabakat: 1-15 gün gecikmiş. Resmî bildirim: 15 günden fazla.",
+              "Müşterinin ödeme günü": "Müşteri ödemelerini düzenli olarak belli bir günde yapıyorsa o gün."},
         width="stretch", hide_index=True)
 
     conc = actions.concentration(res["obs"])
@@ -380,11 +446,11 @@ with tab_collect:
                    "birinin gecikmesi kasayı tek başına belirler.")
     unmatched = res.get("unmatched")
     if own and unmatched is not None and len(unmatched):
-        with st.expander(f"Eşleşmeyen banka tahsilatları: {len(unmatched)} adet, {unmatched['amount'].sum():,.0f} TL"):
+        with st.expander(f"Eşleşmeyen banka tahsilatları: {len(unmatched)} adet, {tl(unmatched['amount'].sum())}"):
             st.write("Bu girişlerin hangi müşteriden geldiği bulunamadı. Bir kez müşteriye bağlarsanız aynı gönderen "
                      "bundan sonraki ekstrelerde otomatik tanınır.")
             show = unmatched.reset_index(drop=True)
-            st.dataframe(show[["date", "amount", "description"]].rename(columns={
+            show_table(show[["date", "amount", "description"]].rename(columns={
                 "date": "Tarih", "amount": "Tutar (TL)", "description": "Açıklama"}), width="stretch")
             row = st.number_input("Satır no", 0, len(show) - 1, 0)
             names = res["obs"].drop_duplicates("customer_id").set_index("customer_id")["customer_name"]
@@ -399,11 +465,11 @@ with tab_collect:
 
     doubtful = ranked[ranked["stage"] == "supheli"]
     if len(doubtful):
-        with st.expander(f"Şüpheli alacaklar: {len(doubtful)} fatura, {doubtful['open_amount'].sum():,.0f} TL"):
+        with st.expander(f"Şüpheli alacaklar: {len(doubtful)} fatura, {tl(doubtful['open_amount'].sum())}"):
             st.write(f"Bu faturalar {actions.DOUBTFUL_MIN_OVERDUE} günden fazla gecikmiş ve geçmiş verinize göre önümüzdeki "
                      f"90 günde tahsil edilme olasılıkları %{actions.DOUBTFUL_MAX_COLLECT_PROB * 100:.0f}'in altında. "
                      "Hatırlatma listesinde gösterilmezler; yeni bir hatırlatma yerine hukuki yolları değerlendirin.")
-            st.dataframe(doubtful[["invoice_id", "customer_name", "due_date", "open_amount", "days_overdue", "p_collect"]]
+            show_table(doubtful[["invoice_id", "customer_name", "due_date", "open_amount", "days_overdue", "p_collect"]]
                          .rename(columns={"invoice_id": "Fatura", "customer_name": "Müşteri", "due_date": "Vade",
                                           "open_amount": "Tutar (TL)", "days_overdue": "Gecikme (gün)",
                                           "p_collect": "90 günde tahsil olasılığı"}), width="stretch", hide_index=True)
@@ -453,7 +519,7 @@ with tab_collect:
         with st.expander(f"Beklemedeki faturalar ({len(held) + len(waiting)})"):
             if len(held):
                 st.write("İtirazlı ya da ödeme sözü verilmiş faturalar:")
-                st.dataframe(held[["invoice_id", "customer_name", "open_amount", "disputed", "promised_date"]].rename(columns={
+                show_table(held[["invoice_id", "customer_name", "open_amount", "disputed", "promised_date"]].rename(columns={
                     "invoice_id": "Fatura", "customer_name": "Müşteri", "open_amount": "Tutar (TL)",
                     "disputed": "İtirazlı", "promised_date": "Ödeme sözü"}), width="stretch", hide_index=True)
                 undo = st.selectbox("Durumu kaldırılacak fatura", held["invoice_id"])
@@ -464,7 +530,7 @@ with tab_collect:
                     record(undo, "promise", "")
             if len(waiting):
                 st.write("Yakın zamanda yazılmış, yanıt beklenen faturalar:")
-                st.dataframe(waiting[["invoice_id", "customer_name", "open_amount", "last_contact"]].rename(columns={
+                show_table(waiting[["invoice_id", "customer_name", "open_amount", "last_contact"]].rename(columns={
                     "invoice_id": "Fatura", "customer_name": "Müşteri", "open_amount": "Tutar (TL)",
                     "last_contact": "Son iletişim"}), width="stretch", hide_index=True)
             if not len(held) and not len(waiting):

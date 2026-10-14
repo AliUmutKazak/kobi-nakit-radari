@@ -638,3 +638,33 @@ def test_mail_headers_cannot_be_injected(monkeypatch):
     cfg = mailer.MailConfig("smtp.example.com", 587, "ben@example.com", "x")
     mailer.send(cfg, "a@b.co", "Fatura A1\nBcc: kurban@example.com", "metin")
     assert sent[0]["Bcc"] is None and "\n" not in sent[0]["Subject"]
+
+
+def test_dashboard_renders_demo_and_own_data_without_errors(tmp_path, monkeypatch):
+    """Panelin kendisini çalıştırır; bütün sekmeler aynı anda çizildiği için tablo ve grafik hataları burada çıkar."""
+    import datetime
+
+    from streamlit.testing.v1 import AppTest
+
+    from radar import ingest
+    from radar.store import Store
+
+    root = Path(__file__).parents[1]
+    monkeypatch.chdir(root)
+    db = tmp_path / "panel.db"
+    monkeypatch.setenv("RADAR_DB", str(db))
+    store = Store(db)
+    store.save("invoices", ingest.load_invoices(root / "ornekler" / "faturalar.csv")[0])
+    store.save("payments", ingest.load_payments(root / "ornekler" / "ekstre.csv")[0])
+    store.save("outflows", ingest.load_schedule(root / "ornekler" / "giderler.csv"))
+
+    at = AppTest.from_file(str(root / "app.py"), default_timeout=300).run()
+    assert not at.exception, [e.value for e in at.exception]
+    assert len(at.metric) == 5 and at.metric[0].value.endswith("TL") and "," in at.metric[0].value
+    at.sidebar.radio[0].set_value("Kendi verim").run()
+    at.sidebar.date_input[0].set_value(datetime.date(2026, 10, 1)).run()
+    assert not at.exception, [e.value for e in at.exception]
+    assert len(at.dataframe) >= 1 and len(at.text_area) == 1
+    assert not any("en son hareket" in e.value for e in at.error)
+    at.sidebar.date_input[0].set_value(datetime.date(2026, 10, 20)).run()
+    assert any("en son hareket" in e.value for e in at.error)             # 19 gün eski veri uyarısı
