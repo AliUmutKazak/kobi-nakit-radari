@@ -86,6 +86,8 @@ Bu belgenin ilk hâlinde "8 müşterili şirketlerde bant dar ve beklenen değer
 
 **Geçmiş çeyrek modellerinde tek eğitim (14 Ekim 2026).** Hız için, kalibrasyonun geçmiş çeyreklerde kurduğu modeller kalibrasyon payı ayrılmış hâliyle bırakıldı (tüm veriyle yeniden eğitilmedi). Tahmin %35–40 hızlandı, ama aynı 384 tahminde sonuç her ölçütte aynı yönde kötüleşti: bant içi %81 → %79, bandın altında %14 → %16, sapma +0,10 → +0,12 aylık ciro; 40 müşterili şirketlerde bandın altında kalma %9 → %14. Geri alındı. Sonucu birebir aynı bırakan hızlandırmalar (zamandan bağımsız özelliklerin bir kez hesaplanması, piyasa medyanının tarih başına bir kez hesaplanması; fark sayısal olarak 0) tutuldu; kazanç yaklaşık %20.
 
+**Yakın geçmişe ağırlık (14 Ekim 2026).** Zamanla değişen davranışa karşı yaygın bir yöntem: eğitimde her faturanın ağırlığı 180 günde bir yarıya indi. Aynı 384 tahminde sapma azalmadı, arttı: genel +0,10 → +0,13, gecikmeler hızla kötüleşirken +0,18 → +0,21 aylık ciro; bant içi %81 → %80, altında %14 → %15. Reddedildi. Yorum: ağırlıklandırma veriyi fiilen azaltıp tahmini gürültülü yapıyor ama asıl sorunu çözmüyor; sorun, kötüleşmenin tahmin döneminde de süreceğini öngörememek.
+
 Kalan iyimserlik bu yüzden düzeltilmedi, açıkça bildiriliyor: panel, ödemeler son 90 günde belirgin biçimde gecikmeye başladıysa kötümser çizgiyi esas almayı öneriyor.
 
 ## Ek ölçümler (tek şirket, 6 geçmiş tarih)
