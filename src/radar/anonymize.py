@@ -51,6 +51,12 @@ def load_or_create_key(path: Path | None = None) -> str:
     return key
 
 
+def business_key(master: str, business_id: str) -> str:
+    """İşletme başına anahtar. Mali müşavir birden çok işletmenin paketini hazırladığında aynı müşteri
+    farklı işletmelerde farklı takma ad alır; paketler birbiriyle birleştirilip müşteri eşleştirilemez."""
+    return _digest(master, "isletme:" + str(business_id))
+
+
 def _digest(key: str, value: str) -> str:
     return hmac.new(key.encode(), str(value).strip().upper().encode("utf-8"), hashlib.sha256).hexdigest()
 

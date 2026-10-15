@@ -59,6 +59,8 @@ Fatura listesinde en az **fatura no, müşteri, fatura tarihi, tutar** olmalı. 
 
 Biçimi görmek için panelin ilk ekranında örnek dosyaları indirebilirsiniz. Yüklediğiniz her şey yalnızca bu bilgisayarda saklanır; bir sonraki açılışta yeniden yüklemeniz gerekmez.
 
+**Birden çok işletme (mali müşavirler için).** "Kendi verim" seçiliyken en üstteki "İşletme" kutusundan işletmeler arasında geçersiniz; "İşletme ekle" ile yenisini açarsınız. Her işletmenin dosyaları, ayarları, mesaj kayıtları ve pilot kayıtları ayrı saklanır. Anonim paketlerde aynı müşteri farklı işletmelerde farklı takma ad alır; böylece paketler birleştirilip ortak müşteriler bulunamaz.
+
 **4. Mesaj ayarları.** İmzanız (ticaret unvanı ve MERSİS no), tahsilat IBAN'ınız ve isterseniz e-posta hesabınız.
 
 **5. Pilot: anonim veri paketi.** Pilot çalışmasına katılıyorsanız, yüklediğiniz dosyaların paylaşılabilir kopyasını buradan hazırlarsınız. Müşteri unvanı ve vergi numarası takma adlarla değişir (aynı müşteri her ay aynı takma adı alır), e-posta ve telefon silinir, banka açıklamaları tümüyle yeniden yazılır; tutar ve tarihler aynen kalır. Takma adları üreten gizli anahtar yalnızca sizin bilgisayarınızda durur ve paylaşılmaz. Göndermeden önce zip dosyasını açıp birkaç satıra göz atın. Ayrıntılar: PILOT_PROTOKOLU.md (programla birlikte gelir).
@@ -86,7 +88,7 @@ Biçimi görmek için panelin ilk ekranında örnek dosyaları indirebilirsiniz.
 
 **"Tahmin doğruluğu" sekmesi.** Üstte tahminin neye dayandığı yazar: kaç fatura, ne kadar geçmiş, hangi yöntem. Altta panel geçmişteki birkaç tarihe dönüp "o gün tahmin etseydim ne kadar tutardı" diye kendini sınar ve sonucu iki basit yöntemle ("her fatura vadesinde ödenir", "müşteri her zamanki kadar geç öder") karşılaştırır. Model sizin verinizde bu basit yöntemlerden daha isabetli değilse panel bunu açıkça söyler. En az 9 aylık geçmiş gerekir.
 
-En altta **"Pilot raporunu hazırla"** düğmesi, tek sayfalık, yazdırılabilir bir rapor indirir: kasa bandı, 13 haftalık plan, öncelikli 10 fatura, tahminin sizin geçmişinizde basit yöntemlere karşı ne kadar tuttuğu ve "İleriye dönük kayıt" (önümüzdeki 14 ve 30 günde açık faturalardan beklenen tahsilat). Raporu paylaşacaksanız "adları gizle" kutusunu işaretli bırakın. Pilotta bu rapor her pazartesi alınır ve değiştirilmeden saklanır; birkaç hafta sonra kayıttaki tahminler gerçekleşenle karşılaştırılır.
+En altta **"Pilot raporunu hazırla"** düğmesi, tek sayfalık, yazdırılabilir bir rapor indirir: kasa bandı, 13 haftalık plan, öncelikli 10 fatura, tahminin sizin geçmişinizde basit yöntemlere karşı ne kadar tuttuğu ve "İleriye dönük kayıt" (önümüzdeki 14 ve 30 günde açık faturalardan beklenen tahsilat). Raporu paylaşacaksanız "adları gizle" kutusunu işaretli bırakın. Pilota katılıyorsanız "5. Pilot" bölümündeki "Pilota katılıyorum" kutusunu işaretleyin: panel, güncel dosyalarla bugünün tahminini açtığınızda haftada bir ileriye dönük kaydı kendiliğinden alır. Kayıtlar sonradan değiştirilemez; süresi dolanlar "Pilot kayıtları" bölümünde gerçekleşenle karşılaştırılır ve anonim pakete eklenir.
 
 ## 5. Mesajlar hakkında bilmeniz gerekenler
 

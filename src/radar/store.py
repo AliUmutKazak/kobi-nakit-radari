@@ -7,6 +7,8 @@ yüklense bile olaylar fatura numarası üzerinden korunur.
 from __future__ import annotations
 
 import os
+import re
+import secrets
 import sqlite3
 from pathlib import Path
 
@@ -26,6 +28,55 @@ def default_path() -> Path:
     return Path(base) / "KobiRadar" / "radar.db"
 
 
+DEFAULT_NAME = "İşletmem"
+_TR = str.maketrans("çğıöşüÇĞİÖŞÜ", "cgiosuCGIOSU")
+
+
+def businesses_dir() -> Path:
+    """Mali müşavir modu: varsayılan veritabanının yanındaki klasörde işletme başına bir dosya."""
+    return default_path().parent / "isletmeler"
+
+
+def list_businesses() -> dict[str, Path]:
+    """{görünen ad: veritabanı yolu}. Varsayılan işletme (tek işletmeli kullanım) her zaman ilk sırada."""
+    out = {_name(default_path()) or DEFAULT_NAME: default_path()}
+    folder = businesses_dir()
+    if folder.exists():
+        for path in sorted(folder.glob("*.db")):
+            out.setdefault(_name(path) or path.stem, path)
+    return out
+
+
+def _name(path: Path) -> str | None:
+    if not path.exists():
+        return None
+    con = sqlite3.connect(path)
+    try:
+        row = con.execute("SELECT value FROM settings WHERE key = 'business_name'").fetchone()
+    except sqlite3.DatabaseError:
+        row = None
+    finally:
+        con.close()
+    return row[0] if row else None
+
+
+def create_business(name: str) -> Path:
+    """Yeni işletme için ayrı bir veritabanı açar. Ad zaten varsa hata verir."""
+    name = " ".join(str(name).split())
+    if not name:
+        raise ValueError("İşletme adı boş olamaz.")
+    if name in list_businesses():
+        raise ValueError(f"'{name}' adlı işletme zaten var.")
+    slug = re.sub(r"[^a-z0-9]+", "-", name.translate(_TR).lower()).strip("-")[:40] or "isletme"
+    path = businesses_dir() / f"{slug}.db"
+    n = 2
+    while path.exists():
+        path = businesses_dir() / f"{slug}-{n}.db"
+        n += 1
+    Store(path).set("business_name", name)
+    return path
+
+
 class Store:
     def __init__(self, path=None):
         path = Path(path) if path else default_path()
@@ -42,6 +93,18 @@ class Store:
                 p10 REAL, p50 REAL, p90 REAL, naive_due REAL, naive_median REAL, naive_rate REAL,
                 created TEXT NOT NULL, PRIMARY KEY (as_of, horizon));
         """)
+        if self.get("business_id") is None:
+            # İşletmenin kalıcı kimliği: anonimleştirme anahtarı işletme başına bundan türetilir.
+            self.db.execute("INSERT OR IGNORE INTO settings VALUES ('business_id', ?)", (secrets.token_hex(16),))
+            self.db.commit()
+
+    @property
+    def business_id(self) -> str:
+        return self.get("business_id")
+
+    @property
+    def name(self) -> str:
+        return self.get("business_name") or DEFAULT_NAME
 
     def _bump(self):
         self.db.execute("INSERT INTO settings VALUES ('rev', '1') "

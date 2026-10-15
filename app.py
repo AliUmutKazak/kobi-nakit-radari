@@ -14,7 +14,7 @@ import streamlit as st  # noqa: E402
 
 from radar import actions, anonymize, ingest, mailer, pilot, pipeline  # noqa: E402
 from radar.reconcile import reconcile, sender_key  # noqa: E402
-from radar.store import Store  # noqa: E402
+from radar.store import Store, create_business, list_businesses  # noqa: E402
 
 ROOT = Path(__file__).parent
 SAMPLES = ROOT / "ornekler"
@@ -64,8 +64,12 @@ st.caption("Mesajlar taslaktır; bu panel hiçbir mesajı kendiliğinden gönder
 
 
 @st.cache_resource
-def get_store() -> Store:
-    return Store()
+def get_store(path: str) -> Store:
+    return Store(path)
+
+
+def secret_key(store: Store) -> str:
+    return anonymize.business_key(anonymize.load_or_create_key(), store.business_id)
 
 
 def _open(upload):
@@ -108,7 +112,7 @@ def parse_invoices(uploads, terms, rates):
             notes += n
             ledger_cheques.append(chq)
         elif not u.name.lower().endswith(".xml"):
-            df, n = ingest.load_invoices(_open(u), terms, json.loads(get_store().get("map_invoices", "{}")), rates)
+            df, n = ingest.load_invoices(_open(u), terms, json.loads(store.get("map_invoices", "{}")), rates)
             frames.append(df)
             notes += n
     if xml:
@@ -119,8 +123,8 @@ def parse_invoices(uploads, terms, rates):
     if not frames:
         raise ValueError("Yüklenen dosyalardan okunabilen fatura çıkmadı.")
     found = [c for c in ledger_cheques if len(c)]
-    if found and get_store().load("cheques") is None:
-        get_store().save("cheques", pd.concat(found, ignore_index=True))
+    if found and store.load("cheques") is None:
+        store.save("cheques", pd.concat(found, ignore_index=True))
     return pd.concat(frames, ignore_index=True).drop_duplicates("invoice_id"), notes
 
 
@@ -131,9 +135,9 @@ def run_demo(seed: int, include_projected: bool):
 
 
 @st.cache_data(show_spinner="Verileriniz işleniyor ve 90 günlük kasa hesaplanıyor; 10-20 saniye sürebilir. Veri değişmedikçe sonraki işlemler anında gelir...")
-def run_own(rev: int, as_of: str, include_projected: bool):
-    """`rev` kayıt her değiştiğinde artar; sonuç ancak o zaman yeniden hesaplanır."""
-    store = get_store()
+def run_own(path: str, rev: int, as_of: str, include_projected: bool):
+    """`rev` kayıt her değiştiğinde artar; sonuç ancak o zaman yeniden hesaplanır. `path` işletmeyi ayırır."""
+    store = get_store(path)
     notes = [n for name in ("invoices", "payments", "payables") for n in json.loads(store.get(f"notes_{name}", "[]"))]
     obs = store.apply_events(store.load("invoices"), as_of)
     obs = obs[obs["issue_date"] <= pd.Timestamp(as_of)]
@@ -187,7 +191,7 @@ def run_backtest(obs, as_of):
 
 @st.cache_data(show_spinner="Pilot raporu hazırlanıyor; geçmiş tarihlerde test de yapıldığı için bir dakikayı bulabilir...")
 def run_pilot(key, _res, label, hide):
-    secret = anonymize.load_or_create_key() if hide else None
+    secret = secret_key(store) if hide else None
     r = pilot.build(_res["obs"], _res["as_of"], res=_res, label=label, key=secret,
                     unmatched=_res.get("unmatched"), n_payments=_res.get("n_payments"))
     return pilot.render(r).encode("utf-8")
@@ -195,11 +199,24 @@ def run_pilot(key, _res, label, hide):
 
 def anonymous_package(store: Store, seller: str):
     extra = {"giderler": store.load("outflows"), "odenecekler": store.load("payables"), "cekler": store.load("cheques")}
-    return anonymize.package(seller or "İşletme", store.load("invoices"), anonymize.load_or_create_key(),
+    return anonymize.package(seller or "İşletme", store.load("invoices"), secret_key(store),
                              store.load("payments"), extra, records=store.pilot_records())
 
 
-store = get_store()
+BUSINESSES = list_businesses()
+# Seçili işletme, seçim kutusundan ayrı tutulur: kutu demo modunda çizilmediğinde seçim kaybolmasın.
+if st.session_state.get("active_business") not in BUSINESSES:
+    st.session_state["active_business"] = next(iter(BUSINESSES))
+store = get_store(str(BUSINESSES[st.session_state["active_business"]]))
+
+
+def add_business():
+    try:
+        create_business(st.session_state.get("new_business", ""))
+        st.session_state["active_business"] = " ".join(st.session_state["new_business"].split())
+        st.session_state["new_business"] = ""
+    except ValueError as err:
+        st.session_state["business_error"] = str(err)
 with st.sidebar:
     source = st.radio("Veri", ["Demo şirket", "Kendi verim"])
     include_projected = st.toggle("Gelecek satışları hesaba kat", True,
@@ -209,6 +226,18 @@ with st.sidebar:
         seed = st.number_input("Demo şirket no", 1, 99, 7, help="Farklı bir uydurma şirket görmek için değiştirin.")
         seller = st.text_input("Mesajlardaki imza (ticaret unvanı ve MERSİS no)", "Örnek Ticaret A.Ş.")
     else:
+        names = list(BUSINESSES)
+        chosen = st.selectbox("İşletme", names, index=names.index(st.session_state["active_business"]),
+                              help="Mali müşavirler birden çok işletmeyi ayrı ayrı izleyebilir. Her işletmenin "
+                                   "dosyaları, ayarları ve kayıtları ayrı saklanır.")
+        if chosen != st.session_state["active_business"]:
+            st.session_state["active_business"] = chosen
+            st.rerun()
+        with st.expander("İşletme ekle"):
+            st.text_input("Yeni işletmenin adı", key="new_business")
+            st.button("Ekle", on_click=add_business)
+            if st.session_state.get("business_error"):
+                st.error(st.session_state.pop("business_error"))
         has_data = store.load("invoices") is not None
         with st.expander("1. Temel bilgiler", expanded=True):
             as_of = st.date_input("Tahmin tarihi", format="DD.MM.YYYY",
@@ -344,8 +373,8 @@ elif store.load("invoices") is None:
         st.caption((SAMPLES / "OKU.txt").read_text(encoding="utf-8"))
     st.stop()
 else:
-    res = run_own(store.rev, str(as_of), include_projected)
-    res_key = ("own", store.rev, str(as_of), include_projected)
+    res = run_own(str(store.path), store.rev, str(as_of), include_projected)
+    res_key = ("own", str(store.path), store.rev, str(as_of), include_projected)
 
 sim, m = res["sim"], res["metrics"]
 
@@ -503,7 +532,7 @@ with tab_accuracy:
     hide = st.checkbox("Müşteri ve işletme adlarını gizle (rapor paylaşılacaksa)", True)
     if st.button("Pilot raporunu hazırla"):
         seller_name = (store.get("seller", "") if own else "Demo şirket") or "İşletme"
-        label = anonymize.firm_alias(anonymize.load_or_create_key(), seller_name) if hide and own else seller_name
+        label = anonymize.firm_alias(secret_key(store), seller_name) if hide and own else seller_name
         page = run_pilot(res_key, res, label, hide)
         st.download_button("Raporu indir (HTML; tarayıcıda açıp yazdırabilirsiniz)", page,
                            f"pilot_raporu_{pd.Timestamp(res['as_of']):%Y%m%d}.html", "text/html")

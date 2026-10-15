@@ -676,6 +676,13 @@ def test_dashboard_renders_demo_and_own_data_without_errors(tmp_path, monkeypatc
     next(b for b in at.button if b.label == "Pilot raporunu hazırla").click().run()
     assert not at.exception, [e.value for e in at.exception]
     assert (tmp_path / "KobiRadar" / "anonim_anahtar.txt").exists()
+    # Mali müşavir modu: yeni işletme eklenince boş bir işletmeye geçilir; eskisine dönülünce veri yerinde.
+    at.sidebar.text_input(key="new_business").set_value("Deneme Ltd.").run()
+    next(b for b in at.sidebar.button if b.label == "Ekle").click().run()
+    assert not at.exception, [e.value for e in at.exception]
+    assert at.session_state["active_business"] == "Deneme Ltd." and len(at.metric) == 0
+    at.sidebar.selectbox[0].set_value("İşletmem").run()
+    assert not at.exception and len(at.metric) == 5
     at.sidebar.date_input[0].set_value(datetime.date(2026, 10, 20)).run()
     assert any("en son hareket" in e.value for e in at.error)             # 19 gün eski veri uyarısı
 
@@ -883,3 +890,23 @@ def test_weekly_pilot_records_are_frozen_and_scheduled(tmp_path):
     assert pilot.record_due(table, "2026-10-22", "2026-10-22", today="2026-10-22") is None
     records = pilot.records_from_table(table)
     assert records[0]["as_of"] == "2026-10-15" and len(records[0]["record"]) == 2
+
+
+def test_accountant_mode_keeps_businesses_apart(tmp_path, monkeypatch):
+    from radar import anonymize
+    from radar.store import Store, create_business, list_businesses
+
+    monkeypatch.setenv("RADAR_DB", str(tmp_path / "radar.db"))
+    main = Store()
+    main.save("invoices", pd.DataFrame({"invoice_id": ["A"], "amount": [1.0]}))
+    assert list(list_businesses()) == ["İşletmem"]
+    path = create_business("  Çağrı   Gıda Ltd. ")
+    assert path.name == "cagri-gida-ltd.db" and list(list_businesses()) == ["İşletmem", "Çağrı Gıda Ltd."]
+    with pytest.raises(ValueError):
+        create_business("Çağrı Gıda Ltd.")
+    other = Store(path)
+    assert other.load("invoices") is None and other.name == "Çağrı Gıda Ltd."     # veriler ayrı
+    assert main.business_id != other.business_id and Store().business_id == main.business_id   # kimlik kalıcı
+    master = "m" * 64
+    a, b = (anonymize.business_key(master, s.business_id) for s in (main, other))
+    assert a != b and anonymize.pseudonym(a, "X") != anonymize.pseudonym(b, "X")      # işletmeler arası eşleşmez
