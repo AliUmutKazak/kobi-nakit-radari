@@ -560,7 +560,13 @@ c[2].metric("Vadesi geçmiş", tl(m["overdue_ar"], compact=True), help="Açık a
 c[3].metric("Ortalama tahsil süresi", f"{m['dso']:.0f} gün",
             help="Alacaklarınız ortalama kaç günlük satışa denk geliyor (DSO). Düşük olması iyidir.")
 c[4].metric("Eksiye düşme riski", f"%{sim.prob_any_breach * 100:.0f}",
-            help="Önümüzdeki 90 gün içinde kasanın en az bir gün eksiye düşme olasılığı.")
+            help="Önümüzdeki 90 gün içinde kasanın en az bir gün eksiye düşme olasılığı. Bağımsız doğrulamada bu "
+                 "olasılıklar ortaya doğru sıkışık çıktı (Spiegelhalter testi): yüksek riskte gerçek risk gösterilenden "
+                 "yüksek, düşük riskte düşük. Karar için kötümser çizgiyi esas alın.")
+if sim.prob_any_breach >= 0.5:
+    st.error(f"Eksiye düşme riski yüksek (%{sim.prob_any_breach * 100:.0f}). Bağımsız doğrulamada %80 gösterilen "
+             "durumlarda gerçekleşme %92 oldu: yüksek riskte gerçek risk gösterilenden daha yüksek olabilir. "
+             "Ödeme ve tahsilat kararlarını kötümser senaryoya göre verin.")
 
 if sim.breach_day is not None:
     st.warning(f"Kötümser senaryoda kasa {sim.breach_day}. günde ({sim.dates[sim.breach_day]:%d.%m.%Y}) eksiye düşüyor. "

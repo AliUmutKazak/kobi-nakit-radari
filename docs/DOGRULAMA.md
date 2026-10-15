@@ -2,6 +2,40 @@
 
 Tarih: 14 Ekim 2026. Yeniden üretmek için: `python run_validation.py 24` (yaklaşık 3 dakika).
 
+## Uluslararası standartlarla değerlendirme (16 Ekim 2026)
+
+Kabul ölçütleri projede belirlenmez; şu kaynaklardan alınır (kod: `src/radar/standards.py`, testler Basel Tablo 2'yi birebir üretir):
+
+| Soru | Standart | Kaynak |
+|---|---|---|
+| Kasa, kötümser tahminin (P10) altına beklenenden sık düşüyor mu? (riskli uç) | Trafik ışığı: doğru modelde "bu kadar ya da daha az aşım" olasılığı ≥ %95 sarı, ≥ %99,99 kırmızı; sınırlar örneklem büyüklüğüne göre binom dağılımından | Basel Bankacılık Denetim Komitesi, BCBS 22 (1996); Türkiye: BDDK, Risk Ölçüm Modelleri ile Piyasa Riskinin Hesaplanmasına ... İlişkin Tebliğ, RG 03.11.2006/26335 (aynı 4 / 5–9 / 10+ sınırları) |
+| Aralık doğru genişlikte mi (fazla dar ya da fazla geniş)? | Kupiec olabilirlik oranı testi, iki yönlü, %5 | Kupiec (1995), Journal of Derivatives |
+| Tahmin basit yöntemlerden kötü mü? | Diebold-Mariano, Harvey-Leybourne-Newbold düzeltmesiyle, %5 | Diebold ve Mariano (1995), JBES; Harvey vd. (1997), IJF |
+| "Eksiye düşme olasılığı" doğru ayarlı mı? | Spiegelhalter z testi ve Brier skoru, %5 | Spiegelhalter (1986), Statistics in Medicine |
+
+**Gerçek açık veri (16 tahmin tarihi, açık faturalardan tahsilat):**
+
+| Veri, ufuk | Sapma (model / en iyi basit) | Diebold-Mariano | Kötümser uç aşımı | Basel | İyimser uç aşımı | Kupiec merkezi p | Kupiec iyimser uç p |
+|---|---|---|---|---|---|---|---|
+| IBM 14 gün | %6,98 / %10,57 | eşdeğer (p = 0,06 modelin lehine) | 0 / 16 | yeşil | 2 / 16 | 0,43 | 0,75 |
+| IBM 30 gün | %2,96 / %3,65 | eşdeğer | 1 / 16 | yeşil | 1 / 16 | 0,43 | 0,59 |
+| Payment Date 14 gün | %3,73 / %4,72 | eşdeğer | 0 / 16 | yeşil | 1 / 16 | 0,12 | 0,59 |
+| Payment Date 30 gün | %1,40 / %1,18 | eşdeğer | 1 / 16 | yeşil | **5 / 16** | 0,11 | **0,019** |
+
+Riskli uç dört durumun dördünde Basel yeşil bölgede; merkezi aralık Kupiec testinden dördünde geçiyor; isabet dördünde de basit yöntemlerle istatistiksel olarak eşdeğer (üçünde sayısal olarak daha iyi). Tek kusur: Payment Date 30 günde iyimser uç fazla dar, tahsilat 16 tarihin 5'inde iyimser tahmini aştı (para beklenenden hızlı geldi; kasa açısından güvenli yön).
+
+**Sentetik çalışma (192 tahmin, dönem sonu kasa ve eksiye düşme olasılığı):** Basel yeşil (192'de 20 aşım, beklenen 19); Kupiec kötümser uç p = 0,85 (geçer), iyimser uç p = 0,001 ve merkezi p = 0,03 (iyimser uç fazla geniş: %4 aşım, beklenen %10); Spiegelhalter p < 0,001: eksiye düşme olasılıkları ortaya sıkışık (tahmin %6 → gerçekleşen %0; %20 → %13; %80 → %92; %97 → %99). Kırılım: sıkışma bütün senaryolarda var; iyimser ucun fazla genişliği özellikle ortak şokun olmadığı senaryolarda (aşım %1) belirgin.
+
+**Denenip reddedilenler (aynı testlerle):**
+
+| Değişiklik | Sonuç | Karar |
+|---|---|---|
+| Genişletmesiz (yalnız birleştirme + yeniden ayar) | Sentetikte kötümser uç aşımı 26/192 → Basel **sarı** | Reddedildi: riskli uç standardı bozuluyor |
+| İki taraflı konformal ayar (iyimser uç daralabilir) | Payment Date 30 günde iyimser uç daha da daraldı (aşım 6/16, Kupiec p = 0,003); sentetikte iyimser uç daha da genişledi | Reddedildi |
+| Yalnız riskli ucu genişletme | Sentetikte Spiegelhalter z −4,46 (mevcut −4,57), güvenilirlik değişmedi | Kazanç yok |
+
+**Yorum ve açık kalan iş.** Kasanın riskli tarafı her veri ve senaryoda uluslararası standarda (Basel/BDDK) uygun. İki taraflı kalibrasyon ise veri setleri arasında **ters yönde** sapıyor: gerçek büyük portföyde iyimser uç fazla dar, sentetik şirketlerde fazla geniş. Tek bir genel ayar ikisini birden düzeltemez; birine göre ayar yapmak öbürünü bozar, gerçek veriye göre ayar yapmak ise o veriyi ezberlemek olur. Doğru ayar, Türk KOBİ pilot verisiyle (protokol B2 ve kapanış kasası hedefi) ölçülecek. O zamana kadar panel, yüksek riskte (≥ %50) gösterilen olasılığın gerçek riskten düşük olabileceğini açıkça uyarır ve kararın kötümser senaryoya göre verilmesini önerir.
+
 ## Gerçek açık verilerle doğrulama (14 Ekim 2026)
 
 > **Güncel durum (16 Ekim 2026).** Aşağıdaki ilk tablolar tarihsel kayıttır. Ödeme günü yuvarlama düzeltmesinden (15 Ekim) ve tahmin birleştirme + olasılık yeniden ayarı + toplam düzeyde genişletmeden (16 Ekim) sonra, 16 tahmin tarihiyle: kasa sapması IBM 14 gün %6,98, 30 gün %2,96, Payment Date 14 gün %3,73, 30 gün %1,40; model dört durumun üçünde en iyi basit yöntemi geçiyor, dördüncüsünde 0,2 puan geride. Bant içi oranları %88, %88, %94, %62 (hedef %80). Ayrıntı ve gerekçe: "Düzeltme: tahmin birleştirme..." bölümü.
