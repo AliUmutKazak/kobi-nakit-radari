@@ -31,7 +31,8 @@ PY = f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro
 EMBED_URL = f"https://www.python.org/ftp/python/{PY}/python-{PY}-embed-amd64.zip"
 DEV_ONLY = {"pytest"}
 COPY = ["app.py", "src", ".streamlit", "ornekler", "requirements.txt", "docs/KULLANIM_KILAVUZU.md",
-        "docs/pilot/PILOT_PROTOKOLU.md"]
+        "docs/pilot/PILOT_PROTOKOLU.md",
+        "docs/pilot/mali_musavir_pilot_foyu.docx"]
 
 START_BAT = r'''@echo off
 chcp 65001 >nul

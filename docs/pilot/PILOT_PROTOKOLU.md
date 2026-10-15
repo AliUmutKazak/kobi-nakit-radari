@@ -1,6 +1,6 @@
 # Pilot Protokolü
 
-Sürüm 1.0 — 15 Ekim 2026. Bu belge, ilk gerçek işletme verisi görülmeden yazılmıştır. Başarı ölçütleri ve eşikler pilot sırasında değiştirilmez; değişiklik gerekirse yeni sürüm numarasıyla, gerekçesiyle ve hangi verinin görüldüğü belirtilerek yapılır.
+Sürüm 1.1 — 15 Ekim 2026 (1.1: Ek A hukuk müşavirliği taslağına göre güncellendi, Ek D eklendi; ölçütler değişmedi). Bu belge, ilk gerçek işletme verisi görülmeden yazılmıştır. Başarı ölçütleri ve eşikler pilot sırasında değiştirilmez; değişiklik gerekirse yeni sürüm numarasıyla, gerekçesiyle ve hangi verinin görüldüğü belirtilerek yapılır.
 
 ## 1. Amaç
 
@@ -32,6 +32,7 @@ Hedef: farklı sektörlerden 5–10 işletme. Mali müşavir aracılığıyla ul
    - E-posta ve telefon silinir. Banka açıklamaları tümüyle yeniden yazılır; yalnızca eşleşen müşterinin takma adı ve fatura numarası kalır.
    - Gider kalemlerinden yalnızca genel kategori adları kalır (maaş, kira, SGK…); diğer her şey "Diğer" olur. Çeklerde keşideci adı silinir.
    - Tutar ve tarihler değişmez.
+   - "Pilota katılıyorum" işaretliyse uygulamanın haftalık aldığı ileriye dönük tahmin özetleri (yalnızca tarih, ufuk ve tutar) pilot_kayitlari.csv olarak eklenir.
 3. Paketi hazırlayan kişi zip'i açıp **gözle kontrol eder** (özellikle BENİ_OKU.txt'deki sayılar ve rastgele birkaç satır).
 4. Paket, uçtan uca şifreli bir kanalla ya da parolalı arşivle (örneğin 7-Zip, AES-256) gönderilir; parola ayrı bir kanaldan iletilir. Şifresiz e-posta eki kullanılmaz.
 5. Anahtar dosyası (%LOCALAPPDATA%\KobiRadar\anonim_anahtar.txt) **hiçbir zaman paylaşılmaz**. Kaybolursa sonraki aylarda takma adlar değişir; geçmiş paketle eşleştirme kopar.
@@ -94,6 +95,8 @@ Bu ölçütlerde değişim görülse bile araca bağlanamaz: mevsim, faiz ortam�
 
 Aşağıdaki değerlendirme hukuki görüş değildir; pilot başlamadan önce avukat tarafından incelenmesi gereken noktaları sıralar.
 
+15 Ekim 2026'da gelen hukuk müşavirliği taslağı (imzasız) Ek A'yı veri işleme sözleşmesi hükümleriyle birleştirdi. Ek A o taslak esas alınarak güncellendi; taslaktan farklılaşan ve teyit istenen yerler Ek A'da "AVUKAT NOTU" ile işaretlidir. Mesaj şablonlarına ilişkin şerhler (sabit faiz oranı ve tutar yazılmaması, TTK m. 18/3 uyarısının her taslakta sabit gösterilmesi) uygulamaya işlendi.
+
 - **Kişisel veri mi?** 6698 sayılı KVKK kişisel veriyi gerçek kişiler için tanımlar; tüzel kişi unvanı ve VKN kişisel veri sayılmaz. Şahıs işletmesi unvanı, TCKN ve gerçek kişi müşteriler ise kişisel veridir. Takma adlandırılmış veri, anahtar başkasında olsa da kişisel veri olmayı sürdürebilir (KVKK Kurumu'nun silme, yok etme ve anonim hâle getirme rehberi; AB'de GDPR 26. gerekçe).
 - **Rol dağılımı.** İşletme, müşteri verisinin veri sorumlusudur. Pakete erişen proje ekibinin veri işleyen mi yoksa ayrı bir veri sorumlusu mu olduğu, paylaşımın amacına göre belirlenmelidir; buna göre veri işleme sözleşmesi ya da veri paylaşım sözleşmesi gerekir.
 - **Hukuki sebep.** İşletmenin kendi müşteri verisini pilot için paylaşmasının KVKK m.5 kapsamındaki dayanağı (meşru menfaat ya da açık rıza) ve aydınlatma yükümlülüğü (m.10).
@@ -101,25 +104,50 @@ Aşağıdaki değerlendirme hukuki görüş değildir; pilot başlamadan önce a
 - **Mali müşavir.** Mali müşavirin müşterisine ait veriyi üçüncü kişiyle paylaşması, 3568 sayılı Kanun kapsamındaki sır saklama yükümlülüğü bakımından ancak işletmenin yazılı onayıyla yapılmalıdır.
 - **Ticari sır.** Satış tutarları ve müşteri yoğunlaşması işletme için ticari sır niteliğinde olabilir; gizlilik yükümlülüğü sözleşmeye yazılmalıdır.
 
-## Ek A. Bilgilendirme ve veri paylaşım onayı — TASLAK
+## Ek A. Pilot çalışması veri işleme, gizlilik ve muvafakat protokolü — TASLAK
 
-> **Bu metin taslaktır. Avukat incelemesi ve onayı olmadan kullanılmamalıdır.** Köşeli parantezli yerler doldurulacaktır.
+> **Bu metin taslaktır; avukat onayı ve imzası olmadan kullanılmamalıdır.** 15 Ekim 2026'da hukuk müşavirliği taslağı (Belge 2) esas alınarak hazırlandı. "AVUKAT NOTU" ile işaretli yerler, o taslağa göre yapılan değişiklikler ya da avukatın teyit etmesi istenen noktalardır. Köşeli parantezli yerler doldurulacaktır.
 
-**KOBİ Nakit Akışı Radarı Pilot Çalışması — Bilgilendirme ve Onay**
+**EK A — KOBİ NAKİT AKIŞI RADARI PİLOT ÇALIŞMASI, VERİ İŞLEME, GİZLİLİK VE MUVAFAKAT PROTOKOLÜ**
 
-[İşletme unvanı] ("İşletme"), [proje sahibi adı/unvanı] ("Proje") tarafından yürütülen pilot çalışmaya katılmayı kabul eder.
+1. **Taraflar ve KVKK rol dağılımı.** İşbu Protokol; bir tarafta [İşletme unvanı ve VKN] ("İşletme" — 6698 sayılı KVKK kapsamında veri sorumlusu), diğer tarafta [Proje sahibi adı soyadı / unvanı ve TCKN/VKN] ("Proje" — KVKK m. 3/1-ğ kapsamında veri işleyen) ve veri hazırlama sürecine aracılık etmesi hâlinde [Mali müşavir adı soyadı ve oda sicil no] ("Mali Müşavir") arasında [GG/AA/2026] tarihinde akdedilmiştir.
 
-1. **Amaç.** Pilotun amacı, kasa ve tahsilat tahmininin İşletme'nin verisinde ne kadar isabetli olduğunu ölçmek ve aracı geliştirmektir. Veriler başka bir amaçla kullanılmaz, satılmaz, üçüncü kişilerle paylaşılmaz.
-2. **Paylaşılan veri.** Takma fatura numarası, takma adlandırılmış müşteri kimliği, fatura ve vade tarihi, tutar, ödeme tarihi; banka tahsilatlarının tarih ve tutarı; isteğe bağlı olarak gider, borç ve çek tarih ve tutarları. Müşteri unvanı, vergi/kimlik numarası, gerçek fatura numarası, telefon ve e-posta paylaşılmaz; bunlar İşletme'nin bilgisayarında takma adlarla değiştirilir.
-3. **Anahtar.** Takma adları üreten anahtar yalnızca İşletme'de kalır. Proje, takma addan gerçek müşteriye ulaşmaya çalışmaz.
-4. **Saklama ve silme.** Veriler [Türkiye'de bulunan, şifreli diskte] saklanır; pilotun bitiminden itibaren en geç [30] gün içinde ya da İşletme'nin talebi üzerine [7] gün içinde silinir ve silindiği yazılı olarak bildirilir.
-5. **Sonuçların kullanımı.** Pilot sonuçları, İşletme'nin adı ve tanınmasını sağlayacak bilgi verilmeden, yalnızca toplu ve istatistiksel olarak yayımlanabilir.
-6. **Gizlilik.** Proje, İşletme'nin verisini ticari sır olarak korur; erişimi pilotta çalışan kişilerle sınırlar.
-7. **Gönüllülük.** Katılım gönüllüdür; İşletme dilediği an gerekçe göstermeden ayrılabilir.
-8. **Sorumluluk.** Araç karar desteği sağlar; kasa ve tahsilat kararları İşletme'ye aittir. Araç İşletme adına mesaj göndermez.
-9. **Müşterilere karşı yükümlülük.** İşletme, müşteri verisinin bu amaçla takma adlandırılarak paylaşılmasının kendi aydınlatma ve hukuki sebep yükümlülükleriyle uyumlu olduğunu [avukat görüşüne göre düzenlenecek].
+2. **Amaç, talimat ve veri işleme sınırı.** İşletme, Proje'ye paylaşılan verileri yalnızca şu amaçlarla işleme talimatı verir: (a) 90 günlük kasa ve tahsilat tahmininin İşletme'nin verisinde ne kadar isabetli olduğunu ölçmek ve İşletme'ye doğruluk raporu sunmak; (b) bu ölçümlerin sonucuna göre aracın tahmin yöntemini düzeltmek. Proje, verileri bu talimat dışında hiçbir amaçla kullanamaz, satamaz ve üçüncü kişilerle paylaşamaz.
+   > AVUKAT NOTU: Taslakta Proje "veri işleyen" olarak tanımlanırken amaç maddesi "aracı kalibre etmek" ve sonuçların yayımlanmasını da içeriyordu. Veri işleyen veriyi yalnızca veri sorumlusu adına ve onun talimatıyla işler; aracın geliştirilmesi Proje'nin kendi amacı sayılırsa Proje o işleme bakımından veri sorumlusu olabilir. Bu nedenle (b) bendi İşletme'nin açık talimatı olarak yazıldı. Bu çözümün yeterli olup olmadığı ya da Proje'nin bu kısım için ayrı veri sorumlusu olarak konumlandırılması gerekip gerekmediği değerlendirilmelidir.
 
-İşletme adına: [ad soyad, unvan, tarih, imza] — Proje adına: [ad soyad, tarih, imza] — Mali müşavir (varsa): [ad soyad, oda sicil no, tarih, imza]
+3. **Yerel takma adlandırma akışı ve paylaşılan veri kapsamı.** Veriler, İşletme'nin veya Mali Müşavir'in kendi bilgisayarında çalışan masaüstü uygulamasıyla yerel olarak hazırlanır:
+   - a) Müşteri unvanları, VKN/TCKN bilgileri ve fatura numaraları, yalnızca İşletme/Mali Müşavir bilgisayarında (%LOCALAPPDATA%\KobiRadar\anonim_anahtar.txt) kalan gizli bir anahtardan işletme başına türetilen anahtarla (HMAC-SHA256) takma adlara ve takma numaralara dönüştürülür.
+   - b) Müşteri telefon numaraları, e-posta adresleri ve çeklerdeki keşideci adları tamamen silinir. Banka açıklamaları tümüyle yeniden yazılarak yalnızca eşleşen müşterinin takma adı ve takma fatura numarası bırakılır; gider kalemlerinden yalnızca genel kategori adları (maaş, kira, SGK vb.) korunur, diğer kalemler "Diğer" olarak işaretlenir.
+   - c) Proje ile yalnızca şunlar paylaşılır: takma fatura numarası, takma müşteri kimliği, fatura/vade/ödeme tarihleri ve tutarları; banka, gider, borç ve çek kayıtlarının tarih ve tutarları; uygulamanın haftalık olarak kaydettiği ileriye dönük tahmin özetleri (tarih, ufuk ve tutar; kimlik bilgisi içermez).
+     > AVUKAT NOTU: Haftalık tahmin özetleri taslaktan sonra uygulamaya eklendi; listeye bu nedenle girdi.
+   - d) Hazırlanan paket gözle kontrol edildikten (BENİ_OKU.txt ve örnek satırlar) sonra uçtan uca şifreli bir kanalla veya parolalı arşivle (7-Zip, AES-256) gönderilir; parola ayrı bir kanaldan iletilir; şifresiz e-posta eki kullanılmaz.
+
+4. **Anahtar güvenliği ve kimliği geri çözme yasağı.** Takma adları üreten anahtar dosyası yalnızca İşletme'de (veya yetkilendirdiği Mali Müşavir'de) kalır ve hiçbir zaman Proje ile paylaşılmaz. Proje, takma addan gerçek müşteriye veya kimliğe ulaşmaya çalışmamayı, başka veri kaynaklarıyla eşleştirme yapmamayı taahhüt eder.
+
+5. **Saklama yeri, veri güvenliği ve imha (KVKK m. 9 ve m. 12).** Veriler yurt dışına aktarılmaz; yalnızca Türkiye sınırları içinde bulunan şifreli disklerde saklanır; bulut depolama kullanılmaz. Veriler, pilotun bitiminden itibaren en geç 30 (otuz) gün içinde ya da İşletme'nin talebi üzerine en geç 7 (yedi) gün içinde geri döndürülemez biçimde silinir ve silindiği İşletme'ye yazılı olarak bildirilir.
+
+6. **Veri ihlali bildirimi.** Proje, verilerin yetkisiz kişilerce elde edildiğini veya buna ilişkin ciddi bir şüpheyi öğrendiği andan itibaren en geç 24 (yirmi dört) saat içinde İşletme'ye yazılı olarak bildirir; bildirimde olayın kapsamını, etkilenen verileri ve alınan önlemleri belirtir. KVKK m. 12/5 kapsamındaki Kurul'a ve ilgililere bildirim yükümlülüğü veri sorumlusu olarak İşletme'ye aittir; Proje bu süreçte gereken bilgi ve desteği sağlar.
+   > AVUKAT NOTU: Hukuk müşavirliği taslağının 4. kontrol noktasında istenen 24 saatlik bildirim yükümlülüğü, Ek A metnine eklenmemişti; bu madde o şerh üzerine yazıldı.
+
+7. **Alt işleyen ve erişim.** Proje, İşletme'nin önceden yazılı onayı olmadan verileri başka bir veri işleyene veya hizmet sağlayıcıya aktaramaz. Verilere yalnızca pilotta çalışan ve gizlilik taahhüdü vermiş kişiler erişebilir. İşletme, makul bir bildirimle Proje'den verilerin nasıl saklandığına ve silindiğine ilişkin bilgi ve belge isteyebilir.
+
+8. **Ticari sır, gizlilik ve sonuçların kullanımı.** Proje, İşletme'nin satış tutarlarını ve müşteri yoğunlaşmasını içeren verilerini ticari sır olarak korur. İşletme, pilot sonuçlarının, İşletme'nin adı ve tanınmasını sağlayacak hiçbir bilgi verilmeden, yalnızca birden çok işletmenin toplu ve istatistiksel sonuçları olarak yayımlanmasına izin verir; tek bir işletmeye ait sayı yayımlanmaz.
+
+9. **Hukuki sebep ve müşterilere karşı yükümlülük (KVKK m. 5 ve m. 10).** İşletme, muhasebe ve fatura kayıtlarındaki verilerin KVKK m. 5/2-c (sözleşmenin ifası) ve m. 5/2-f (veri sorumlusunun meşru menfaati) kapsamında hukuka uygun olarak işlendiğini ve bu verilerin takma adlandırılarak veri işleyen sıfatıyla Proje'ye aktarılmasının kendi aydınlatma ve hukuki sebep yükümlülükleriyle uyumlu olduğunu kabul ve beyan eder.
+
+10. **Mali müşavir yetkilendirmesi (3568 sayılı Kanun).** İşletme, Mali Müşavir [ad soyad]'ı işbu Protokolün 3. maddesinde tanımlanan takma adlandırılmış veri paketini kendi bilgisayarında hazırlayarak Proje'ye iletmek üzere açıkça yetkilendirir; bu paylaşımın 3568 sayılı Kanun kapsamındaki sır saklama yükümlülüğüne aykırılık teşkil etmediğini yazılı olarak onaylar.
+    > AVUKAT NOTU: Taslakta "3568 sayılı Kanun m. 43" atfı vardı; madde numarasının teyidi rica olunur.
+
+11. **Gönüllülük ve sorumluluk sınırı.** Katılım gönüllüdür; İşletme dilediği an gerekçe göstermeden pilottan ayrılabilir. Araç yalnızca karar desteği sağlar; kasa ve tahsilat kararları tümüyle İşletme'ye aittir ve araç İşletme adına mesaj göndermez.
+
+**İmzalar**
+
+| İşletme adına (veri sorumlusu) | Proje adına (veri işleyen) | Mali müşavir (varsa) |
+|---|---|---|
+| Ad soyad: | Ad soyad: | Ad soyad: |
+| Unvan: | Tarih: .... / .... / 2026 | Oda sicil no: |
+| Tarih: .... / .... / 2026 | İmza: | Tarih: .... / .... / 2026 |
+| İmza / kaşe: | | İmza / kaşe: |
 
 ## Ek B. Haftalık kayıt formu
 
@@ -143,3 +171,23 @@ python -m radar.pilot <raporlar_klasoru> <guncel_faturalar.csv>
 ```
 
 Komut her kayıt için gerçekleşen tahsilatı hesaplar, ufku dolmamış kayıtları atlar ve 14/30 gün için B1 ile B2'nin sağlanıp sağlanmadığını yazar. Gerçekleşen tahsilat, tahmin günü açık olup ufuk içinde ödenen faturaların tutarıdır; kısmi ödemeler fatura tutarı üzerinden sayılır (yaklaşım; kısmi ödemesi çok olan işletmede ayrıca belirtilir).
+
+## Ek D. Mali müşavir için veri hazırlama föyü
+
+Ek A imzalandıktan sonra veriyi hazırlayacak mali müşavire ya da ön muhasebe yetkilisine verilir.
+
+**1. Uygun işletme.** En az 12 aylık düzenli satış faturası geçmişi (Paraşüt, Logo, Mikro, BizimHesap, Luca çıktısı ya da cari hesap ekstresi); en az 10 aktif cari müşteri; vadeli satış ağırlıklı. Hukuki sadelik için müşterileri ağırlıklı olarak şirket (Ltd. Şti., A.Ş.) olan işletmeler tercih edilir.
+
+**2. Hazırlık adımları.**
+- Ek A, İşletme, Proje ve Mali Müşavir arasında imzalanmadan paket hazırlanmaz.
+- Uygulamayı kendi bilgisayarınızda açın; "Kendi verim" → "İşletme ekle" ile işletmeyi ekleyin; dosyaları yükleyin (fatura listesi ya da cari ekstre, banka ekstresi; varsa giderler, ödenecekler, çekler). Veriler bilgisayarınızdan çıkmaz.
+- Sol menü → "5. Pilot: anonim veri paketi" → "Pilota katılıyorum" kutusunu işaretleyin; sonra "Anonim paketi hazırla".
+- Zip'i açıp kontrol edin:
+  - [ ] Müşteri unvanları ve VKN/TCKN'ler "Müşteri XXXXXX" biçiminde takma adlara dönüşmüş.
+  - [ ] Fatura numaraları "ANO" ile başlayan takma numaralar.
+  - [ ] Telefon, e-posta, çek keşideci adları ve banka açıklamalarındaki serbest metin yok.
+  - [ ] BENİ_OKU.txt'deki fatura ve müşteri sayıları beklediğiniz gibi.
+- Paketi 7-Zip (AES-256) ile parolalayın ya da uçtan uca şifreli bir kanaldan gönderin; parolayı başka bir kanaldan (telefon, SMS) iletin. Şifresiz e-posta eki kullanmayın.
+- %LOCALAPPDATA%\KobiRadar\anonim_anahtar.txt dosyasını paylaşmayın ve silmeyin: sonraki aylarda aynı müşterinin aynı takma adı alması bu dosyaya bağlıdır. Bilgisayar değişecekse dosyayı güvenli biçimde taşıyın.
+
+**3. Her hafta (13 hafta).** Pazartesi güncel fatura ve banka dosyalarını yükleyin ve tahmin tarihini bugün bırakarak paneli açın; haftalık kayıt kendiliğinden alınır. "Tahmin doğruluğu" sekmesinden pilot raporunu indirip saklayın; Ek B'deki iki soruyu cevaplayın.
