@@ -137,7 +137,7 @@ def _safe_label(value) -> str:
 
 
 def package(company: str, invoices: pd.DataFrame, key: str, payments: pd.DataFrame | None = None,
-            extra: dict[str, pd.DataFrame] | None = None) -> tuple[bytes, dict]:
+            extra: dict[str, pd.DataFrame] | None = None, records: pd.DataFrame | None = None) -> tuple[bytes, dict]:
     """Bir işletmenin anonimleştirilmiş dosyalarını zip olarak verir; yanında ne yapıldığının özeti.
 
     `invoices` ve `payments` henüz anonimleştirilmemiş standart tablolardır; `extra` (giderler, çekler)
@@ -165,6 +165,10 @@ def package(company: str, invoices: pd.DataFrame, key: str, payments: pd.DataFra
                 z.writestr(f"{firm}/{name}.csv",
                            to_csv_bytes(safe, {"date": "Vade", "amount": "Tutar", "label": "Kalem"} if "label" in safe
                                         else {"date": "Vade", "amount": "Tutar"}))
+        if records is not None and len(records):
+            # İleriye dönük pilot kayıtları yalnızca tarih ve tutar içerir; olduğu gibi aktarılır.
+            z.writestr(f"{firm}/pilot_kayitlari.csv", records.to_csv(index=False).encode("utf-8-sig"))
+            summary["pilot_kaydı"] = int(records["as_of"].nunique())
         z.writestr(f"{firm}/BENİ_OKU.txt", ("Bu klasör KOBİ Nakit Akışı Radarı pilotu için anonimleştirildi.\r\n"
                                             + "\r\n".join(f"{k}: {v}" for k, v in summary.items())).encode("utf-8-sig"))
     return buf.getvalue(), summary

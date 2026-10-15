@@ -657,6 +657,10 @@ def test_dashboard_renders_demo_and_own_data_without_errors(tmp_path, monkeypatc
     store.save("invoices", ingest.load_invoices(root / "ornekler" / "faturalar.csv")[0])
     store.save("payments", ingest.load_payments(root / "ornekler" / "ekstre.csv")[0])
     store.save("outflows", ingest.load_schedule(root / "ornekler" / "giderler.csv"))
+    store.set("pilot_on", 1)                                              # pilot kayıtları bölümü de çizilsin
+    store.add_pilot_record("2026-09-01", pd.DataFrame({
+        "horizon": [14, 30], "until": ["2026-09-15", "2026-10-01"], "p10": [1e5, 2e5], "p50": [2e5, 4e5],
+        "p90": [3e5, 6e5], "naive_due": [5e5, 7e5], "naive_median": [4e5, 6e5], "naive_rate": [2e5, 4e5]}))
 
     at = AppTest.from_file(str(root / "app.py"), default_timeout=300).run()
     assert not at.exception, [e.value for e in at.exception]
@@ -853,3 +857,29 @@ def test_pilot_report_builds_and_renders(tmp_path):
     hidden = pilot.render(pilot.build(obs, AS_OF, res=r["res"], label="X", key="gizli"))
     assert not any(name in hidden for name in r["top"]["Müşteri"])           # müşteri adları gizlendi
     assert not any(number in hidden for number in r["top"]["Fatura"])          # fatura numaraları da
+
+
+def test_weekly_pilot_records_are_frozen_and_scheduled(tmp_path):
+    from radar import pilot
+    from radar.store import Store
+
+    store = Store(tmp_path / "s.db")
+    rec = pd.DataFrame({"horizon": [14, 30], "until": ["2026-10-29", "2026-11-14"], "p10": [1.0, 2.0],
+                        "p50": [2.0, 3.0], "p90": [3.0, 4.0], "naive_due": [5.0, 6.0], "naive_median": [4.0, 5.0],
+                        "naive_rate": [float("nan"), 2.5]})
+    rev = store.rev
+    assert store.add_pilot_record("2026-10-15", rec)
+    assert not store.add_pilot_record("2026-10-15", rec.assign(p50=[99.0, 99.0]))       # dondurulmuş
+    table = store.pilot_records()
+    assert list(table["p50"]) == [2.0, 3.0] and table["naive_rate"].isna().iloc[0] and store.rev == rev
+    store.clear()
+    assert len(store.pilot_records()) == 2                                                # silme kayıtları korur
+
+    today = pd.Timestamp("2026-10-15")
+    assert pilot.record_due(table.iloc[:0], today, today, today=today) is None
+    assert "bugün değil" in pilot.record_due(table.iloc[:0], "2026-10-01", today, today=today)
+    assert "bir haftadan eski" in pilot.record_due(table.iloc[:0], today, "2026-10-01", today=today)
+    assert "alındı" in pilot.record_due(table, "2026-10-20", "2026-10-20", today="2026-10-20")
+    assert pilot.record_due(table, "2026-10-22", "2026-10-22", today="2026-10-22") is None
+    records = pilot.records_from_table(table)
+    assert records[0]["as_of"] == "2026-10-15" and len(records[0]["record"]) == 2

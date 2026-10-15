@@ -219,6 +219,27 @@ Kur değişimi, yeni kredi ve plan dışı büyük giderler dahil değildir.</p>
 </body></html>"""
 
 
+def records_from_table(table: pd.DataFrame) -> list[dict]:
+    """Panelin sakladığı kayıt tablosunu score() girdisine çevirir."""
+    return [{"as_of": as_of, "record": g.drop(columns=["as_of", "created"], errors="ignore").to_dict(orient="records")}
+            for as_of, g in table.groupby("as_of")]
+
+
+def record_due(table: pd.DataFrame, as_of, last_activity, today=None) -> str | None:
+    """Bugün yeni kayıt alınmalı mı? Alınmamalıysa nedeni döner (None = alınmalı).
+
+    Kayıt yalnızca bugünün tahmininden alınır (geçmiş tarihli tahmin geri testtir, ileriye dönük değil),
+    veri bir haftadan eskiyse alınmaz (bu arada gelen ödemeler açık görünür) ve haftada bir alınır."""
+    as_of, today = pd.Timestamp(as_of).normalize(), pd.Timestamp(today or pd.Timestamp.now()).normalize()
+    if as_of != today:
+        return "Tahmin tarihi bugün değil; ileriye dönük kayıt yalnızca bugünün tahmininden alınır."
+    if last_activity is None or (as_of - pd.Timestamp(last_activity)).days > 7:
+        return "Verideki son hareket bir haftadan eski; güncel dosyaları yükleyince kayıt alınır."
+    if len(table) and (as_of - pd.to_datetime(table["as_of"]).max()).days < 7:
+        return "Bu haftanın kaydı alındı."
+    return None
+
+
 def read_record(page: str) -> dict:
     """Kaydedilmiş bir pilot raporundan ileriye dönük kaydı okur."""
     start = page.index('id="ileriye-donuk-kayit">') + len('id="ileriye-donuk-kayit">')

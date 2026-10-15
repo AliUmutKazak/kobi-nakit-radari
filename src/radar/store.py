@@ -37,6 +37,10 @@ class Store:
             CREATE TABLE IF NOT EXISTS events (
                 id INTEGER PRIMARY KEY AUTOINCREMENT, ts TEXT NOT NULL,
                 invoice_id TEXT NOT NULL, kind TEXT NOT NULL, value TEXT);
+            CREATE TABLE IF NOT EXISTS pilot_records (
+                as_of TEXT NOT NULL, horizon INTEGER NOT NULL, until TEXT NOT NULL,
+                p10 REAL, p50 REAL, p90 REAL, naive_due REAL, naive_median REAL, naive_rate REAL,
+                created TEXT NOT NULL, PRIMARY KEY (as_of, horizon));
         """)
 
     def _bump(self):
@@ -128,6 +132,23 @@ class Store:
         self.db.execute("INSERT INTO events (ts, invoice_id, kind, value) VALUES (?, ?, ?, ?)",
                         (ts.isoformat(), str(invoice_id), kind, str(value)))
         self._bump()
+
+    def add_pilot_record(self, as_of, record: pd.DataFrame) -> bool:
+        """İleriye dönük pilot kaydı. Kayıt dondurulmuştur: aynı tarih için ikinci kez yazılmaz, değiştirilmez,
+        "Tabloları sil" ile de silinmez. Önbelleği bozmamak için sürüm numarasını artırmaz."""
+        as_of = f"{pd.Timestamp(as_of):%Y-%m-%d}"
+        cols = ["horizon", "until", "p10", "p50", "p90", "naive_due", "naive_median", "naive_rate"]
+        before = self.db.total_changes
+        self.db.executemany(
+            "INSERT OR IGNORE INTO pilot_records VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            [(as_of, *[None if pd.isna(v) else (int(v) if c == "horizon" else v if c == "until" else float(v))
+                       for c, v in zip(cols, row)], pd.Timestamp.now().isoformat(timespec="seconds"))
+             for row in record[cols].itertuples(index=False)])
+        self.db.commit()
+        return self.db.total_changes > before
+
+    def pilot_records(self) -> pd.DataFrame:
+        return pd.read_sql("SELECT * FROM pilot_records ORDER BY as_of, horizon", self.db)
 
     def events(self) -> pd.DataFrame:
         df = pd.read_sql("SELECT * FROM events ORDER BY id", self.db)

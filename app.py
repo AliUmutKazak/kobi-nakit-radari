@@ -196,7 +196,7 @@ def run_pilot(key, _res, label, hide):
 def anonymous_package(store: Store, seller: str):
     extra = {"giderler": store.load("outflows"), "odenecekler": store.load("payables"), "cekler": store.load("cheques")}
     return anonymize.package(seller or "İşletme", store.load("invoices"), anonymize.load_or_create_key(),
-                             store.load("payments"), extra)
+                             store.load("payments"), extra, records=store.pilot_records())
 
 
 store = get_store()
@@ -254,6 +254,12 @@ with st.sidebar:
                            "Göndermeden önce zip dosyasını açıp gözle kontrol edin.")
             st.caption(f"Takma adları üreten gizli anahtar yalnızca bu bilgisayarda: {anonymize.key_path()}. "
                        "Anahtar paylaşılmaz; aynı anahtar her ay aynı takma adları verir.")
+            pilot_on = st.checkbox("Pilota katılıyorum: her hafta ileriye dönük kaydı kendiliğinden al",
+                                   store.get("pilot_on", "0") == "1",
+                                   help="Panel haftada bir, bugünün tahmininden önümüzdeki 14 ve 30 günün tahsilat "
+                                        "tahminini kaydeder. Kayıtlar değiştirilemez; süre dolunca gerçekleşenle "
+                                        "karşılaştırılır ve anonim pakete eklenir.")
+            store.set("pilot_on", int(pilot_on))
         with st.expander("Diğer ayarlar"):
             terms = st.number_input("Vadesi yazmayan faturalar için vade (gün)", 0, 365, int(store.get("terms", 30)),
                                     help="TTK m.1530: vade yazmıyorsa borçlu, faturayı aldıktan 30 gün sonra temerrüde düşer.")
@@ -358,6 +364,12 @@ if stale is not None and (pd.Timestamp(res["as_of"]) - stale).days > 7:
              f"{(pd.Timestamp(res['as_of']) - stale).days} gün önce. Bu arada gelen ödemeler bilinmediği için ödenmemiş "
              f"sayılıyor; vadesi geçmiş alacak ve risk olduğundan yüksek görünür. Güncel dosyaları yükleyin ya da "
              f"tahmin tarihini {stale:%d.%m.%Y} yapın.")
+if own and store.get("pilot_on", "0") == "1" and pilot.record_due(store.pilot_records(), res["as_of"],
+                                                                  res.get("last_activity")) is None:
+    with st.spinner("Bu haftanın pilot kaydı alınıyor; yarım dakika kadar sürer..."):
+        weekly = pilot.forward_record(res["obs"], res["as_of"])
+    if store.add_pilot_record(res["as_of"], weekly):
+        st.toast("Bu haftanın pilot kaydı alındı.")
 if m["delay_trend_days"] >= 3:
     st.warning(f"Müşterilerinizin ödemeleri son 90 günde, önceki 90 güne göre medyan {m['delay_trend_days']:.0f} gün "
                "daha geç geliyor. Gecikmeler uzamaya devam ederse tahmin iyimser kalabilir; kötümser çizgiyi esas alın.")
@@ -495,6 +507,27 @@ with tab_accuracy:
         page = run_pilot(res_key, res, label, hide)
         st.download_button("Raporu indir (HTML; tarayıcıda açıp yazdırabilirsiniz)", page,
                            f"pilot_raporu_{pd.Timestamp(res['as_of']):%Y%m%d}.html", "text/html")
+    records = store.pilot_records() if own else pd.DataFrame()
+    if len(records):
+        with st.expander(f"Pilot kayıtları: {records['as_of'].nunique()} hafta"):
+            reason = pilot.record_due(records, res["as_of"], res.get("last_activity"))
+            if reason:
+                st.caption(reason)
+            detail, summary = pilot.score(pilot.records_from_table(records), res["obs"])
+            if len(summary):
+                st.write("Süresi dolan kayıtlarda tahmin ile gerçekleşen tahsilat (sapma: düşük iyi):")
+                show_table(summary.rename(columns={
+                    "ufuk_gun": "Ufuk (gün)", "kayit": "Kayıt", "sapma_model_%": "Model sapması (%)",
+                    "sapma_medyan_%": "Müşteri medyanı (%)", "sapma_oran_%": "Tahsilat oranı (%)",
+                    "sapma_vade_%": "Vadesinde öder (%)", "bant_ici": "Bant içinde", "B1_gecti": "B1 geçti",
+                    "B2_gecti": "B2 geçti"}), width="stretch", hide_index=True)
+            else:
+                st.caption("Henüz süresi dolan kayıt yok: ilk karşılaştırma, ilk kayıttan 14 gün sonra yapılır.")
+            show_table(records.drop(columns=["created"]).rename(columns={
+                "as_of": "Kayıt tarihi", "horizon": "Ufuk (gün)", "until": "Ufkun sonu", "p10": "Kötümser (TL)",
+                "p50": "Beklenen (TL)", "p90": "İyimser (TL)", "naive_due": "Vadesinde öder (TL)",
+                "naive_median": "Müşteri medyanı (TL)", "naive_rate": "Tahsilat oranı (TL)"}),
+                width="stretch", hide_index=True)
 
 with tab_collect:
     st.subheader("Öncelikli tahsilat listesi")
