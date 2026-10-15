@@ -25,7 +25,8 @@ Tarih: 14 Ekim 2026. Kapsam: panelin bu bilgisayarda tek kullanıcıyla çalış
 
 ## Henüz ele alınmayanlar
 
-- **Veritabanı şifreli değil.** Bilgisayara erişimi olan herkes dosyayı okuyabilir. Tek kullanıcılı yerel kullanımda Windows hesabının parolası ve disk şifrelemesi (BitLocker) korur; çok kullanıcılı sürümde veritabanı şifrelemesi gerekir.
+- **Veritabanı şifreli değil.** Bilgisayara erişimi olan herkes dosyayı okuyabilir. Tek kullanıcılı yerel kullanımda Windows hesabının parolası ve disk şifrelemesi (BitLocker ya da Cihaz Şifrelemesi) korur. **Pilot için ön koşul:** veriyi hazırlayan bilgisayarda disk şifrelemesi açık olmalı (Ayarlar → Gizlilik ve güvenlik → Cihaz şifrelemesi). Çok kullanıcılı sürümde veritabanı şifrelemesi gerekir.
+- **Yedek artık şifreli (15 Ekim 2026).** "Diğer ayarlar → Şifreli yedek" yedeği AES-256-GCM ile şifreler; anahtar kullanıcının parolasından scrypt ile türetilir (n = 2^15, r = 8, p = 1; tuz ve nonce her yedekte rastgele). GCM, dosya değiştirilirse geri yüklemeyi reddeder. Parola saklanmaz; unutulursa yedek açılamaz. Geri yüklemeden önce mevcut veri aynı klasöre ayrı bir dosya olarak kopyalanır ve yüklenen dosyanın KOBİ Radar veritabanı olduğu doğrulanır. Kütüphane: cryptography (PyCA).
 - **Kullanıcı girişi yok.** Panel bu bilgisayarda açan herkese açık.
 - **Yedekleme yok.** Veritabanı dosyası elle kopyalanmalı.
 - **Excel dosyaları:** `openpyxl` ile okunuyor; kullanıcının kendi dosyaları olduğu için risk düşük, ama dışarıdan gelen Excel için ayrı bir sınırlama yok (yükleme boyutu 50 MB ile sınırlı).

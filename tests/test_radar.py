@@ -991,3 +991,24 @@ def test_invoice_impact_customer_delay_and_writeoff(tmp_path):
     assert row["written_off"] and row["open_amount"] == 0 and pd.isna(row["paid_date"])
     store.add_event(victim, "writeoff", "0", ts=pd.Timestamp(AS_OF) + pd.Timedelta(hours=1))
     assert not store.apply_events(inv, AS_OF).set_index("invoice_id").at[victim, "written_off"]
+
+
+def test_encrypted_backup_roundtrip_and_restore(tmp_path):
+    from radar.store import Store, decrypt_backup, encrypt_backup
+
+    store = Store(tmp_path / "a.db")
+    store.save("invoices", pd.DataFrame({"invoice_id": ["A"], "amount": [1.0]}))
+    store.set("seller", "Örnek A.Ş.")
+    blob = encrypt_backup(store.backup_bytes(), "uzun-parola-1")
+    assert "Örnek A.Ş.".encode() in store.backup_bytes() and "Örnek A.Ş.".encode() not in blob   # şifreli
+    with pytest.raises(ValueError):
+        decrypt_backup(blob, "yanlis-parola")
+    with pytest.raises(ValueError):
+        encrypt_backup(b"x", "kisa")
+    other = Store(tmp_path / "b.db")
+    other.save("invoices", pd.DataFrame({"invoice_id": ["Z", "Y"], "amount": [9.0, 8.0]}))
+    safety = other.restore(blob, "uzun-parola-1")
+    assert list(other.load("invoices")["invoice_id"]) == ["A"] and other.get("seller") == "Örnek A.Ş."
+    assert safety.exists() and len(Store(safety).load("invoices")) == 2           # önceki veri kenarda
+    with pytest.raises(ValueError):
+        other.restore(b"rastgele bayt", None)

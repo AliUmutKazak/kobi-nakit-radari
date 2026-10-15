@@ -55,4 +55,6 @@ C:\Users\HP\.venvs\kobi-radar\Scripts\python run_validation.py 48
 - Ödenecek faturalar ayrı dosyayla girer ve kasa çıkışına çevrilir; vadesi geçmiş borç ertesi gün ödenecek sayılır. Borç tarafında model yok: ödeme tarihini kullanıcı belirler.
 - Dövizli faturalar kullanıcının girdiği kurla TL'ye çevrilir; kur değişimi tahmin bandına dahil değildir. İade faturaları müşterinin en eski açık faturalarından düşülür.
 - E-posta, kullanıcının kendi SMTP hesabı üzerinden ve yalnızca düğmeye basınca gönderilir; gerçek bir sunucuyla denenmedi (sahte sunucuyla test edildi). WhatsApp gönderimi yok.
-- Veriler yalnızca bu bilgisayarda, şifrelenmemiş bir dosyada saklanır; kullanıcı girişi, yetki ve yedekleme yok.
+- Veriler yalnızca bu bilgisayarda, şifrelenmemiş bir dosyada saklanır (disk şifrelemesi önerilir); kullanıcı girişi ve yetki yok. Yedek parolayla şifrelenir (AES-256-GCM) ve geri yüklenebilir.
+- Pilot ölçümü kısmi ödemeleri banka dağıtımlarından sayar; ödeme tarihi bilinmeyen kısmi ödemeler ölçüme girmez. Kapanış kasası ölçümü, kullanıcının her hafta güncel kasa bakiyesini girmesine bağlıdır.
+- Yüksek risk diliminde eksiye düşme olasılığı sentetikte biraz düşük tahmin ediliyor (%81'e karşı %91) ve büyük portföyde 30 günlük tahsilat bandı dar: aşağı kuyruk koruması açık bir iş.

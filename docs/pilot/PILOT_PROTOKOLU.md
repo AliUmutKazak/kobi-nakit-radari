@@ -1,6 +1,6 @@
 # Pilot Protokolü
 
-Sürüm 1.1 — 15 Ekim 2026 (1.1: Ek A hukuk müşavirliği taslağına göre güncellendi, Ek D eklendi; ölçütler değişmedi). Bu belge, ilk gerçek işletme verisi görülmeden yazılmıştır. Başarı ölçütleri ve eşikler pilot sırasında değiştirilmez; değişiklik gerekirse yeni sürüm numarasıyla, gerekçesiyle ve hangi verinin görüldüğü belirtilerek yapılır.
+Sürüm 1.2 — 15 Ekim 2026. 1.1: Ek A hukuk müşavirliği taslağına göre güncellendi, Ek D eklendi. 1.2: bağımsız derin inceleme (15.10.2026) üzerine ölçüm tanımları kesinleştirildi (kısmi ödeme, kayıt künyesi, eşleşme kapısı, ikinci hedef, güven aralığı); eşikler ve karar kuralları değişmedi. Bütün değişiklikler pilot verisi görülmeden yapıldı. Bu belge, ilk gerçek işletme verisi görülmeden yazılmıştır. Başarı ölçütleri ve eşikler pilot sırasında değiştirilmez; değişiklik gerekirse yeni sürüm numarasıyla, gerekçesiyle ve hangi verinin görüldüğü belirtilerek yapılır.
 
 ## 1. Amaç
 
@@ -26,7 +26,7 @@ Hedef: farklı sektörlerden 5–10 işletme. Mali müşavir aracılığıyla ul
 ## 3. Veri akışı
 
 1. İşletme ya da mali müşaviri, paneli **kendi bilgisayarında** açar ve dosyaları yükler (fatura listesi veya cari ekstre, banka ekstresi; varsa giderler, ödenecekler, çekler). Veri bu aşamada bilgisayardan çıkmaz.
-2. Sol menü → "5. Pilot: anonim veri paketi" → "Anonim paketi hazırla". Zip içinde:
+2. Sol menü → "5. Pilot: takma adlı veri paketi" → "Takma adlı paketi hazırla". Zip içinde:
    - Müşteri unvanı ve VKN/TCKN, gizli bir anahtarla üretilmiş takma adlarla değişir (HMAC-SHA256). Aynı müşteri her ay aynı takma adı alır.
    - Fatura numaraları da takma numaralarla değişir (fatura serisi işletmeyi, cari ekstredeki numarasız satırların kimliği müşteriyi ele verebilir).
    - E-posta ve telefon silinir. Banka açıklamaları tümüyle yeniden yazılır; yalnızca eşleşen müşterinin takma adı ve fatura numarası kalır.
@@ -50,7 +50,7 @@ Hedef: farklı sektörlerden 5–10 işletme. Mali müşavir aracılığıyla ul
 
 ## 5. Önceden kayıtlı ölçütler
 
-Her pilot raporu "İleriye dönük kayıt" bölümünde, o gün açık faturalardan önümüzdeki 14 ve 30 günde tahsil edilecek tutarı dört yöntemle yazar: model (kötümser / beklenen / iyimser) ve üç basit yöntem:
+Her pilot raporu "İleriye dönük kayıt" bölümünde, o gün açık faturalardan önümüzdeki 14 ve 30 günde tahsil edilecek tutarı dört yöntemle yazar: model (kötümser P10 / orta P50 / iyimser P90) ve üç basit yöntem:
 
 - **Vadesinde öder:** vadesi ufuk içinde olan ya da geçmiş her fatura ödenir. KOBİ'lerin çoğunun fiilen yaptığı varsayım.
 - **Müşteri medyanı:** her fatura, müşterinin geçmiş gecikme medyanı kadar geç ödenir.
@@ -58,11 +58,21 @@ Her pilot raporu "İleriye dönük kayıt" bölümünde, o gün açık faturalar
 
 İlk iki basit yöntem, vadesi çoktan geçmiş faturaları "yakında ödenir" sayar; şüpheli alacağı çok olan işletmede kolay yenilir. Sentetik şirketlerde bu iki yöntemin sapması %80–450 çıktı. Bu yüzden B1, modeli **medyan ve oran yöntemlerinin iyisiyle** karşılaştırır. Yeni satışlar bu kayda dahil değildir; yalnızca o gün var olan faturalar ölçülür. Rapor, sayıları makinece okunur biçimde de içerir.
 
-Sapma: bir işletmenin bütün haftalık kayıtlarında mutlak hataların toplamı / gerçekleşen tahsilat toplamı. (Tek tek hafta yüzdeleri, tahsilatın az olduğu haftalarda anlamsız büyür.)
+**Gerçekleşen tahsilat (hedef A).** Tahmin günü açık olan faturalara ufuk içinde gelen **tahsilat olaylarının** toplamı. Olaylar banka ekstresinin faturalara dağıtılmasından gelir; kısmi ödeme kendi tarih ve tutarıyla sayılır (fatura tutarı değil). Banka kaydı olmayan ama dosyada ödendiği görünen faturada bankadan gelmeyen kısım ödeme tarihinde tek olaydır. Ödeme tarihi bilinmeyen kısmi ödemeler ölçüme girmez. Tahsil edilemez olarak kaydedilen fatura açık alacaktan çıkar, ödenmiş sayılmaz.
+
+**Sapma.** Bir işletmenin bütün haftalık kayıtlarında mutlak hataların toplamı / gerçekleşen tahsilat toplamı (pay ve payda ayrıca raporlanır). Tek tek hafta yüzdeleri, tahsilatın az olduğu haftalarda anlamsız büyür; tahsilatı sıfır olan hafta paydaya sıfır katar, payda hatası olduğu gibi girer.
+
+**Kayıt künyesi.** Her haftalık kayıt değiştirilemez biçimde şunlarla saklanır: kesim tarihi, verideki son hareket, veri dosyalarının özeti (hash), yöntem (LightGBM ya da basit yöntem), kod sürümü, banka eşleşme oranı, kapsam (hangi kaynaklar dahil) ve o günkü kasa. Sonradan yüklenen dosya eski kaydı değiştirmez.
+
+**Eşleşme kapısı.** Banka tahsilatlarının tutarca %80'inden azı faturalarla eşleşmişse o haftanın kaydı "uyarılı"dır ve B1/B2 hesabına girmez; sayısı ayrıca raporlanır.
+
+**Bağımlılık ve güven aralığı.** Haftalık kayıtların 14 ve 30 günlük ufukları üst üste biner; aynı tahsilat birden çok kayıtta yer alır, kayıtlar bağımsız gözlem değildir. Model ile en iyi güçlü basit yöntem arasındaki sapma farkı için %90 aralık, ardışık haftalar blok hâlinde yeniden örneklenerek (blok uzunluğu = ufuk/7 hafta, 1.000 tekrar) verilir. Aralık karar kuralına girmez; yorumda kullanılır.
+
+**Bant.** Bant içi oranın yanında bandın ortalama genişliği (P90 − P10, gerçekleşene oranla) ve aralık skoru (Gneiting ve Raftery 2007, alfa 0,2) raporlanır: yalnızca kapsama, gereksiz geniş bandı ödüllendirir.
 
 | Kod | Ölçüt | Eşik | Dayanak |
 |---|---|---|---|
-| **B1** (birincil) | Kasa isabeti, 14 ve 30 gün, işletme başına | Model sapması < "vadesinde öder" sapması **ve** ≤ min("müşteri medyanı", "tahsilat oranı") sapması + 2 puan | Açık verilerde model ile medyan farkı 0,1–0,8 puan. 2 puan, "başa baş"ı ölçüm gürültüsünden ayırmak için seçildi. Kodda: pilot.passes_b1, pilot.NONINFERIORITY_POINTS |
+| **B1** (birincil) | Tahsilat isabeti, 14 ve 30 gün, işletme başına | Model sapması < "vadesinde öder" sapması **ve** ≤ min("müşteri medyanı", "tahsilat oranı") sapması + 2 puan. Model ya da güçlü basit yöntemlerin hiçbiri hesaplanamazsa sonuç "değerlendirilemedi"dir, geçti/kaldı sayılmaz. | 2 puan istatistiksel bir eşdeğerlik testi değil, önceden seçilmiş işletme toleransıdır: 1 milyon TL'lik aylık tahsilatta 20.000 TL'lik ek hata, haftalık kasa kararını değiştirmeyecek büyüklük olarak alındı. Açık verilerde model ile en iyi basit yöntem farkı −0,5 ile +1,6 puan. Kodda: pilot.passes_b1, pilot.NONINFERIORITY_POINTS |
 | **B2** | Bant kalibrasyonu | Gerçekleşen tahsilatın kötümser–iyimser bant içinde kaldığı kayıt oranı ≥ %70 (hedef %80) | Açık verilerde kasa bandı %62–100. Kodda: pilot.COVERAGE_FLOOR |
 | **B3** | Kullanım | 13 haftanın en az 10'unda rapor alınmış; tahsilat listesinden en az 10 işlem kaydı (arama, mesaj, söz) | Kullanılmayan araç, isabetli olsa da değer üretmez |
 | **B4** | Karar desteği (nitel) | Haftalık formda "Bu hafta bir kasa ya da tahsilat kararında rapora baktım" cevabı en az 6 hafta "evet" | Ürünün iddiası tahmin değil, karar desteğidir |
@@ -74,20 +84,21 @@ Sapma: bir işletmenin bütün haftalık kayıtlarında mutlak hataların toplam
 - B2 sağlanmazsa: bant genişliği kalibrasyonu (pipeline.calibrate) pilot verisiyle değil, yeni bir geri test tasarımıyla yeniden ele alınır; pilot verisine göre ayar yapılıp aynı veriyle başarı ilan edilmez.
 - B3 veya B4 sağlanmazsa: sorun teknik değil kullanım sorunudur; görüşmelerle nedeni araştırılır (bkz. ikincil ölçütler).
 
-**Raporlama.** Bütün işletmelerin bütün kayıtları raporlanır; işletme çıkarılacaksa (örneğin veri gönderimi kesildi) nedeni yazılır. Başarısız sonuçlar, reddedilen yöntemler gibi DOGRULAMA.md'de kalır.
+**Raporlama.** Bütün işletmelerin bütün kayıtları raporlanır; işletme çıkarılacaksa (örneğin veri gönderimi kesildi) nedeni yazılır. Toplu sonucun yanında en iyi ve en kötü işletme ayrıca verilir. Başarısız sonuçlar, reddedilen yöntemler gibi DOGRULAMA.md'de kalır. 5–10 işletmede "çoğunluk" bir fizibilite sonucudur; pazar ya da genel geçerlilik kanıtı olarak sunulmaz. Sonuçlar üç ayrı başlıkta raporlanır: fizibilite (veri hazırlanabildi mi), tahmin kanıtı (B1, B2), ürün kullanımı (B3, B4).
 
 ## 6. İkincil ölçütler (yalnızca betimleyici)
 
 - Vadesi geçmiş alacağın toplam alacağa oranı ve ortalama tahsilat süresi (DSO), pilot öncesi 13 hafta ile pilot dönemi arasında.
 - Gönderilen mesajlardan sonra 14 gün içinde ödenme oranı (panel bunu "Gönderilen mesajların sonucu" bölümünde hesaplar).
 - Eşleşmeyen banka tahsilatı oranı (veri kalitesi).
+- **Hedef B, kapanış kasası:** her kayıtta açılış kasasından başlayıp bilinen giderler, borçlar, çekler, açık faturalar ve (açıksa) yeni satışlarla 7, 14 ve 28 gün sonraki kasa (P10/P50/P90) yazılır. Gerçekleşen, ufkun sonuna ±3 gün içindeki kayıtta kullanıcının o gün girdiği kasa ve banka toplamıdır (yalnızca o gün güncellenmiş bakiyeler kullanılır). Karşılaştırma: "kasa değişmez". Hedef A'dan ayrı raporlanır; toplam nakit isabeti tahsilat isabetiyle karıştırılmaz. Kapsam dışı kaynaklar (ör. gider dosyası yok) kayıt künyesinde yazılıdır.
 - Pilot sonu görüşmesi: en çok ve en az işe yarayan bölüm, güvenilmeyen sayı, eksik özellik.
 
 Bu ölçütlerde değişim görülse bile araca bağlanamaz: mevsim, faiz ortamı ve müşteri karışımı aynı dönemde değişir. Nedensel bir etki iddiası ancak rastgele seçilmiş karşılaştırma grubuyla (örneğin müşterilerin yarısına öncelik listesi uygulanır, yarısına uygulanmaz) kurulabilir; bu, pilotun ikinci aşamasına bırakılmıştır.
 
 ## 7. Durdurma ve güvenlik kuralları
 
-- Anonim pakette gerçek bir unvan, VKN, telefon ya da e-posta görülürse: o paket silinir, işletmeye bildirilir, hata düzeltilip test eklenene kadar paket alınmaz.
+- Takma adlı pakette gerçek bir unvan, VKN, telefon ya da e-posta görülürse: o paket silinir, işletmeye bildirilir, hata düzeltilip test eklenene kadar paket alınmaz.
 - Müşteriye yanlış tutar ya da yanlış kişiye mesaj gönderildiği öğrenilirse: mesaj özelliği o işletmede kapatılır, neden araştırılır. Panel mesajları kendiliğinden göndermez; her mesaj kullanıcının onayıyla çıkar.
 - İşletme pilottan istediği an çıkabilir; o güne kadar gönderdiği paketler 7 gün içinde silinir.
 
@@ -164,13 +175,13 @@ Plan dışı kalemler not edilir çünkü kasa tahmininin değil, tahsilat tahmi
 
 ## Ek C. Değerlendirme
 
-Hafta 17'de, işletmenin güncel fatura dosyası (anonim paketteki faturalar.csv) ve saklanan raporlar bir klasörde toplanır:
+Hafta 17'de, işletmenin güncel fatura ve banka dosyaları (takma adlı paketteki faturalar.csv ve ekstre.csv) ve saklanan raporlar bir klasörde toplanır:
 
 ```
-python -m radar.pilot <raporlar_klasoru> <guncel_faturalar.csv>
+python -m radar.pilot <raporlar_klasoru> <guncel_faturalar.csv> <guncel_ekstre.csv>
 ```
 
-Komut her kayıt için gerçekleşen tahsilatı hesaplar, ufku dolmamış kayıtları atlar ve 14/30 gün için B1 ile B2'nin sağlanıp sağlanmadığını yazar. Gerçekleşen tahsilat, tahmin günü açık olup ufuk içinde ödenen faturaların tutarıdır; kısmi ödemeler fatura tutarı üzerinden sayılır (yaklaşım; kısmi ödemesi çok olan işletmede ayrıca belirtilir).
+Komut ekstreyi faturalara dağıtıp tahsilat olaylarını çıkarır, her kayıt için gerçekleşen tahsilatı (kısmi ödemeler dahil) hesaplar, ufku dolmamış kayıtları atlar ve 14/30 gün için B1 ile B2'yi, bant genişliğini, aralık skorunu ve farkın %90 aralığını yazar. Panelde aynı hesap "Tahmin doğruluğu → Pilot kayıtları" bölümündedir ve kapanış kasası hedefini de içerir.
 
 ## Ek D. Mali müşavir için veri hazırlama föyü
 
@@ -181,7 +192,7 @@ Ek A imzalandıktan sonra veriyi hazırlayacak mali müşavire ya da ön muhaseb
 **2. Hazırlık adımları.**
 - Ek A, İşletme, Proje ve Mali Müşavir arasında imzalanmadan paket hazırlanmaz.
 - Uygulamayı kendi bilgisayarınızda açın; "Kendi verim" → "İşletme ekle" ile işletmeyi ekleyin; dosyaları yükleyin (fatura listesi ya da cari ekstre, banka ekstresi; varsa giderler, ödenecekler, çekler). Veriler bilgisayarınızdan çıkmaz.
-- Sol menü → "5. Pilot: anonim veri paketi" → "Pilota katılıyorum" kutusunu işaretleyin; sonra "Anonim paketi hazırla".
+- Sol menü → "5. Pilot: takma adlı veri paketi" → "Pilota katılıyorum" kutusunu işaretleyin; sonra "Takma adlı paketi hazırla".
 - Zip'i açıp kontrol edin:
   - [ ] Müşteri unvanları ve VKN/TCKN'ler "Müşteri XXXXXX" biçiminde takma adlara dönüşmüş.
   - [ ] Fatura numaraları "ANO" ile başlayan takma numaralar.

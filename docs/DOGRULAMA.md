@@ -48,6 +48,17 @@ Nokta isabeti dört durumda da iyileşti; model IBM 14 günde tahsilat oranı y�
 
 **Bu düzeltmeden sonra B1 (pilot protokolü) açık verilerde:** IBM 14 gün geçer (%6,6 ≤ %7,1 + 2), IBM 30 gün geçer (%4,2 ≤ %2,6 + 2), Payment Date her iki ufukta geçer. B2 (bant ≥ %70) Payment Date 30 günde sağlanmaz.
 
+**Veri setlerinin sürümü ve dönüşümü.** Sonuçlar şu dosyalarla üretildi (Kaggle'dan elle indirildi; lisans koşulları Kaggle sayfalarındadır, dosyalar depoya konmaz ve yeniden dağıtılmaz):
+
+| Dosya | Satır | SHA-256 |
+|---|---|---|
+| data/acik/ibm_late_payment.csv | 2.466 | 651bc4225708bf33148a0e177c9221afdf697d3a4de10333725a4af3dd022fcf |
+| data/acik/payment_date.csv | 50.000 | 139482bdc3325a734474d08f48ceee71ab67c84b106f2a0c0fe9479d71be8431 |
+
+Dönüşüm kuralları (src/radar/open_data.py): tutarı sıfır ya da negatif, tarihi okunamayan satırlar ve tekrar eden fatura numaraları atılır; IBM'de tarihler ay/gün/yıl, Payment Date'te vade YYYYMMDD, fatura tarihi `posting_date`, ödeme `clear_date`; Payment Date'te `isOpen = 1` satırları (etiketi gizlenmiş test bölümü) çıkarılır. Dosyanın özeti farklıysa sonuçlar karşılaştırılamaz.
+
+**Bağımsız inceleme notu (15 Ekim 2026).** Aynı gün yapılan dış incelemenin sonuç tablosu, ödeme günü yuvarlama düzeltmesinden önceki sayılarla yazılmıştır (ör. IBM 14 gün %9,6). Güncel sayılar yukarıdaki düzeltme tablosundadır. İncelemenin işaret ettiği ve henüz açık olan sorunlar: sentetik çalışmada yüksek risk diliminde eksiye düşme olasılığının düşük tahmin edilmesi (tahmin %81, gerçekleşen %91) ve Payment Date 30 günde bandın dar kalması: aşağı kuyruk yeterince korunmuyor. Pilot raporu bu yüzden bant içi oranın yanında bant genişliğini ve aralık skorunu da ufuk başına verir.
+
 **Veri tuzakları ve alınan önlemler.**
 - Payment Date'teki 10.000 "açık" fatura gerçekte ödenmemiş fatura değil; veri setinin, etiketi bilerek gizlenmiş test bölümü (27.02.2020 sonrası). Çıkarıldı; tahmin tarihleri etiketin tam olduğu döneme sınırlandı. Bu yapılmadan ilk ölçümde model %8,4, medyan %2,9 çıkmıştı.
 - Bu iki veri setinde hiç ödenmeyen fatura yok (etiketli faturaların hepsi ödenmiş). Gerçek KOBİ alacaklarında var; bu durum, hiç ödenmeme olasılığını hesaba katan modeli bu testte cezalandırır.

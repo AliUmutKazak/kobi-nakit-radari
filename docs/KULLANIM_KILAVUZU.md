@@ -67,7 +67,7 @@ Biçimi görmek için panelin ilk ekranında örnek dosyaları indirebilirsiniz.
 
 **5. Pilot: takma adlı veri paketi.** Pilot çalışmasına katılıyorsanız, yüklediğiniz dosyaların paylaşılabilir kopyasını buradan hazırlarsınız. Müşteri unvanı ve vergi numarası takma adlarla değişir (aynı müşteri her ay aynı takma adı alır), e-posta ve telefon silinir, banka açıklamaları tümüyle yeniden yazılır; tutar ve tarihler aynen kalır. Takma adları üreten gizli anahtar yalnızca sizin bilgisayarınızda durur ve paylaşılmaz. Göndermeden önce zip dosyasını açıp birkaç satıra göz atın. Ayrıntılar: PILOT_PROTOKOLU.md (programla birlikte gelir).
 
-**Diğer ayarlar.** Vadesi yazmayan faturalar için varsayılan vade, döviz kurları (ör. `USD=41,50; EUR=48,20`; kuru girilmeyen döviz tahmine katılmaz), verilerin saklandığı dosyanın yeri, **son yüklemeyi geri alma** (yanlış dosya yüklerseniz bir önceki dosyaya döner), **verilerin yedeğini indirme** ve kayıtlı veriyi silme.
+**Diğer ayarlar.** Banka eşleştirme toleransı (havale masrafı gibi küçük farklar için), vadesi yazmayan faturalar için varsayılan vade, döviz kurları (ör. `USD=41,50; EUR=48,20`; kuru girilmeyen döviz tahmine katılmaz), verilerin saklandığı dosyanın yeri, **son yüklemeyi geri alma** (yanlış dosya yüklerseniz bir önceki dosyaya döner), **şifreli yedek** (parolanızla AES-256; parolayı unutursanız açılamaz), **yedekten geri yükleme** (önce mevcut veri ayrı bir dosyaya kopyalanır) ve kayıtlı veriyi silme.
 
 ## 4. Paneli okumak
 
@@ -79,6 +79,10 @@ Biçimi görmek için panelin ilk ekranında örnek dosyaları indirebilirsiniz.
 - Kaydırma çubuklarıyla "şu kadar fatura tahsil edilirse" ya da "şu gideri şu kadar ertelersem" senaryolarını deneyebilirsiniz.
 - **13 haftalık plan:** her hafta için açık faturalardan ve yeni satışlardan beklenen tahsilat, bilinen çıkışlar ve hafta sonu kasası. Bilinen kalemler ile tahmine dayananlar ayrı sütunlardadır.
 
+**Veri kalitesi ve kapsam.** Üst satırın altındaki bu bölüm verideki son hareketi, banka tahsilatlarının faturalarla eşleşme oranını, geçmişin uzunluğunu ve hangi yöntemin kullanıldığını gösterir. Yüklemediğiniz kaynaklar (ör. ödenecek faturalar) "kapsam dışı" diye yazılır: kasa grafiği onları içermez.
+
+**Nakit takvimi** ("Kasa tahmini" sekmesi): her gider, borç ve çek tarihiyle ve ne kadar kesin olduğuyla (kesin borç faturası, dosyadan planlı, elle girilen varsayım, olasılıklı çek). **Büyük müşteri geç öderse:** bir ya da birkaç müşteriyi seçip "X gün daha geç öderse" kasanızın ne olacağını görürsünüz.
+
 **"Tahsilat işleri" sekmesi.**
 - **Öncelikli tahsilat listesi:** en üstteki fatura, açığınız açısından en riskli olandır. Müşterinin sabit bir ödeme günü varsa (ör. "ayın 15'i", "her Cuma") panel ona göre iletişim tarihi önerir.
 - **Mesaj taslağı:** faturayı seçin, taslağı düzenleyin. Müşterinin cep telefonunu girerseniz "WhatsApp'ta taslağı aç" düğmesi mesajı kendi WhatsApp'ınızda yazılmış hâlde açar; gönderme düğmesine siz basarsınız.
@@ -86,7 +90,8 @@ Biçimi görmek için panelin ilk ekranında örnek dosyaları indirebilirsiniz.
 - Müşteri itiraz ettiyse ya da ödeme sözü verdiyse ilgili düğmelerle kaydedin; söz tarihi geçene kadar hatırlatma önerilmez.
 - **Eşleşmeyen banka tahsilatları:** kimden geldiği bulunamayan paraları bir kez müşteriye bağlarsanız aynı gönderen sonraki ekstrelerde otomatik tanınır.
 - **Gönderilen mesajların sonucu:** kaydettiğiniz her mesajdan sonra faturanın kaç günde ödendiği. Bu bir takip listesidir; mesaj olmasa da ödenecek faturalar da burada görünür.
-- **Şüpheli alacaklar:** çok gecikmiş ve tahsil edilme olasılığı düşük faturalar ayrı gösterilir. Bunlar için hatırlatma yerine hukuki yolları değerlendirin.
+- **Şüpheli alacaklar:** çok gecikmiş ve tahsil edilme olasılığı düşük faturalar ayrı gösterilir. Bunlar için hatırlatma yerine hukuki yolları değerlendirin. Tahsil edilemeyeceğine karar verdiğiniz faturayı "Tahsil edilemez olarak kaydet" ile açık alacaktan çıkarabilirsiniz (geri alınabilir; muhasebe kaydı için mali müşavirinize danışın).
+- **"Gelmezse en düşük kasa düşüşü" sütunu:** listenin ilk 30 faturası için, o fatura 90 gün içinde hiç gelmezse kötümser senaryodaki en düşük kasanın kaç TL azalacağı. Önceliğin nedenini gösterir.
 
 **"Tahmin doğruluğu" sekmesi.** Üstte tahminin neye dayandığı yazar: kaç fatura, ne kadar geçmiş, hangi yöntem. Altta panel geçmişteki birkaç tarihe dönüp "o gün tahmin etseydim ne kadar tutardı" diye kendini sınar ve sonucu iki basit yöntemle ("her fatura vadesinde ödenir", "müşteri her zamanki kadar geç öder") karşılaştırır. Model sizin verinizde bu basit yöntemlerden daha isabetli değilse panel bunu açıkça söyler. En az 9 aylık geçmiş gerekir.
 

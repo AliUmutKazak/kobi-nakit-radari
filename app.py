@@ -14,7 +14,7 @@ import streamlit as st  # noqa: E402
 
 from radar import actions, anonymize, ingest, mailer, pilot, pipeline  # noqa: E402
 from radar.reconcile import collection_events, reconcile, sender_key  # noqa: E402
-from radar.store import Store, create_business, list_businesses  # noqa: E402
+from radar.store import Store, create_business, encrypt_backup, list_businesses  # noqa: E402
 
 ROOT = Path(__file__).parent
 SAMPLES = ROOT / "ornekler"
@@ -367,9 +367,21 @@ with st.sidebar:
                     store.undo(which)
                     store.set(f"hash_{which}", "")
                     st.rerun()
-            st.download_button("Verilerimin yedeğini indir", store.backup_bytes(),
-                               f"kobi_radar_yedek_{pd.Timestamp.now():%Y%m%d}.db",
-                               help="Tüm yüklenen tablolar, ayarlar ve kayıtlar tek dosyada. Güvenli bir yerde saklayın.")
+            st.write("**Şifreli yedek.** Yüklenen tablolar, ayarlar, mesaj ve pilot kayıtları tek dosyada, parolayla "
+                     "şifreli (AES-256). Parolayı unutursanız yedek açılamaz.")
+            backup_pw = st.text_input("Yedek parolası (en az 8 karakter)", type="password", key="backup_pw")
+            if len(backup_pw) >= 8:
+                st.download_button("Şifreli yedeği indir", encrypt_backup(store.backup_bytes(), backup_pw),
+                                   f"kobi_radar_yedek_{pd.Timestamp.now():%Y%m%d}.kryedek")
+            restore_file = st.file_uploader("Yedekten geri yükle", ["kryedek", "db"], key="restore_file")
+            if restore_file is not None:
+                restore_pw = st.text_input("Yedeğin parolası", type="password", key="restore_pw")
+                if st.checkbox("Mevcut verinin yerine yedeği yükle", key="restore_sure") and st.button("Geri yükle"):
+                    try:
+                        safety = store.restore(restore_file.getvalue(), restore_pw or None)
+                        st.success(f"Yedek yüklendi. Önceki veri şu dosyada saklandı: {safety}")
+                    except ValueError as err:
+                        st.error(str(err))
             st.write("**Kayıtlı veriyi sil.** Yüklenen tablolar silinir; itiraz, ödeme sözü ve mesaj kayıtları korunur.")
             sure = st.checkbox("Eminim")
             if st.button("Tabloları sil", disabled=not sure):

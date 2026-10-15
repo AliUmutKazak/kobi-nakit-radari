@@ -6,6 +6,7 @@ yüklense bile olaylar fatura numarası üzerinden korunur.
 """
 from __future__ import annotations
 
+import hashlib
 import os
 import re
 import secrets
@@ -29,6 +30,37 @@ def default_path() -> Path:
 
 
 DEFAULT_NAME = "İşletmem"
+BACKUP_MAGIC = b"KOBIRADAR-YEDEK-1"     # şifreli yedek dosyasının başlığı (sürümlü)
+
+
+def _backup_key(password: str, salt: bytes) -> bytes:
+    """Paroladan 256 bitlik anahtar: scrypt (bellek-yoğun; kaba kuvvet denemelerini pahalılaştırır)."""
+    return hashlib.scrypt(password.encode("utf-8"), salt=salt, n=2 ** 15, r=8, p=1, maxmem=64 * 1024 * 1024, dklen=32)
+
+
+def encrypt_backup(raw: bytes, password: str) -> bytes:
+    """AES-256-GCM: içerik hem gizlenir hem de değiştirilirse fark edilir."""
+    from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+    if len(password) < 8:
+        raise ValueError("Yedek parolası en az 8 karakter olmalı.")
+    salt, nonce = os.urandom(16), os.urandom(12)
+    return BACKUP_MAGIC + salt + nonce + AESGCM(_backup_key(password, salt)).encrypt(nonce, raw, BACKUP_MAGIC)
+
+
+def decrypt_backup(blob: bytes, password: str | None) -> bytes:
+    """Şifreli yedeği açar; şifresiz (eski) yedek olduğu gibi döner."""
+    if not blob.startswith(BACKUP_MAGIC):
+        return blob
+    from cryptography.exceptions import InvalidTag
+    from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+    if not password:
+        raise ValueError("Bu yedek şifreli; parolasını girin.")
+    head = len(BACKUP_MAGIC)
+    salt, nonce, body = blob[head:head + 16], blob[head + 16:head + 28], blob[head + 28:]
+    try:
+        return AESGCM(_backup_key(password, salt)).decrypt(nonce, body, BACKUP_MAGIC)
+    except InvalidTag:
+        raise ValueError("Parola yanlış ya da yedek dosyası bozulmuş.") from None
 _TR = str.maketrans("çğıöşüÇĞİÖŞÜ", "cgiosuCGIOSU")
 
 
@@ -186,6 +218,29 @@ class Store:
             self.db.backup(target)
             target.close()
             return (Path(tmp) / "yedek.db").read_bytes()
+
+    def restore(self, blob: bytes, password: str | None = None) -> Path:
+        """Yedekten geri yükler. Önce mevcut veri aynı klasöre ayrı bir dosya olarak kopyalanır (geri dönüş
+        için); yedek, SQLite dosyası olduğu ve ayar tablosunu içerdiği doğrulanmadan yüklenmez."""
+        import tempfile
+        raw = decrypt_backup(blob, password)
+        if not raw.startswith(b"SQLite format 3\x00"):
+            raise ValueError("Bu dosya KOBİ Radar yedeği değil.")
+        safety = self.path.with_name(f"{self.path.stem}.geri_yukleme_oncesi_{pd.Timestamp.now():%Y%m%d_%H%M%S}.db")
+        safety.write_bytes(self.backup_bytes())
+        with tempfile.TemporaryDirectory() as tmp:
+            src_path = Path(tmp) / "yedek.db"
+            src_path.write_bytes(raw)
+            src = sqlite3.connect(src_path)
+            try:
+                if not src.execute("SELECT 1 FROM sqlite_master WHERE name = 'settings'").fetchone():
+                    raise ValueError("Yedekte ayar tablosu yok; geri yükleme yapılmadı.")
+                src.backup(self.db)
+            finally:
+                src.close()
+        self._pilot_table()
+        self._bump()
+        return safety
 
     def load(self, name: str) -> pd.DataFrame | None:
         self._check(name)
