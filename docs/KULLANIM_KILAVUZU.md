@@ -81,12 +81,12 @@ Biçimi görmek için panelin ilk ekranında örnek dosyaları indirebilirsiniz.
 
 **Veri kalitesi ve kapsam.** Üst satırın altındaki bu bölüm verideki son hareketi, banka tahsilatlarının faturalarla eşleşme oranını, geçmişin uzunluğunu ve hangi yöntemin kullanıldığını gösterir. Yüklemediğiniz kaynaklar (ör. ödenecek faturalar) "kapsam dışı" diye yazılır: kasa grafiği onları içermez.
 
-**Nakit takvimi** ("Kasa tahmini" sekmesi): her gider, borç ve çek tarihiyle ve ne kadar kesin olduğuyla (kesin borç faturası, dosyadan planlı, elle girilen varsayım, olasılıklı çek). **Büyük müşteri geç öderse:** bir ya da birkaç müşteriyi seçip "X gün daha geç öderse" kasanızın ne olacağını görürsünüz.
+**Nakit takvimi** ("Kasa tahmini" sekmesi): her gider, borç ve çek tarihiyle ve ne kadar kesin olduğuyla (kesin borç faturası, dosyadan planlı, elle girilen varsayım, olasılıklı çek). **Büyük müşteri geç öderse:** bir ya da birkaç müşteriyi seçip "X gün daha geç öderse" kasanızın ne olacağını görürsünüz. **Kur değişirse:** dövizli açık alacağınız varsa, TL'nin dövizlere karşı değişimini kendiniz girip kasaya etkisini görürsünüz (kur tahmini yapılmaz; dövizli borçlar kapsam dışıdır).
 
 **"Tahsilat işleri" sekmesi.**
 - **Öncelikli tahsilat listesi:** en üstteki fatura, açığınız açısından en riskli olandır. Müşterinin sabit bir ödeme günü varsa (ör. "ayın 15'i", "her Cuma") panel ona göre iletişim tarihi önerir.
 - **Mesaj taslağı:** faturayı seçin, taslağı düzenleyin. Müşterinin cep telefonunu girerseniz "WhatsApp'ta taslağı aç" düğmesi mesajı kendi WhatsApp'ınızda yazılmış hâlde açar; gönderme düğmesine siz basarsınız.
-- Gönderdikten sonra **"Gönderildi olarak kaydet"** deyin. O fatura 7 gün listede yeniden önerilmez.
+- Gönderdikten sonra **"Gönderildi olarak kaydet"** deyin. Birden çok kişi tahsilat yapıyorsa "Takipten sorumlu kişi" alanı kayda yazılır. O fatura 7 gün listede yeniden önerilmez.
 - Müşteri itiraz ettiyse ya da ödeme sözü verdiyse ilgili düğmelerle kaydedin; söz tarihi geçene kadar hatırlatma önerilmez.
 - **Eşleşmeyen banka tahsilatları:** kimden geldiği bulunamayan paraları bir kez müşteriye bağlarsanız aynı gönderen sonraki ekstrelerde otomatik tanınır.
 - **Gönderilen mesajların sonucu:** kaydettiğiniz her mesajdan sonra faturanın kaç günde ödendiği. Bu bir takip listesidir; mesaj olmasa da ödenecek faturalar da burada görünür.
