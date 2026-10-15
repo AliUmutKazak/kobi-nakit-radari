@@ -32,7 +32,7 @@ EMBED_URL = f"https://www.python.org/ftp/python/{PY}/python-{PY}-embed-amd64.zip
 DEV_ONLY = {"pytest"}
 COPY = ["app.py", "src", ".streamlit", "ornekler", "requirements.txt", "docs/KULLANIM_KILAVUZU.md",
         "docs/pilot/PILOT_PROTOKOLU.md",
-        "docs/pilot/mali_musavir_pilot_foyu.docx"]
+        "docs/pilot/mali_musavir_pilot_foyu.docx", "docs/LISANSLAR.md", "docs/kvkk/VERI_ENVANTERI_VE_IMHA.md"]
 
 START_BAT = r'''@echo off
 chcp 65001 >nul
