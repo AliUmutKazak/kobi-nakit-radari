@@ -35,6 +35,19 @@ Yöntem: geçmiş tarihlere dönülür, o gün bilinen veriyle tahmin yapılır,
 
 **Sonuç (ilk ölçüm, 14 Ekim).** Gerçek veride model, "müşteri her zamanki kadar geç öder" basit yöntemiyle aşağı yukarı başa baş; bir durumda belirgin şekilde önde (IBM, 14 gün), çoğunda biraz geride. KOBİ'lerin çoğunun fiilen kullandığı "vadesinde ödenir" varsayımını ise her durumda yeniyor. Sentetik çalışmadaki büyük üstünlük (aşağıda) gerçek veride tekrarlanmadı; "akıllı tahmin" iddiası bu sonuçlarla desteklenmiyor. Fatura gecikmesi için tahmin aralığı gerçek veride de yaklaşık doğru (%78–86); kasa düzeyindeki bant Payment Date'te gerektiğinden dar (%62–75).
 
+**Düzeltme: ödeme gününün yuvarlanması (15 Ekim 2026).** IBM'de model 14 günlük tahsilatı 8 tarihin 8'inde düşük tahmin ediyordu (ortalama %10). Neden: simülasyon, tahmin edilen ödeme gününü hep yukarı yuvarlıyordu; model tam gün gecikmelerden öğrendiği için bu her ödemeye ortalama yarım gün gecikme ekliyordu. En yakın güne yuvarlamayla (aynı tahmin tarihleri, aynı ayarlar):
+
+| Veri | Ufuk | Model sapması önce → sonra | Ortalama yön önce → sonra | Bant içi önce → sonra |
+|---|---|---|---|---|
+| IBM | 14 gün | %9,6 → **%6,6** | −%9,6 → −%6,5 | %100 → %100 |
+| IBM | 30 gün | %4,6 → **%4,2** | −%3,3 → −%2,5 | %75 → %75 |
+| Payment Date | 14 gün | %2,7 → **%2,5** | −%2,5 → +%0,6 | %75 → %88 |
+| Payment Date | 30 gün | %1,8 → **%1,7** | −%0,8 → −%0,6 | %62 → **%38** |
+
+Nokta isabeti dört durumda da iyileşti; model IBM 14 günde tahsilat oranı yöntemini (%7,1), Payment Date 14 günde müşteri medyanını (%2,6) geçti. Payment Date 30 günde bandın tutma oranı düştü (8 tarihin 5'inden 3'üne): bu veri setinde bant zaten dardı, düzeltme daraltmayı görünür kıldı. Bant genişliğinin büyük portföylerde yetersiz kalması ayrı bir açık sorun olarak duruyor. Sentetik çalışmada (24 tohum × 8 rejim) fark gürültü düzeyinde ve biraz aleyhte: dönem sonu hatası 0,316 → 0,321, Brier 0,095 → 0,097 (eşleştirilmiş farkların belirsizliği ±0,04). Gerçek veri ve gerekçe öne alındı; sentetik veri de en yakın güne yuvarlanmış gecikmelerle üretildiği için yukarı yuvarlamanın orada tutarlı bir avantajı yoktur.
+
+**Bu düzeltmeden sonra B1 (pilot protokolü) açık verilerde:** IBM 14 gün geçer (%6,6 ≤ %7,1 + 2), IBM 30 gün geçer (%4,2 ≤ %2,6 + 2), Payment Date her iki ufukta geçer. B2 (bant ≥ %70) Payment Date 30 günde sağlanmaz.
+
 **Veri tuzakları ve alınan önlemler.**
 - Payment Date'teki 10.000 "açık" fatura gerçekte ödenmemiş fatura değil; veri setinin, etiketi bilerek gizlenmiş test bölümü (27.02.2020 sonrası). Çıkarıldı; tahmin tarihleri etiketin tam olduğu döneme sınırlandı. Bu yapılmadan ilk ölçümde model %8,4, medyan %2,9 çıkmıştı.
 - Bu iki veri setinde hiç ödenmeyen fatura yok (etiketli faturaların hepsi ödenmiş). Gerçek KOBİ alacaklarında var; bu durum, hiç ödenmeme olasılığını hesaba katan modeli bu testte cezalandırır.

@@ -209,7 +209,9 @@ def simulate(inv: pd.DataFrame, Q: np.ndarray, as_of, opening: float, outflows: 
             f0 = min(cdf(Q[i], d0), 0.999)               # bugüne kadar ödenmiş olma olasılığı
             p_post = min(p_def[i] / (p_def[i] + (1 - p_def[i]) * (1 - f0)), 0.95)
             delay = ppf(Q[i], f0 + u_delay[i] * (1 - f0))
-            day = np.maximum(np.ceil(due_off[i] + delay), earliest[i]).astype(np.int64)
+            # En yakın güne yuvarlama: model tam gün gecikmelerden öğrenir; yukarı yuvarlamak her ödemeye
+            # ortalama yarım gün gecikme ekliyor ve kısa ufukta tahsilatı sistematik düşük gösteriyordu.
+            day = np.maximum(np.floor(due_off[i] + delay + 0.5), earliest[i]).astype(np.int64)
             ok = (u_default[i] >= p_post) & (day <= horizon)
         pay_day[i, ok] = day[ok]
         if projected[i]:
