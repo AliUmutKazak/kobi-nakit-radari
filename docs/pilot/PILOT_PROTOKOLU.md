@@ -28,6 +28,7 @@ Hedef: farklı sektörlerden 5–10 işletme. Mali müşavir aracılığıyla ul
 1. İşletme ya da mali müşaviri, paneli **kendi bilgisayarında** açar ve dosyaları yükler (fatura listesi veya cari ekstre, banka ekstresi; varsa giderler, ödenecekler, çekler). Veri bu aşamada bilgisayardan çıkmaz.
 2. Sol menü → "5. Pilot: anonim veri paketi" → "Anonim paketi hazırla". Zip içinde:
    - Müşteri unvanı ve VKN/TCKN, gizli bir anahtarla üretilmiş takma adlarla değişir (HMAC-SHA256). Aynı müşteri her ay aynı takma adı alır.
+   - Fatura numaraları da takma numaralarla değişir (fatura serisi işletmeyi, cari ekstredeki numarasız satırların kimliği müşteriyi ele verebilir).
    - E-posta ve telefon silinir. Banka açıklamaları tümüyle yeniden yazılır; yalnızca eşleşen müşterinin takma adı ve fatura numarası kalır.
    - Gider kalemlerinden yalnızca genel kategori adları kalır (maaş, kira, SGK…); diğer her şey "Diğer" olur. Çeklerde keşideci adı silinir.
    - Tutar ve tarihler değişmez.
@@ -109,7 +110,7 @@ Aşağıdaki değerlendirme hukuki görüş değildir; pilot başlamadan önce a
 [İşletme unvanı] ("İşletme"), [proje sahibi adı/unvanı] ("Proje") tarafından yürütülen pilot çalışmaya katılmayı kabul eder.
 
 1. **Amaç.** Pilotun amacı, kasa ve tahsilat tahmininin İşletme'nin verisinde ne kadar isabetli olduğunu ölçmek ve aracı geliştirmektir. Veriler başka bir amaçla kullanılmaz, satılmaz, üçüncü kişilerle paylaşılmaz.
-2. **Paylaşılan veri.** Fatura numarası, takma adlandırılmış müşteri kimliği, fatura ve vade tarihi, tutar, ödeme tarihi; banka tahsilatlarının tarih ve tutarı; isteğe bağlı olarak gider, borç ve çek tarih ve tutarları. Müşteri unvanı, vergi/kimlik numarası, telefon ve e-posta paylaşılmaz; bunlar İşletme'nin bilgisayarında takma adlarla değiştirilir.
+2. **Paylaşılan veri.** Takma fatura numarası, takma adlandırılmış müşteri kimliği, fatura ve vade tarihi, tutar, ödeme tarihi; banka tahsilatlarının tarih ve tutarı; isteğe bağlı olarak gider, borç ve çek tarih ve tutarları. Müşteri unvanı, vergi/kimlik numarası, gerçek fatura numarası, telefon ve e-posta paylaşılmaz; bunlar İşletme'nin bilgisayarında takma adlarla değiştirilir.
 3. **Anahtar.** Takma adları üreten anahtar yalnızca İşletme'de kalır. Proje, takma addan gerçek müşteriye ulaşmaya çalışmaz.
 4. **Saklama ve silme.** Veriler [Türkiye'de bulunan, şifreli diskte] saklanır; pilotun bitiminden itibaren en geç [30] gün içinde ya da İşletme'nin talebi üzerine [7] gün içinde silinir ve silindiği yazılı olarak bildirilir.
 5. **Sonuçların kullanımı.** Pilot sonuçları, İşletme'nin adı ve tanınmasını sağlayacak bilgi verilmeden, yalnızca toplu ve istatistiksel olarak yayımlanabilir.
