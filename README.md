@@ -46,7 +46,7 @@ C:\Users\HP\.venvs\kobi-radar\Scripts\python run_validation.py 48
 
 ## Bilinen sınırlar
 
-- İki herkese açık gerçek veri setinde (IBM, Payment Date) model, "müşteri her zamanki kadar geç öder" basit yöntemiyle başa baş; "vadesinde ödenir" varsayımını yeniyor (docs/DOGRULAMA.md). Bir Türk KOBİ'sinin verisiyle henüz sınanmadı.
+- İki herkese açık gerçek veri setinde (IBM, Payment Date) model, "müşteri her zamanki kadar geç öder" basit yöntemiyle başa baş; "vadesinde ödenir" varsayımını yeniyor. "Son dönemin tahsilat oranı" yöntemi IBM verisinde kasa düzeyinde modelden isabetli, Payment Date'te geride (docs/DOGRULAMA.md). Bir Türk KOBİ'sinin verisiyle henüz sınanmadı; pilot protokolü hazır.
 - Sentetik veride model, "müşterinin geçmiş medyanı" tahminini nokta isabetinde ancak yakalıyor; katkısı bandın kalibrasyonunda.
 - Tahsilat geri testinde P50, gerçekleşenin %1–9 üzerinde; bant içinde kalsa da iyimser bir sapma var.
 - Ödenecek faturalar, döviz ve canlı banka/e-fatura bağlantısı yok. Çeklerde keşideci bazlı risk yok.

@@ -22,14 +22,18 @@ Yöntem: geçmiş tarihlere dönülür, o gün bilinen veriyle tahmin yapılır,
 
 **Kasa düzeyinde tahsilat sapması (mutlak hata toplamı / gerçekleşen tahsilat; düşük iyi):**
 
-| Veri | Ufuk | Model | Müşteri medyanı | Vadesinde öder | Tahsilatın bant içinde kaldığı tarih (8 tarihten) |
-|---|---|---|---|---|---|
-| IBM | 14 gün | **%9,6** | %17,9 | %19,3 | %100 |
-| IBM | 30 gün | %4,6 | **%3,8** | %10,9 | %75 |
-| Payment Date | 14 gün | %2,7 | **%2,6** | %8,5 | %75 |
-| Payment Date | 30 gün | %1,8 | **%1,4** | %2,1 | %62 |
+| Veri | Ufuk | Model | Müşteri medyanı | Tahsilat oranı | Vadesinde öder | Tahsilatın bant içinde kaldığı tarih (8 tarihten) |
+|---|---|---|---|---|---|---|
+| IBM | 14 gün | %9,6 | %17,9 | **%7,1** | %19,3 | %100 |
+| IBM | 30 gün | %4,6 | %3,8 | **%2,6** | %10,9 | %75 |
+| Payment Date | 14 gün | %2,7 | **%2,6** | %5,2 | %8,5 | %75 |
+| Payment Date | 30 gün | %1,8 | **%1,4** | %3,0 | %2,1 | %62 |
 
-**Sonuç.** Gerçek veride model, "müşteri her zamanki kadar geç öder" basit yöntemiyle aşağı yukarı başa baş; bir durumda belirgin şekilde önde (IBM, 14 gün), çoğunda biraz geride. KOBİ'lerin çoğunun fiilen kullandığı "vadesinde ödenir" varsayımını ise her durumda yeniyor. Sentetik çalışmadaki büyük üstünlük (aşağıda) gerçek veride tekrarlanmadı; "akıllı tahmin" iddiası bu sonuçlarla desteklenmiyor. Fatura gecikmesi için tahmin aralığı gerçek veride de yaklaşık doğru (%78–86); kasa düzeyindeki bant Payment Date'te gerektiğinden dar (%62–75).
+*Tahsilat oranı* (15 Ekim 2026'da eklendi): bir önceki aynı uzunluktaki dönemde, dönem başında açık alacağın yüzde kaçı tahsil edildiyse bugün de o kadarı tahsil edilir. Muhasebede yaygın, fatura tek tek tahmin etmeyen bir yaklaşımdır. Ekleme nedeni: sentetik şirketlerde "vadesinde öder" ve "müşteri medyanı" yöntemleri vadesi çoktan geçmiş faturaları "yakında ödenir" saydığı için %80–450 sapıyordu; modelin yalnızca bu iki yönteme karşı ölçülmesi, şüpheli alacağı çok olan gerçek işletmelerde onu olduğundan iyi gösterirdi.
+
+**Sonuç (tahsilat oranı dahil).** IBM verisinde bu kaba yöntem, kasa düzeyinde her iki ufukta da modelden daha isabetli; Payment Date'te ise modelin ve medyanın gerisinde. Yani tek bir basit yöntem her veride kazanmıyor, model de her veride kazanmıyor. Pilot protokolündeki birincil ölçüt (B1) buna göre kuruldu: model, medyan ve oran yöntemlerinin iyisinden en fazla 2 puan kötü olmalı. Bu ölçütle açık verilerde model 4 durumun 3'ünde geçer, IBM 14 günde kalır (%9,6'ya karşı %7,1 + 2).
+
+**Sonuç (ilk ölçüm, 14 Ekim).** Gerçek veride model, "müşteri her zamanki kadar geç öder" basit yöntemiyle aşağı yukarı başa baş; bir durumda belirgin şekilde önde (IBM, 14 gün), çoğunda biraz geride. KOBİ'lerin çoğunun fiilen kullandığı "vadesinde ödenir" varsayımını ise her durumda yeniyor. Sentetik çalışmadaki büyük üstünlük (aşağıda) gerçek veride tekrarlanmadı; "akıllı tahmin" iddiası bu sonuçlarla desteklenmiyor. Fatura gecikmesi için tahmin aralığı gerçek veride de yaklaşık doğru (%78–86); kasa düzeyindeki bant Payment Date'te gerektiğinden dar (%62–75).
 
 **Veri tuzakları ve alınan önlemler.**
 - Payment Date'teki 10.000 "açık" fatura gerçekte ödenmemiş fatura değil; veri setinin, etiketi bilerek gizlenmiş test bölümü (27.02.2020 sonrası). Çıkarıldı; tahmin tarihleri etiketin tam olduğu döneme sınırlandı. Bu yapılmadan ilk ölçümde model %8,4, medyan %2,9 çıkmıştı.
