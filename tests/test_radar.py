@@ -682,11 +682,11 @@ def test_dashboard_renders_demo_and_own_data_without_errors(tmp_path, monkeypatc
     assert not at.exception, [e.value for e in at.exception]
     assert at.session_state["active_business"] == "Deneme Ltd." and len(at.metric) == 0
     at.sidebar.selectbox[0].set_value("İşletmem").run()
-    assert not at.exception and len(at.metric) == 5
+    assert not at.exception and len(at.metric) == 9              # 5 özet + 4 veri kalitesi
     # Tanıtım için örnek işletme: bugünün tarihli uydurma veriyle dolu, eski veri uyarısı yok.
     next(b for b in at.sidebar.button if b.label == "Tanıtım için örnek işletme ekle").click().run()
     assert not at.exception, [e.value for e in at.exception]
-    assert at.session_state["active_business"] == "Örnek İşletme (uydurma veri)" and len(at.metric) == 5
+    assert at.session_state["active_business"] == "Örnek İşletme (uydurma veri)" and len(at.metric) == 9
     assert not any("en son hareket" in e.value for e in at.error)
     at.sidebar.selectbox[0].set_value("İşletmem").run()
     at.sidebar.date_input[0].set_value(datetime.date(2026, 10, 20)).run()
@@ -965,3 +965,29 @@ def test_partial_payments_and_closing_cash_are_scored_from_events():
     # Eşleşmesi düşük kayıt uyarılıdır ve tahsilat ölçümüne girmez.
     weak = {**rec, "meta": {"eslesme_orani": 0.5}}
     assert pilot.score([weak], paid, events=ev)[1].empty
+
+
+def test_invoice_impact_customer_delay_and_writeoff(tmp_path):
+    from radar import pipeline
+    from radar.store import Store
+
+    res = pipeline.demo(seed=7, as_of=AS_OF, n_sims=400)
+    ids = list(res["ranked"].loc[res["ranked"]["actionable"], "invoice_id"].head(5))
+    impact = pipeline.invoice_impact(res, ids)
+    assert len(impact) == 5 and (impact >= -1e-6).all()                  # gelmeyen para kasayı artıramaz
+    same = pipeline.customer_delay(res, ["yok"], 30)
+    assert np.allclose(same["p10"], res["sim"].p10)                       # kimse gecikmezse bant aynı
+    big = res["obs"][res["obs"]["open_amount"] > 0].groupby("customer_id")["open_amount"].sum().idxmax()
+    late = pipeline.customer_delay(res, [big], 60)
+    assert late["amount"] > 0 and late["p10_min"] <= late["p10_min_before"] + 1e-6
+
+    store = Store(tmp_path / "s.db")
+    inv = res["obs"][["invoice_id", "customer_id", "customer_name", "amount", "open_amount", "paid_date",
+                      "issue_date", "due_date"]]
+    victim = inv.loc[inv["open_amount"] > 0, "invoice_id"].iloc[0]
+    store.add_event(victim, "writeoff", "1", ts=AS_OF)
+    out = store.apply_events(inv, AS_OF)
+    row = out[out["invoice_id"] == victim].iloc[0]
+    assert row["written_off"] and row["open_amount"] == 0 and pd.isna(row["paid_date"])
+    store.add_event(victim, "writeoff", "0", ts=pd.Timestamp(AS_OF) + pd.Timedelta(hours=1))
+    assert not store.apply_events(inv, AS_OF).set_index("invoice_id").at[victim, "written_off"]

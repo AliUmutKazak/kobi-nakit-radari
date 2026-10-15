@@ -56,6 +56,7 @@ class SimResult:
     breach_day: int | None         # P10 bandının sıfırı kestiği ilk gün
     pay_day: np.ndarray            # (fatura, senaryo) ödeme günü; ufuk dışı = horizon + 1
     collections: np.ndarray        # senaryo başına mevcut açık faturalardan tahsilat
+    paths: np.ndarray | None = None  # (senaryo, gün) kasa yolları: "şu fatura gelmezse" hesapları için
 
 
 PRIOR_RHO = (0.15, 0.35)      # veri yetersizken kullanılan piyasa ve müşteri korelasyonu (varsayım)
@@ -243,5 +244,5 @@ def simulate(inv: pd.DataFrame, Q: np.ndarray, as_of, opening: float, outflows: 
         prob_negative=(balance < 0).mean(axis=0),
         prob_any_breach=float((balance.min(axis=1) < 0).mean()), min_balance=balance.min(axis=1),
         breach_day=int(below[0]) if len(below) else None,
-        pay_day=pay_day, collections=collections,
+        pay_day=pay_day, collections=collections, paths=balance,
     )

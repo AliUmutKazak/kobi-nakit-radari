@@ -180,6 +180,52 @@ def scenario(res: dict, collect_ids=(), collect_in_days: int = 7, delay_labels=(
                     aging=ctx["aging"], cheques=ctx["cheques"])
 
 
+def _p10_min(paths: np.ndarray) -> float:
+    return float(np.percentile(paths.min(axis=1), 10))
+
+
+def invoice_impact(res: dict, invoice_ids) -> pd.Series:
+    """Her fatura için: ufuk içinde hiç gelmezse kötümser (P10) en düşük kasa kaç TL düşer.
+
+    Aynı senaryo yolları kullanılır; yalnızca o faturanın girişi çıkarılır. Önceliğin nedenini sayıyla
+    gösterir: büyük ama zaten geç gelmesi beklenen bir fatura, küçük ama açığın olduğu haftada gelecek
+    bir faturadan daha az etkili olabilir."""
+    sim, inv = res["sim"], res["ctx"]["sim_inv"]
+    if sim.paths is None:
+        return pd.Series(dtype=float)
+    base = _p10_min(sim.paths)
+    days = np.arange(sim.paths.shape[1])
+    rows = {str(i): k for k, i in enumerate(inv["invoice_id"].astype(str)) if not inv["projected"].iloc[k]}
+    out = {}
+    for i in map(str, invoice_ids):
+        k = rows.get(i)
+        if k is None:
+            continue
+        arrived = days[None, :] >= sim.pay_day[k][:, None]          # senaryo × gün: para gelmiş mi
+        out[i] = base - _p10_min(sim.paths - inv["open_amount"].iloc[k] * arrived)
+    return pd.Series(out, dtype=float)
+
+
+def customer_delay(res: dict, customer_ids, days: int) -> dict:
+    """Seçilen müşterilerin bugün açık faturaları `days` gün daha geç gelirse kasa bandı (aynı senaryolar).
+
+    Ortak şok ve alacak yoğunlaşması sorusu: "en büyük müşterim bir ay geç öderse kasam ne olur?".
+    Gelecek satışlar senaryoya dahil değildir (yalnızca bugün açık faturalar kayar)."""
+    sim, inv = res["sim"], res["ctx"]["sim_inv"]
+    hit = np.flatnonzero(inv["customer_id"].isin(list(customer_ids)).to_numpy() & ~inv["projected"].to_numpy())
+    paths = sim.paths.copy()
+    t = np.arange(paths.shape[1])[None, :]
+    for k in hit:
+        amount = float(inv["open_amount"].iloc[k])
+        pd_k = sim.pay_day[k][:, None]
+        paths -= amount * (t >= pd_k)                    # eski ödeme günü
+        paths += amount * (t >= pd_k + days)             # yeni ödeme günü (ufkun dışına çıkan düşer)
+    p10, p50, p90 = np.percentile(paths, [10, 50, 90], axis=0)
+    return {"p10": p10, "p50": p50, "p90": p90, "amount": float(inv["open_amount"].iloc[hit].sum()),
+            "prob_any_breach": float((paths.min(axis=1) < 0).mean()), "p10_min": _p10_min(paths),
+            "p10_min_before": _p10_min(sim.paths)}
+
+
 def gap_summary(res: dict, max_k: int = 40, collect_in_days: int = 7) -> dict:
     """Kötümser senaryodaki açığın derinliği ve onu kapatmak için listeden kaç fatura gerektiği.
 
