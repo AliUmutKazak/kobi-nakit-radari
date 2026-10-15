@@ -181,7 +181,8 @@ def scenario(res: dict, collect_ids=(), collect_in_days: int = 7, delay_labels=(
 
 
 def _p10_min(paths: np.ndarray) -> float:
-    return float(np.percentile(paths.min(axis=1), 10))
+    """Kötümser (P10) kasa çizgisinin en düşük noktası: grafikteki bandın alt kenarı ve "en derin açık" ile aynı tanım."""
+    return float(np.percentile(paths, 10, axis=0).min())
 
 
 def invoice_impact(res: dict, invoice_ids) -> pd.Series:

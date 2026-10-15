@@ -179,8 +179,10 @@ def run_own(path: str, rev: int, as_of: str, include_projected: bool):
     # Verideki son hareket: bundan sonraki ödemeler bilinmez, ödenmemiş görünür.
     dates = [obs["issue_date"].max(), obs["paid_date"].max()] + ([payments["date"].max()] if payments is not None else [])
     last = max(d for d in dates if pd.notna(d))
-    scope = {"banka_ekstresi": payments is not None, "gider_dosyasi": store.load("outflows") is not None,
-             "sabit_giderler": any(fixed.values()), "odenecek_faturalar": payables is not None,
+    # Giderler: gider dosyası ya da (dosya yoksa) elle girilen aylık sabit giderler; ikisi birbirinin yerine geçer.
+    scope = {"banka_ekstresi": payments is not None,
+             "giderler": store.load("outflows") is not None or any(fixed.values()),
+             "odenecek_faturalar": payables is not None,
              "cekler": cheques is not None, "yeni_satislar": include_projected}
     return {k: res[k] for k in KEEP} | {"notes": notes, "has_outflows": outflows is not None,
                                         "unmatched": unmatched if payments is not None else None, "last_activity": last,
@@ -209,7 +211,7 @@ def run_customer_delay(key, _res, customers, days):
     return pipeline.customer_delay(_res, customers, days)
 
 
-SCOPE_NAMES = {'banka_ekstresi': 'banka ekstresi', 'gider_dosyasi': 'gider dosyası', 'sabit_giderler': 'aylık sabit giderler', 'odenecek_faturalar': 'ödenecek faturalar', 'cekler': 'çek/senet portföyü', 'yeni_satislar': 'yeni satışlar'}
+SCOPE_NAMES = {'banka_ekstresi': 'banka ekstresi', 'giderler': 'giderler (gider dosyası ya da aylık sabit giderler)', 'odenecek_faturalar': 'ödenecek faturalar', 'cekler': 'çek/senet portföyü', 'yeni_satislar': 'yeni satışlar'}
 
 
 @st.cache_data(show_spinner=False)
@@ -548,7 +550,7 @@ if own and scope:
             st.write("**Kapsam dışı:** " + ", ".join(missing) + ". Bunlar kasa tahminine dahil değil; kasa grafiği "
                      "yalnızca girilen kaynakları gösterir.")
         else:
-            st.write("Bütün kaynaklar dahil: banka ekstresi, giderler, sabit giderler, ödenecek faturalar, çekler, yeni satışlar.")
+            st.write("Bütün kaynaklar dahil: banka ekstresi, giderler, ödenecek faturalar, çekler, yeni satışlar.")
 
 tab_cash, tab_collect, tab_accuracy = st.tabs(["Kasa tahmini", "Tahsilat işleri", "Tahmin doğruluğu"])
 
