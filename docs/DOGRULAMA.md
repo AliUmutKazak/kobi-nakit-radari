@@ -170,6 +170,8 @@ Bu belgenin ilk hâlinde "8 müşterili şirketlerde bant dar ve beklenen değer
 
 ## Denenip reddedilen düzeltme
 
+**Kalibrasyonda daha çok geçmiş tahmin tarihi (15 Ekim 2026).** Belirsizlik ayarı (kayma, ölçek, birlikte gecikme payı) geçmişteki 4 tahmin tarihinden (90 gün arayla) ölçülüyor; birlikte gecikmenin piyasa payı bu kadar az grupla gürültülü kalır. Aynı bir yıllık dönemde 8 tarih (45 gün arayla) denendi. Gerçek veride kasa sapması IBM 14 gün %6,60 → %6,66, 30 gün %4,20 → %4,24, Payment Date 14 gün %2,52 → %2,12, 30 gün %1,70 → %1,66; bant içi oranları değişmedi (Payment Date 30 gün %38 kaldı). Sentetik çalışmada (24 tohum × 8 rejim) her ölçüt biraz kötüleşti: dönem sonu hatası 0,321 → 0,328, Brier 0,097 → 0,098, aralık skoru 1,456 → 1,472, kapsama %83 → %81. Hedeflenen sorun (büyük portföyde dar bant) çözülmedi, tahmin süresi uzadı. Reddedildi. Büyük portföyde bant darlığı açık sorun olarak duruyor; gerçek KOBİ verisi olmadan açık veri setlerine göre ayar yapılmayacak.
+
 **Toplam tahsilat düzeyinde kalibrasyon (14 Ekim 2026).** Her geçmiş çeyrek başında o gün açık olan bütün faturaların sonraki 90 günlük tahsilatı simüle edildi ve simülasyonu gerçekleşene eşitleyen ortak kayma, çeyrekler üzerinden ortalanıp uygulandı. Reddedildi:
 
 - İşaret tutarsızdı. Gecikmeleri hızla kötüleşen bir şirkette dört çeyreğin önerdiği kaymalar −0,30 ile +0,08 arasında dağıldı ve ortalaması, gereken yönün tersine (iyimserliği artıracak yönde) çıktı.
