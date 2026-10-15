@@ -59,7 +59,37 @@ class SimResult:
     paths: np.ndarray | None = None  # (senaryo, gün) kasa yolları: "şu fatura gelmezse" hesapları için
 
 
-PRIOR_RHO = (0.15, 0.35)      # veri yetersizken kullanılan piyasa ve müşteri korelasyonu (varsayım)
+PRIOR_RHO = (0.15, 0.35)
+RECAL_GRID = np.linspace(0.0, 1.0, 101)
+
+
+def pit_recalibration(z: np.ndarray, censored: np.ndarray, shrink_n: float = 200.0) -> np.ndarray:
+    """Koşullu tahmin dağılımının parametresiz yeniden ayarı (Kuleshov vd. 2018, "calibrated regression").
+
+    Geçmiş tahminlerde gerçekleşenin dağılımdaki yeri (PIT, 0-1) tahmin doğruysa tekdüze dağılır. Gerçek PIT
+    dağılımı Kaplan-Meier ile (ödenmemiş fatura sağdan sansürlü) çıkarılır; simülasyonda tekdüze sayı bu
+    dağılımın kantiline çevrilir. Az gözlemde birim dönüşüme doğru büzülür. Dönen dizi RECAL_GRID üzerindeki
+    kantillerdir."""
+    u = np.clip(ndtr(np.asarray(z, float)), 0.0, 1.0)
+    event = ~np.asarray(censored, bool)
+    order = np.argsort(u, kind="stable")
+    u, event = u[order], event[order]
+    n = len(u)
+    at_risk = n - np.arange(n)
+    surv = np.cumprod(1 - event / at_risk)            # S(u_i) adım adım
+    cdf_vals = 1 - surv
+    top = cdf_vals[-1] if n else 0.0
+    q = np.empty_like(RECAL_GRID)
+    for j, v in enumerate(RECAL_GRID):
+        if v <= top and n:
+            q[j] = u[np.searchsorted(cdf_vals, v, side="left").clip(0, n - 1)]
+        else:                                          # gözlenen en büyük PIT'in üstündeki kütle: doğrusal olarak 1'e
+            last = u[-1] if n else 0.0
+            q[j] = last + (1 - last) * ((v - top) / (1 - top) if top < 1 else 1.0)
+    q[0], q[-1] = 0.0, 1.0
+    q = np.maximum.accumulate(q)
+    w = n / (n + shrink_n)
+    return w * q + (1 - w) * RECAL_GRID      # veri yetersizken kullanılan piyasa ve müşteri korelasyonu (varsayım)
 
 
 def _between_share(z: np.ndarray, groups: np.ndarray) -> tuple[float, int]:
@@ -167,7 +197,8 @@ def simulate(inv: pd.DataFrame, Q: np.ndarray, as_of, opening: float, outflows: 
              horizon: int = 90, n_sims: int = 2000, rho_market: float = 0.15,
              rho_customer: float = 0.35, seed: int = 0, aging: np.ndarray | None = None,
              cheques: pd.DataFrame | None = None, cheque_bounce: float = 0.034,
-             z_shift: float = 0.0, z_scale: float = 1.0) -> SimResult:
+             z_shift: float = 0.0, z_scale: float = 1.0, widen: float = 1.0,
+             recal: np.ndarray | None = None) -> SimResult:
     """inv sütunları: customer_id, issue_date, due_date, open_amount, p_default, projected.
 
     cheques (date, amount): portföydeki çek/senetler vade gününde kasaya girer; her biri
@@ -202,14 +233,16 @@ def simulate(inv: pd.DataFrame, Q: np.ndarray, as_of, opening: float, outflows: 
         d0 = -due_off[i]
         if aging is not None and d0 > Q[i, 4]:
             # Kalan ömür: S(d0)'dan itibaren koşullu eğri; eğrinin bittiği yer "tahsil edilemedi".
-            target = (aging[d0] if d0 < len(aging) else 0.0) * (1 - u_delay[i])
+            ui = np.interp(u_delay[i], RECAL_GRID, recal[i]) if recal is not None else u_delay[i]
+            target = (aging[d0] if d0 < len(aging) else 0.0) * (1 - ui)
             delay = np.searchsorted(-aging, -target)
             day = np.maximum(due_off[i] + delay, earliest[i]).astype(np.int64)
             ok = (delay < len(aging)) & (day <= horizon)
         else:
             f0 = min(cdf(Q[i], d0), 0.999)               # bugüne kadar ödenmiş olma olasılığı
             p_post = min(p_def[i] / (p_def[i] + (1 - p_def[i]) * (1 - f0)), 0.95)
-            delay = ppf(Q[i], f0 + u_delay[i] * (1 - f0))
+            ui = np.interp(u_delay[i], RECAL_GRID, recal[i]) if recal is not None else u_delay[i]
+            delay = ppf(Q[i], f0 + ui * (1 - f0))
             # En yakın güne yuvarlama: model tam gün gecikmelerden öğrenir; yukarı yuvarlamak her ödemeye
             # ortalama yarım gün gecikme ekliyor ve kısa ufukta tahsilatı sistematik düşük gösteriyordu.
             day = np.maximum(np.floor(due_off[i] + delay + 0.5), earliest[i]).astype(np.int64)
@@ -236,6 +269,12 @@ def simulate(inv: pd.DataFrame, Q: np.ndarray, as_of, opening: float, outflows: 
     keep = (off >= 1) & (off <= horizon)
     np.add.at(out, off[keep], outflows["amount"].to_numpy(float)[keep])
     balance = opening + np.cumsum(inflow - out, axis=1)
+    if widen != 1.0:
+        # Toplam düzeyde konformal genişletme: senaryolar günlük medyan etrafında açılır.
+        med = np.median(balance, axis=0)
+        balance = med + widen * (balance - med)
+        cmed = np.median(collections)
+        collections = cmed + widen * (collections - cmed)
 
     p10, p50, p90 = np.percentile(balance, [10, 50, 90], axis=0)
     below = np.flatnonzero(p10 < 0)

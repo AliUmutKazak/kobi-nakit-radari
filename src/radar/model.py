@@ -85,10 +85,30 @@ class FallbackModel:
 MIN_LGBM_ROWS = 300
 
 
+class CombinedModel:
+    """Kantil ortalaması (Vincentization): LightGBM ile müşteri medyanı modelinin kantilleri eşit ağırlıkla.
+
+    Tahmin birleştirmenin tek modelden çoğunlukla daha isabetli olduğu bilinir (Bates ve Granger 1969;
+    kantil ortalaması için Lichtendahl, Grushka-Cockayne ve Winkler 2013). Açık verilerde müşteri medyanı
+    fatura düzeyinde LightGBM'den biraz iyiydi; birinin seçilmesi (reddedildi) yerine ikisi ortalanır.
+    Ağırlıklar veriden öğrenilmez: az veride öğrenilen ağırlıklar eşit ağırlıktan genellikle kötüdür."""
+
+    def __init__(self, refit: bool = True):
+        self.parts = [DelayModel(refit=refit), FallbackModel()]
+
+    def fit(self, X, y):
+        for m in self.parts:
+            m.fit(X, y)
+        return self
+
+    def predict(self, X):
+        return np.mean([m.predict(X) for m in self.parts], axis=0)
+
+
 def fit_model(X: pd.DataFrame, y: pd.Series, min_rows: int | None = None, refit: bool = True):
-    """Yeterli olgun fatura varsa LightGBM, yoksa basit kantil modeli."""
+    """Yeterli olgun fatura varsa LightGBM + müşteri medyanı birleşimi, yoksa basit kantil modeli."""
     min_rows = MIN_LGBM_ROWS if min_rows is None else min_rows
-    return (DelayModel(refit=refit) if len(X) >= min_rows else FallbackModel()).fit(X, y)
+    return (CombinedModel(refit=refit) if len(X) >= min_rows else FallbackModel()).fit(X, y)
 
 
 def evaluate(Q: np.ndarray, y, baseline) -> dict:

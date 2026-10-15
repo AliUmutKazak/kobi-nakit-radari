@@ -487,7 +487,7 @@ if own and store.get("pilot_on", "0") == "1" and pilot.record_due(store.pilot_re
                                      ("invoices", "payments", "outflows", "payables", "cheques")).encode()).hexdigest()
     meta = {"surum": pilot.VERSION, "kesim": f"{pd.Timestamp(res['as_of']):%Y-%m-%d}",
             "son_hareket": f"{res['last_activity']:%Y-%m-%d}", "veri_ozeti": digest[:16],
-            "yontem": "müşteri medyanı (basit)" if res["simple_model"] else "LightGBM kantil",
+            "yontem": "müşteri medyanı (basit)" if res["simple_model"] else "LightGBM + müşteri medyanı birleşimi",
             "eslesme_orani": res.get("match_rate"), "kapsam": res.get("scope", {}),
             "acilis_guncel": store.get("opening_date") == f"{pd.Timestamp(res['as_of']):%Y-%m-%d}"}
     if store.add_pilot_record(res["as_of"], weekly, opening=res["opening"], meta=meta):
@@ -544,8 +544,9 @@ if own and scope:
                     help="Gelen paranın faturalara bağlanabilen kısmı. %80'in altında tahminler ve pilot ölçümü güvenilmez.")
         q[2].metric("Geçmiş", f"{(res['obs']['issue_date'].max() - info['history_from']).days / 30.4:.0f} ay",
                     help="12 aydan kısa geçmişte tahmin, işletmenin kendi geçmişiyle sınanamaz.")
-        q[3].metric("Yöntem", "Basit (medyan)" if res["simple_model"] else "LightGBM",
-                    help="Vadesi dolmuş fatura 300'den azsa öğrenen model yerine müşterinin geçmiş gecikme medyanı kullanılır.")
+        q[3].metric("Yöntem", "Basit (medyan)" if res["simple_model"] else "Birleşik model",
+                    help="Birleşik model: LightGBM ile müşterinin geçmiş gecikme medyanının ortalaması. Vadesi dolmuş "
+                         "fatura 300'den azsa yalnızca müşteri medyanı kullanılır.")
         if missing:
             st.write("**Kapsam dışı:** " + ", ".join(missing) + ". Bunlar kasa tahminine dahil değil; kasa grafiği "
                      "yalnızca girilen kaynakları gösterir.")
@@ -673,12 +674,15 @@ with tab_accuracy:
     st.write(f"• {info['n_invoices']} fatura, {info['n_customers']} müşteri; geçmiş {info['history_from']:%d.%m.%Y} tarihinden başlıyor.")
     st.write(f"• Ödeme davranışını öğrenmek için vadesi dolmuş {info['n_train']} fatura kullanıldı"
              + (" (az olduğu için basit yöntem: müşterinin geçmiş medyanı)." if info["simple_model"]
-                else " (öğrenen model: LightGBM kantil regresyonu)."))
+                else " (LightGBM kantil regresyonu ile müşterinin geçmiş medyanının birleşimi)."))
     st.write(f"• Tahmin aralığının genişliği, sistemin geçmiş dört çeyrekte {info['n_calibration']} faturada yaptığı "
              "ileriye dönük tahminlerin hatasından ayarlandı."
              + (" Bu sayı az; aralıklar varsayılan değerlere yakın." if info["n_calibration"] < 100 else ""))
     st.write(f"• Müşterilerin birlikte gecikme eğilimi: piyasa geneli {info['rho_market']:.2f}, aynı müşterinin faturaları "
              f"{info['rho_customer']:.2f} (0 = bağımsız, 1 = tamamen birlikte).")
+    if info.get("widen", 1.0) > 1.0:
+        st.write(f"• Geçmiş tarihlerde toplam tahsilat aralığın dışına sık düştüğü için aralık {info['widen']:.2f} kat "
+                 "genişletildi (işletmenin kendi geçmiş hatalarına göre).")
     st.divider()
     st.write("Geçmişteki birkaç tarihe dönülür, o gün eldeki bilgiyle 90 günlük tahsilat tahmin edilir "
              "ve sonradan gerçekleşenle karşılaştırılır.")

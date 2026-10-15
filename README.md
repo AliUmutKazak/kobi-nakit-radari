@@ -57,4 +57,4 @@ C:\Users\HP\.venvs\kobi-radar\Scripts\python run_validation.py 48
 - E-posta, kullanıcının kendi SMTP hesabı üzerinden ve yalnızca düğmeye basınca gönderilir; gerçek bir sunucuyla denenmedi (sahte sunucuyla test edildi). WhatsApp gönderimi yok.
 - Veriler yalnızca bu bilgisayarda, şifrelenmemiş bir dosyada saklanır (disk şifrelemesi önerilir); kullanıcı girişi ve yetki yok. Yedek parolayla şifrelenir (AES-256-GCM) ve geri yüklenebilir.
 - Pilot ölçümü kısmi ödemeleri banka dağıtımlarından sayar; ödeme tarihi bilinmeyen kısmi ödemeler ölçüme girmez. Kapanış kasası ölçümü, kullanıcının her hafta güncel kasa bakiyesini girmesine bağlıdır.
-- Yüksek risk diliminde eksiye düşme olasılığı sentetikte biraz düşük tahmin ediliyor (%81'e karşı %91) ve büyük portföyde 30 günlük tahsilat bandı dar: aşağı kuyruk koruması açık bir iş.
+- Büyük portföyde (1.000+ müşteri) 30 günlük tahsilat bandı hâlâ biraz dar: Payment Date'te bant içi %62 (hedef %80). Tahmin, LightGBM ile müşteri medyanının birleşimidir; dağılım ve bant işletmenin kendi geçmiş hatalarına göre ayarlanır (docs/DOGRULAMA.md, 16 Ekim 2026).

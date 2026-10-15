@@ -324,7 +324,9 @@ def test_calibration_detects_worsening_payment_behaviour():
     steady = pipeline.calibrate(observe(generate(seed=5, trend=0.0, as_of=AS_OF), AS_OF), AS_OF)
     worse = pipeline.calibrate(observe(generate(seed=5, trend=1.5, as_of=AS_OF), AS_OF), AS_OF)
     assert steady["fresh"]["n"] > 100 and 0 <= steady["rho_market"] <= 0.5
-    assert worse["fresh"]["z_shift"] > steady["fresh"]["z_shift"]
+    # Ödemeler kötüleşirken gerçekleşenler tahmin dağılımının geç tarafına düşer: yeniden ayar eğrisinin
+    # ortası (tekdüze sayı 0,5'in karşılığı) kötüleşen şirkette daha yukarıda olmalı.
+    assert worse["fresh"]["recal"][50] > steady["fresh"]["recal"][50]
 
 
 def test_refunds_are_netted_and_currency_converted_with_given_rates(tmp_path):
@@ -1031,3 +1033,25 @@ def test_fx_exposure_and_scenario(tmp_path):
     assert list(exp["currency"]) == ["USD"] and exp["tl"].iloc[0] == pytest.approx(exp["original"].iloc[0] * 40.0)
     up = pipeline.fx_shift(res, 0.2)
     assert up["p10_min"] >= up["p10_min_before"] - 1e-6 and (up["p50"] >= res["sim"].p50 - 1e-6).all()
+
+
+def test_combined_model_recalibration_and_widening():
+    from radar.model import CombinedModel, fit_model
+    from radar.simulate import RECAL_GRID, pit_recalibration
+
+    full = generate(seed=2, n_customers=20, as_of=AS_OF)
+    obs = observe(full, AS_OF)
+    from radar.model import training_frame
+    X, y = training_frame(obs, AS_OF)
+    m = fit_model(X, y)
+    assert isinstance(m, CombinedModel)
+    Q = m.predict(X.head(50))
+    assert (np.diff(Q, axis=1) >= -1e-9).all()                            # kantiller sıralı kalır
+    rng = np.random.default_rng(0)
+    from scipy.special import ndtri
+    calibrated = pit_recalibration(ndtri(rng.uniform(0.001, 0.999, 2000)), np.zeros(2000, bool), 30.0)
+    assert np.abs(calibrated - RECAL_GRID).max() < 0.05                    # PIT tekdüzeyse dokunulmaz
+    early = pit_recalibration(ndtri(rng.uniform(0.001, 0.999, 2000) ** 2), np.zeros(2000, bool), 30.0)
+    assert early[50] < 0.35 and (np.diff(early) >= 0).all()               # erken gerçekleşme: kantil aşağı kayar
+    res = pipeline.demo(seed=2, as_of=AS_OF, n_sims=300)
+    assert res["info"]["widen"] >= 1.0 and res["ctx"]["calib"]["fresh"].get("recal") is not None

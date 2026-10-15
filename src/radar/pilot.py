@@ -18,7 +18,7 @@ from .synthetic import observe
 from .pipeline import forecast, gap_summary, naive_collections, weekly_table
 from .reconcile import collection_events
 
-VERSION = "2026.10.15"            # tahmin kaydına yazılır: hangi kod sürümüyle üretildiği
+VERSION = "2026.10.16"            # tahmin kaydına yazılır: hangi kod sürümüyle üretildiği
 MIN_HISTORY_DAYS = 365            # protokol 2. bölüm: en az 12 aylık fatura geçmişi; altında geri test yapılmaz
 MIN_MATCH_RATE = 0.80             # banka tahsilatlarının bu oranın altında eşleştiği kayıt uyarılıdır, B1'e girmez
 ALPHA = 0.2                       # P10–P90 aralığı: %80 merkezi aralık
@@ -292,7 +292,7 @@ asıl ölçümü budur (protokol B1).</p>{_table(record)}
 <script type="application/json" id="ileriye-donuk-kayit">{machine}</script>
 <h2>Veri</h2>{_table(quality)}
 <h2>Yöntem ve sınırlar</h2>
-<p class="note">Gecikme tahmini müşterilerin geçmiş ödeme davranışından öğrenilir (LightGBM kantil regresyonu; az veride müşteri medyanı).
+<p class="note">Gecikme tahmini müşterilerin geçmiş ödeme davranışından öğrenilir (LightGBM kantil regresyonu ile müşteri medyanının birleşimi; az veride yalnızca müşteri medyanı).
 Kasa, 2.000 senaryolu Monte Carlo simülasyonuyla hesaplanır; müşterilerin birlikte gecikme eğilimi ve tahmin aralığı, geçmiş tahminlerin
 hatasından ölçülür. İki herkese açık gerçek veri setinde model, "müşteri her zamanki kadar geç öder" yöntemiyle başa baş, "vadesinde ödenir"
 varsayımından daha isabetli çıkmıştır; "son dönemin tahsilat oranı" yöntemi ise bir veri setinde modelden isabetli, diğerinde

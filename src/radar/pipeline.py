@@ -7,7 +7,7 @@ import pandas as pd
 from . import actions
 from .features import build_features
 from .model import DelayModel, FallbackModel, evaluate, fit_model, training_frame
-from .simulate import (PRIOR_RHO, aging_curve, censored_normal_fit, conditional_scores, correlation_from_scores,
+from .simulate import (RECAL_GRID, pit_recalibration, PRIOR_RHO, aging_curve, censored_normal_fit, conditional_scores, correlation_from_scores,
                        simulate)
 from .synthetic import cash_plan, observe
 
@@ -50,19 +50,22 @@ def calibrate(obs: pd.DataFrame, as_of, origins: int = 4, step: int = 90, mature
 
     Son `origins` çeyreğin her birinin başına dönülür, o günkü bilgiyle model kurulur ve o gün
     açık olan faturaların gecikmesi tahmin edilir. Gerçekleşenle karşılaştırınca:
-    - skorların ortalaması sıfırdan sapıyorsa model sistematik olarak geç ya da erken tahmin
-      ediyordur (ör. gecikmeler uzarken geride kalır) -> kayma,
-    - sapması 1'den büyükse aralıklar dardır -> ölçek,
-    - çeyrekler arası ve müşteriler arası ortak hareket -> korelasyonlar.
-    Kayma ve ölçek, vadesi gelmemiş ("fresh") ve vadesi geçmiş ("overdue") faturalar için ayrı
-    ölçülür; ikincisinde tahmin koşullu kuyruğa dayanır ve hatası farklıdır.
+    - gerçekleşenin koşullu tahmin dağılımındaki yeri (PIT) tekdüze değilse dağılım parametresiz
+      yeniden ayarlanır (Kaplan-Meier ile, ödenmemiş fatura sansürlü; bkz. simulate.pit_recalibration).
+      Açık verilerde model, vadesi yaklaşan faturaların yakında ödenme olasılığını sistematik olarak
+      düşük veriyordu; tek bir kayma/ölçek sayısı bunu düzeltemiyordu (DOGRULAMA.md, 16 Ekim 2026),
+    - çeyrekler arası ve müşteriler arası ortak hareket -> korelasyonlar,
+    - aynı tarihlerde toplam tahsilat simüle edilip gerçekleşenle karşılaştırılır; bant, geçmiş
+      hataların %80'ini içine alacak kadar genişletilir (konformal; daraltılmaz). Büyük portföyde
+      fatura düzeyindeki korelasyon tahmini toplam belirsizliği küçümsüyordu.
+    Yeniden ayar, vadesi gelmemiş ("fresh") ve vadesi geçmiş ("overdue") faturalar için ayrıdır.
     Modelin kendi eğitim verisindeki uyumu bunları ölçemez; o veri bilinen geçmiştir."""
     as_of = pd.Timestamp(as_of)
     neutral = {"z_shift": 0.0, "z_scale": 1.0, "n": 0}
     default = {"rho_market": PRIOR_RHO[0], "rho_customer": PRIOR_RHO[1], "fresh": neutral, "overdue": neutral}
     final = obs.set_index("invoice_id")
     feats = build_features(obs) if feats is None else feats
-    parts = []
+    parts, stored = [], []
     for k in range(1, origins + 1):
         t = as_of - pd.Timedelta(days=k * step)
         past = censor(obs, t)
@@ -81,6 +84,7 @@ def calibrate(obs: pd.DataFrame, as_of, origins: int = 4, step: int = 90, mature
         delay = (outcome["paid_date"].fillna(as_of) - outcome["due_date"]).dt.days.to_numpy()
         d0 = (t - test["due_date"]).dt.days.to_numpy()
         Q = fit_model(X, y).predict(build_features(past, ref=t).loc[test.index])
+        stored.append((k, t, test, Q, aging_curve(past, t), past))
         parts.append(pd.DataFrame({"z": conditional_scores(Q, delay, d0, aging_curve(past, t)), "origin": str(k),
                                    "customer_id": test["customer_id"].to_numpy(), "overdue": d0 > 0,
                                    "censored": outcome["paid_date"].isna().to_numpy()}))
@@ -94,13 +98,46 @@ def calibrate(obs: pd.DataFrame, as_of, origins: int = 4, step: int = 90, mature
         n = len(part)
         if n < 30:
             return neutral | {"n": n}
-        mu, sigma = censored_normal_fit(part["z"].to_numpy(), part["censored"].to_numpy())
-        w = n / (n + shrink_n)                               # az gözlemde düzeltme sıfıra / bire büzülür
-        return {"z_shift": float(w * np.clip(mu, -1, 1)), "z_scale": float(1 + w * (np.clip(sigma, 0.7, 1.6) - 1)), "n": n}
+        return {"z_shift": 0.0, "z_scale": 1.0, "n": n,
+                "recal": pit_recalibration(part["z"].to_numpy(), part["censored"].to_numpy(), 30.0)}
 
     rho_m, rho_c = correlation_from_scores(scores["z"].to_numpy(), scores["origin"], scores["customer_id"])
-    return {"rho_market": rho_m, "rho_customer": rho_c,
-            "fresh": group(scores[~scores["overdue"]]), "overdue": group(scores[scores["overdue"]])}
+    calib = {"rho_market": rho_m, "rho_customer": rho_c,
+             "fresh": group(scores[~scores["overdue"]]), "overdue": group(scores[scores["overdue"]])}
+    calib["widen"], calib["widen_n"] = aggregate_widen(stored, final, as_of, calib)
+    return calib
+
+
+def aggregate_widen(stored, final, as_of, calib, horizons=(14, 30, 60, 90), level: float = 0.8,
+                    n_sims: int = 400, cap: float = 3.0) -> tuple[float, int]:
+    """Toplam tahsilat düzeyinde konformal genişletme katsayısı.
+
+    Her geçmiş tahmin tarihinde, o gün açık (ve sonucu bilinen) faturalardan h gün içinde gelecek tahsilat
+    simüle edilir; gerçekleşenin bant yarı genişliğine oranı (normalleştirilmiş aşım) hesaplanır. Bu oranların
+    konformal %80 kantili 1'den büyükse bant o kadar genişletilir; daraltılmaz (az gözlemle daraltmak riskli)."""
+    errs = []
+    for k, t, test, Q, aging, past in stored:
+        inv = test.assign(p_default=test["customer_id"].map(default_rates(past, t)).to_numpy(), projected=False)
+        H = min(max(horizons), (as_of - t).days)
+        if H < min(horizons):
+            continue
+        sim = simulate(inv, Q, t, 0.0, pd.DataFrame({"date": [], "amount": []}), H, n_sims, seed=100 + k,
+                       aging=aging, **{**_sim_args(calib, inv, t), "widen": 1.0})
+        paid = final.loc[test["invoice_id"], "paid_date"]
+        amount = test["amount"].to_numpy(float)
+        for h in horizons:
+            if h > H:
+                continue
+            actual = float(amount[((paid > t) & (paid <= t + pd.Timedelta(days=h))).to_numpy()].sum())
+            lo, med, hi = sim.p10[h], sim.p50[h], sim.p90[h]
+            half = (hi - med) if actual >= med else (med - lo)
+            if half > 0:
+                errs.append(abs(actual - med) / half)
+    if len(errs) < 4:
+        return 1.0, len(errs)
+    errs = np.sort(errs)
+    q = errs[min(len(errs) - 1, int(np.ceil((len(errs) + 1) * level)) - 1)]
+    return float(min(max(1.0, q), cap)), len(errs)
 
 
 def forecast(obs: pd.DataFrame, as_of, opening: float, outflows: pd.DataFrame, horizon: int = 90,
@@ -147,15 +184,18 @@ def forecast(obs: pd.DataFrame, as_of, opening: float, outflows: pd.DataFrame, h
             "info": {"n_invoices": int(len(obs)), "n_train": int(len(X)), "n_customers": int(obs["customer_id"].nunique()),
                      "history_from": obs["issue_date"].min(), "simple_model": isinstance(model, FallbackModel),
                      "n_calibration": int(calib["fresh"]["n"] + calib["overdue"]["n"]),
-                     "rho_market": calib["rho_market"], "rho_customer": calib["rho_customer"]},
+                     "rho_market": calib["rho_market"], "rho_customer": calib["rho_customer"],
+                     "widen": calib.get("widen", 1.0)},
             "disputed_total": float(obs.loc[is_open & obs["disputed"], "open_amount"].sum())}
 
 
 def _sim_args(calib: dict, inv: pd.DataFrame, as_of) -> dict:
     overdue = (inv["due_date"] < pd.Timestamp(as_of)).to_numpy() & ~inv["projected"].to_numpy()
     pick = lambda key: np.where(overdue, calib["overdue"][key], calib["fresh"][key])
+    grid = lambda g: np.asarray(calib[g].get("recal", RECAL_GRID))
+    recal = np.where(overdue[:, None], grid("overdue")[None, :], grid("fresh")[None, :])
     return {"rho_market": calib["rho_market"], "rho_customer": calib["rho_customer"],
-            "z_shift": pick("z_shift"), "z_scale": pick("z_scale")}
+            "z_shift": pick("z_shift"), "z_scale": pick("z_scale"), "widen": calib.get("widen", 1.0), "recal": recal}
 
 
 def scenario(res: dict, collect_ids=(), collect_in_days: int = 7, delay_labels=(), delay_days: int = 0):

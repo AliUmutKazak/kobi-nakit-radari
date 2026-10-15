@@ -4,6 +4,8 @@ Tarih: 14 Ekim 2026. Yeniden üretmek için: `python run_validation.py 24` (yakl
 
 ## Gerçek açık verilerle doğrulama (14 Ekim 2026)
 
+> **Güncel durum (16 Ekim 2026).** Aşağıdaki ilk tablolar tarihsel kayıttır. Ödeme günü yuvarlama düzeltmesinden (15 Ekim) ve tahmin birleştirme + olasılık yeniden ayarı + toplam düzeyde genişletmeden (16 Ekim) sonra, 16 tahmin tarihiyle: kasa sapması IBM 14 gün %6,98, 30 gün %2,96, Payment Date 14 gün %3,73, 30 gün %1,40; model dört durumun üçünde en iyi basit yöntemi geçiyor, dördüncüsünde 0,2 puan geride. Bant içi oranları %88, %88, %94, %62 (hedef %80). Ayrıntı ve gerekçe: "Düzeltme: tahmin birleştirme..." bölümü.
+
 Sentetik çalışma (aşağıda) kurgunun kendi içinde tutarlı olduğunu gösterir; gerçek dünyada işe yarayıp yaramadığını göstermez. Bunun ilk kanıtı için Małkus, Bobek ve Nalepa'nın (arXiv:2511.03631) KOBİ çalışmasında da kullanılan iki herkese açık gerçek veri seti kullanıldı. Yeniden üretmek için: dosyaları `data/acik/` klasörüne koyup `python -m radar.open_data` (src yolu tanımlıyken).
 
 | Veri seti | Fatura | Müşteri | Dönem |
@@ -47,6 +49,25 @@ Yöntem: geçmiş tarihlere dönülür, o gün bilinen veriyle tahmin yapılır,
 Nokta isabeti dört durumda da iyileşti; model IBM 14 günde tahsilat oranı yöntemini (%7,1), Payment Date 14 günde müşteri medyanını (%2,6) geçti. Payment Date 30 günde bandın tutma oranı düştü (8 tarihin 5'inden 3'üne): bu veri setinde bant zaten dardı, düzeltme daraltmayı görünür kıldı. Bant genişliğinin büyük portföylerde yetersiz kalması ayrı bir açık sorun olarak duruyor. Sentetik çalışmada (24 tohum × 8 rejim) fark gürültü düzeyinde ve biraz aleyhte: dönem sonu hatası 0,316 → 0,321, Brier 0,095 → 0,097 (eşleştirilmiş farkların belirsizliği ±0,04). Gerçek veri ve gerekçe öne alındı; sentetik veri de en yakın güne yuvarlanmış gecikmelerle üretildiği için yukarı yuvarlamanın orada tutarlı bir avantajı yoktur.
 
 **Bu düzeltmeden sonra B1 (pilot protokolü) açık verilerde:** IBM 14 gün geçer (%6,6 ≤ %7,1 + 2), IBM 30 gün geçer (%4,2 ≤ %2,6 + 2), Payment Date her iki ufukta geçer. B2 (bant ≥ %70) Payment Date 30 günde sağlanmaz.
+
+**Düzeltme: tahmin birleştirme, olasılık yeniden ayarı ve toplam düzeyde genişletme (16 Ekim 2026).** Teşhis: (1) IBM'de toplam tahsilat 8 tarihin 7'sinde orta tahminin üstünde kaldı; fatura düzeyinde, vadesi yaklaşan faturaların 14 günde ödenme olasılığı %62 tahmin edilirken gerçekleşen %71'di. Gerçekleşenlerin %35–44'ü koşullu tahmin dağılımının en erken çeyreğine düşüyordu (doğru ayarlı modelde %25); 2012'den 2013'e her dönemde aynı. Tek bir kayma/ölçek sayısı bunu düzeltemiyordu. (2) Payment Date'te (1.056 müşteri) 30 günlük bant toplamın yalnızca %1,5–7'si genişliğindeydi; kaçışlar iki yönlüydü: büyük portföyde ortak belirsizlik küçümseniyordu. Üç değişiklik birlikte uygulandı:
+
+1. **Tahmin birleştirme:** LightGBM ile müşteri medyanı modelinin kantilleri eşit ağırlıkla ortalanır (kantil ortalaması; Lichtendahl vd. 2013). Ağırlık veriden öğrenilmez.
+2. **Olasılık yeniden ayarı:** geçmiş tahmin tarihlerindeki koşullu PIT değerlerinin dağılımı Kaplan-Meier ile (ödenmemiş fatura sansürlü) çıkarılır, simülasyonda tekdüze sayı bu dağılımın kantiline çevrilir (Kuleshov vd. 2018). Az gözlemde büzülme sabiti 30; sonuçlara bakılmadan, gruptaki asgari gözlem kuralıyla aynı seçildi. Eski kayma/ölçek düzeltmesinin yerini alır.
+3. **Toplam düzeyde konformal genişletme:** aynı geçmiş tarihlerde toplam tahsilat simüle edilir; gerçekleşenin bant yarı genişliğine oranlarının konformal %80 kantili 1'den büyükse bant günlük medyan etrafında o kadar açılır (daraltılmaz, üst sınır 3).
+
+Değerlendirme (geliştirme IBM 8 tarihle yapıldı; karar, ayarlara dokunmadan tarih sayısı 16'ya çıkarılan ölçümle verildi):
+
+| 16 tahmin tarihi | IBM 14 gün | IBM 30 gün | Payment Date 14 gün | Payment Date 30 gün | Ortalama sapma | Aralık skoru toplamı |
+|---|---|---|---|---|---|---|
+| Önceki | %8,21 (bant içi %88) | %3,52 (%81) | %3,68 (%81) | %1,36 (%62) | %4,19 | 91,6 |
+| Yalnız genişletme | %8,21 (%88) | %3,52 (%81) | %3,68 (%94) | %1,36 (%75) | %4,19 | 95,8 |
+| **Uygulanan (üçü)** | **%6,98** (%88) | **%2,96** (%88) | %3,73 (%94) | %1,40 (%62) | **%3,77** | **89,5** |
+| En iyi basit yöntem | %10,57 (oran) | %3,65 (medyan) | %4,72 (medyan) | %1,18 (medyan) | | |
+
+Fatura düzeyinde ortalama mutlak hata IBM 6,27 → 6,13 gün, Payment Date 3,53 → 3,33 gün (müşteri medyanı 6,03 / 3,23; fark 0,1 güne indi); P10–P90 kapsama %86 → %90 ve %78 → %84. Sentetik çalışmada (24 tohum × 8 rejim): kapsama %83 → %86, bandın altında kalma %12 → **%10** (hedef %10), üstünde %5 → %4, Brier 0,0965 → 0,0947; dönem sonu hatası 0,321 → 0,332 (eşleştirilmiş farkın belirsizliği ±0,04 içinde), aralık skoru 1,456 → 1,589 (bant genişledi).
+
+Seçim gerekçesi: isabet ve kalibrasyonu birlikte ölçen uygun skor (aralık skoru) gerçek veride en iyi bu birleşimde; ortalama sapma %10 azaldı; model dört durumun üçünde en iyi basit yöntemi geçiyor, dördüncüsünde (Payment Date 30 gün) 0,2 puan geride (B1 toleransı içinde). Ayrı ayrı denendiğinde: yalnız birleştirme Payment Date 30 günde bandı daralttı (%25, 8 tarih), yalnız yeniden ayar IBM'de sapmayı azalttı ama bandı genişletmedi, yalnız genişletme isabeti değiştirmedi. **Açık kalan:** Payment Date 30 günde bant içi oranı %62 (16 tarihin 10'u), hedef %80; önceden konan %70 eşiğini bu tek durumda karşılamıyor. Sapmanın kendisi bu durumda çok küçüktür (%1,4); büyük portföyde 30 günlük toplam belirsizlik hâlâ biraz küçümseniyor. Not: aynı yöntemle 8 tarihte %38 ölçülen bant içi oranı 16 tarihte %62 çıktı; 8 tarihlik ölçümler bu düzeyde gürültülüdür.
 
 **Veri setlerinin sürümü ve dönüşümü.** Sonuçlar şu dosyalarla üretildi (Kaggle'dan elle indirildi; lisans koşulları Kaggle sayfalarındadır, dosyalar depoya konmaz ve yeniden dağıtılmaz):
 
