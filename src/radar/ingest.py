@@ -179,6 +179,7 @@ def _finish_invoices(df: pd.DataFrame, default_terms: int, notes: list[str],
     for col in ("amount", "open_amount"):
         if col in df:
             df[col] = df[col] * rate
+    df["fx_rate"] = rate                 # orijinal tutar = TL tutarı / kur; kur senaryosu için saklanır
     df = df[rate.notna()]
 
     for col in ("vkn", "customer_name"):
@@ -240,7 +241,7 @@ def _finish_invoices(df: pd.DataFrame, default_terms: int, notes: list[str],
     df["email"] = df["email"].fillna("").astype(str).str.strip() if "email" in df else ""
     df["phone"] = df["phone"].map(normalize_phone) if "phone" in df else ""
     cols = ["invoice_id", "customer_id", "customer_name", "vkn", "issue_date", "due_date", "amount", "paid_date",
-            "open_amount", "disputed", "promised_date", "currency", "email", "phone"]
+            "open_amount", "disputed", "promised_date", "currency", "fx_rate", "email", "phone"]
     return df[cols].sort_values("issue_date").reset_index(drop=True)
 
 

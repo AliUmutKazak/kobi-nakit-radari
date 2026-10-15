@@ -200,6 +200,11 @@ def run_impact(key, _res, ids):
 
 
 @st.cache_data(show_spinner=False)
+def run_fx_shift(key, _res, pct):
+    return pipeline.fx_shift(_res, pct)
+
+
+@st.cache_data(show_spinner=False)
 def run_customer_delay(key, _res, customers, days):
     return pipeline.customer_delay(_res, customers, days)
 
@@ -645,6 +650,21 @@ with tab_cash:
             turkish_axes(fig3)
             st.plotly_chart(fig3, width="stretch")
 
+    exposure = pipeline.fx_exposure(res)
+    if len(exposure) and sim.paths is not None:
+        st.subheader("Kur değişirse")
+        show_table(exposure.rename(columns={"currency": "Para birimi", "original": "Açık alacak (döviz)",
+                                            "rate": "Girilen kur", "tl": "TL karşılığı (TL)"}),
+                   width="stretch", hide_index=True)
+        pct = st.slider("TL'nin dövizlere karşı değişimi (%)", -30, 50, 10, step=5,
+                        help="Artı: TL değer kaybeder, dövizli alacağın TL karşılığı artar. Kur tahmini değildir; "
+                             "kendi senaryonuzu girersiniz. Dövizli borçlar kapsam dışıdır.")
+        if pct:
+            fxs = run_fx_shift(res_key, res, pct / 100)
+            st.write(f"Kur %{pct:+d} değişirse: 90 günde eksiye düşme olasılığı **%{fxs['prob_any_breach'] * 100:.0f}** "
+                     f"(bugün %{sim.prob_any_breach * 100:.0f}); kötümser en düşük kasa **{tl(fxs['p10_min'])}** "
+                     f"(bugün {tl(fxs['p10_min_before'])}).")
+
 with tab_accuracy:
     info = res["info"]
     st.write("**Bu tahmin neye dayanıyor?**")
@@ -824,6 +844,11 @@ with tab_collect:
         if own:
             st.caption("Mesajı kendi e-posta ya da WhatsApp hesabınızdan gönderdikten sonra aşağıdan kayda geçirin. "
                        f"Kayda geçen fatura {actions.CONTACT_COOLDOWN_DAYS} gün boyunca listede yeniden önerilmez.")
+            owner = st.text_input("Takipten sorumlu kişi (isteğe bağlı)", store.get("last_owner", ""), key=f"owner_{pick}",
+                                  help="Kayda yazılır; birden çok kişi tahsilat yapıyorsa kimin takip ettiği görünür.")
+            tag = f"[sorumlu: {owner.strip()}] " if owner.strip() else ""
+            if owner.strip():
+                store.set("last_owner", owner.strip())
             phones = res["obs"].set_index("invoice_id")["phone"] if "phone" in res["obs"] else {}
             phone = ingest.normalize_phone(st.text_input("Müşterinin cep telefonu (WhatsApp)", phones.get(pick, ""),
                                                          key=f"tel_{pick}", placeholder="05XX XXX XX XX"))
@@ -839,10 +864,10 @@ with tab_collect:
                     except mailer.MailError as err:
                         st.error(str(err))
                     else:
-                        record(pick, "message", f"[e-posta: {to.strip()}] {body}")
+                        record(pick, "message", f"{tag}[e-posta: {to.strip()}] {body}")
             b1, b2, b3 = st.columns(3)
             if b1.button("Gönderildi olarak kaydet"):
-                record(pick, "message", body)
+                record(pick, "message", tag + body)
             if b2.button("Müşteri itiraz etti"):
                 record(pick, "dispute", "1")
             promise = b3.date_input("Ödeme sözü tarihi", value=None, format="DD.MM.YYYY", key=f"promise_{pick}")

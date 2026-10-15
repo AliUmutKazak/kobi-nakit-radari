@@ -1012,3 +1012,22 @@ def test_encrypted_backup_roundtrip_and_restore(tmp_path):
     assert safety.exists() and len(Store(safety).load("invoices")) == 2           # önceki veri kenarda
     with pytest.raises(ValueError):
         other.restore(b"rastgele bayt", None)
+
+
+def test_fx_exposure_and_scenario(tmp_path):
+    from radar import ingest, pipeline
+
+    path = tmp_path / "f.csv"
+    rows = ["Fatura No;Cari Unvan;Fatura Tarihi;Vade Tarihi;Tutar;Para Birimi"]
+    for k in range(60):
+        day = pd.Timestamp("2025-10-01") + pd.Timedelta(days=6 * k)
+        rows.append(f"F{k:04d};Müşteri {k % 6} A.Ş.;{day:%d.%m.%Y};{day + pd.Timedelta(days=30):%d.%m.%Y};"
+                    f"{1000 + k};{'USD' if k % 3 == 0 else 'TL'}")
+    path.write_text("\n".join(rows), encoding="utf-8")
+    inv, _ = ingest.load_invoices(path, rates={"USD": 40.0})
+    assert inv.loc[inv["currency"] == "USD", "fx_rate"].eq(40.0).all()
+    res = pipeline.forecast(inv, "2026-10-01", 0.0, pd.DataFrame({"date": [], "amount": []}), n_sims=300)
+    exp = pipeline.fx_exposure(res)
+    assert list(exp["currency"]) == ["USD"] and exp["tl"].iloc[0] == pytest.approx(exp["original"].iloc[0] * 40.0)
+    up = pipeline.fx_shift(res, 0.2)
+    assert up["p10_min"] >= up["p10_min_before"] - 1e-6 and (up["p50"] >= res["sim"].p50 - 1e-6).all()

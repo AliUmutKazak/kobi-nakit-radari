@@ -226,6 +226,36 @@ def customer_delay(res: dict, customer_ids, days: int) -> dict:
             "p10_min_before": _p10_min(sim.paths)}
 
 
+def fx_exposure(res: dict) -> pd.DataFrame:
+    """Bugün açık dövizli alacak: para birimi, orijinal tutar, girilen kur ve TL karşılığı."""
+    obs = res["obs"]
+    if "currency" not in obs:
+        return pd.DataFrame()
+    fx = obs[(obs["open_amount"] > 0) & (obs["currency"].fillna("TRY") != "TRY")]
+    if fx.empty:
+        return pd.DataFrame()
+    rate = fx["fx_rate"] if "fx_rate" in fx else pd.Series(np.nan, index=fx.index)
+    return (fx.assign(original=fx["open_amount"] / rate, rate=rate)
+            .groupby("currency").agg(original=("original", "sum"), rate=("rate", "first"), tl=("open_amount", "sum"))
+            .reset_index())
+
+
+def fx_shift(res: dict, pct: float) -> dict:
+    """TL, dövizlere karşı `pct` kadar değer kaybederse (eksi: kazanırsa) bugün açık dövizli faturalardan gelecek
+    TL tutarı o oranda değişir; aynı senaryolarla kasa bandı. Kur tahmini değil, kullanıcının senaryosudur.
+    Dövizli borçlar (ödenecekler) dosyada TL olduğundan kapsam dışıdır."""
+    sim, inv = res["sim"], res["ctx"]["sim_inv"]
+    currency = inv["currency"].fillna("TRY") if "currency" in inv else pd.Series("TRY", index=inv.index)
+    hit = np.flatnonzero((currency != "TRY").to_numpy() & ~inv["projected"].to_numpy())
+    paths = sim.paths.copy()
+    t = np.arange(paths.shape[1])[None, :]
+    for k in hit:
+        paths += float(inv["open_amount"].iloc[k]) * pct * (t >= sim.pay_day[k][:, None])
+    p10, p50, p90 = np.percentile(paths, [10, 50, 90], axis=0)
+    return {"p10": p10, "p50": p50, "p90": p90, "prob_any_breach": float((paths.min(axis=1) < 0).mean()),
+            "p10_min": _p10_min(paths), "p10_min_before": _p10_min(sim.paths)}
+
+
 def gap_summary(res: dict, max_k: int = 40, collect_in_days: int = 7) -> dict:
     """Kötümser senaryodaki açığın derinliği ve onu kapatmak için listeden kaç fatura gerektiği.
 
