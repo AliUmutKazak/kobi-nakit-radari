@@ -60,7 +60,7 @@ def turkish_axes(fig):
     return fig
 st.title("KOBİ Nakit Akışı Radarı")
 st.caption("Mesajlar taslaktır; bu panel hiçbir mesajı kendiliğinden göndermez. "
-           "Nasıl kullanılacağı: proje klasöründeki docs/KULLANIM_KILAVUZU.md")
+           "Nasıl kullanılacağı: programla birlikte gelen KULLANIM_KILAVUZU.md dosyası.")
 
 
 @st.cache_resource
@@ -129,8 +129,8 @@ def parse_invoices(uploads, terms, rates):
 
 
 @st.cache_data(show_spinner="Demo şirketin 90 günlük kasası hesaplanıyor; 10-20 saniye sürer. Panel açık kaldıkça sonraki işlemler anında gelir...")
-def run_demo(seed: int, include_projected: bool):
-    res = pipeline.demo(seed=seed, include_projected=include_projected)
+def run_demo(seed: int, include_projected: bool, today: str):
+    res = pipeline.demo(seed=seed, as_of=today, include_projected=include_projected)
     return {k: res[k] for k in KEEP} | {"notes": [], "has_outflows": True, "unmatched": None, "last_activity": None}
 
 
@@ -189,7 +189,7 @@ def run_backtest(obs, as_of):
     return pipeline.backtest_own(obs, as_of)
 
 
-@st.cache_data(show_spinner="Pilot raporu hazırlanıyor; geçmiş tarihlerde test de yapıldığı için bir dakikayı bulabilir...")
+@st.cache_data(show_spinner="Pilot raporu hazırlanıyor; geçmiş tarihlerde test de yapıldığı için yarım dakika kadar sürer...")
 def run_pilot(key, _res, label, hide):
     secret = secret_key(store) if hide else None
     r = pilot.build(_res["obs"], _res["as_of"], res=_res, label=label, key=secret,
@@ -208,6 +208,32 @@ BUSINESSES = list_businesses()
 if st.session_state.get("active_business") not in BUSINESSES:
     st.session_state["active_business"] = next(iter(BUSINESSES))
 store = get_store(str(BUSINESSES[st.session_state["active_business"]]))
+
+
+SAMPLE_NAME = "Örnek İşletme (uydurma veri)"
+
+
+def add_sample_business():
+    """Tanıtım için bugünün tarihine göre üretilmiş uydurma bir işletme; varsa verisi yenilenir."""
+    import tempfile
+
+    from radar import synthetic
+    today = f"{pd.Timestamp.now():%Y-%m-%d}"
+    path = list_businesses().get(SAMPLE_NAME) or create_business(SAMPLE_NAME)
+    sample = get_store(str(path))
+    with tempfile.TemporaryDirectory() as tmp:
+        folder = Path(tmp)
+        synthetic.export_samples(folder, seed=7, as_of=today)
+        sample.save("invoices", ingest.load_invoices(folder / "faturalar.csv")[0])
+        sample.save("payments", ingest.load_payments(folder / "ekstre.csv")[0])
+        sample.save("outflows", ingest.load_schedule(folder / "giderler.csv"))
+        sample.save("payables", ingest.load_payables(folder / "odenecekler.csv")[0])
+        sample.save("cheques", ingest.load_cheques(folder / "cekler.csv")[0])
+    obs = synthetic.observe(synthetic.generate(seed=7, as_of=today), today)
+    # Açılış kasası bilerek düşük: tanıtımda risk ve "açığı kapatmak için ne gerekir" bölümü görünsün.
+    sample.set("opening", round(synthetic.cash_plan(obs, today, opening_months=0.3)[0], -3))
+    sample.set("seller", "Örnek Ticaret A.Ş. (MERSİS 0000000000000000)")
+    st.session_state["active_business"] = SAMPLE_NAME
 
 
 def add_business():
@@ -236,6 +262,9 @@ with st.sidebar:
         with st.expander("İşletme ekle"):
             st.text_input("Yeni işletmenin adı", key="new_business")
             st.button("Ekle", on_click=add_business)
+            st.button("Tanıtım için örnek işletme ekle", on_click=add_sample_business,
+                      help="Bugünün tarihine göre üretilmiş uydurma faturalar, banka ekstresi, giderler, borçlar ve "
+                           "çeklerle dolu bir işletme açar. Gerçek bir işletmeye ait değildir.")
             if st.session_state.get("business_error"):
                 st.error(st.session_state.pop("business_error"))
         has_data = store.load("invoices") is not None
@@ -358,8 +387,9 @@ for name, (title, fields, required) in MAPPABLE.items():
     st.stop()
 
 if not own:
-    res = run_demo(int(seed), include_projected)
-    res_key = ("demo", int(seed), include_projected)
+    today = f"{pd.Timestamp.now():%Y-%m-%d}"            # demo şirket her gün bugüne göre üretilir
+    res = run_demo(int(seed), include_projected, today)
+    res_key = ("demo", int(seed), include_projected, today)
 elif store.load("invoices") is None:
     st.info("Başlamak için soldan fatura listenizi (CSV / Excel) ya da e-fatura XML dosyalarınızı yükleyin. "
             "Fatura listesinde en az şu sütunlar olmalı: Fatura No, Cari Unvan, Fatura Tarihi, Tutar. "
@@ -371,6 +401,8 @@ elif store.load("invoices") is None:
                                              "odenecekler.csv", "cekler.csv"]):
             col.download_button(name, (SAMPLES / name).read_bytes(), name)
         st.caption((SAMPLES / "OKU.txt").read_text(encoding="utf-8"))
+    st.write("Önce denemek isterseniz, bugünün tarihine göre uydurma verilerle dolu bir örnek işletme açabilirsiniz:")
+    st.button("Tanıtım için örnek işletme ekle", on_click=add_sample_business, key="sample_main")
     st.stop()
 else:
     res = run_own(str(store.path), store.rev, str(as_of), include_projected)

@@ -683,6 +683,12 @@ def test_dashboard_renders_demo_and_own_data_without_errors(tmp_path, monkeypatc
     assert at.session_state["active_business"] == "Deneme Ltd." and len(at.metric) == 0
     at.sidebar.selectbox[0].set_value("İşletmem").run()
     assert not at.exception and len(at.metric) == 5
+    # Tanıtım için örnek işletme: bugünün tarihli uydurma veriyle dolu, eski veri uyarısı yok.
+    next(b for b in at.sidebar.button if b.label == "Tanıtım için örnek işletme ekle").click().run()
+    assert not at.exception, [e.value for e in at.exception]
+    assert at.session_state["active_business"] == "Örnek İşletme (uydurma veri)" and len(at.metric) == 5
+    assert not any("en son hareket" in e.value for e in at.error)
+    at.sidebar.selectbox[0].set_value("İşletmem").run()
     at.sidebar.date_input[0].set_value(datetime.date(2026, 10, 20)).run()
     assert any("en son hareket" in e.value for e in at.error)             # 19 gün eski veri uyarısı
 

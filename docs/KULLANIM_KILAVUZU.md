@@ -32,6 +32,8 @@ Sol menüde **"Demo şirket"** seçiliyken panel uydurma bir şirketin verisini 
 
 ## 3. Kendi verinizi yükleyin
 
+Tanıtım ya da deneme için: "Kendi verim" → "İşletme ekle" → **"Tanıtım için örnek işletme ekle"** düğmesi, bugünün tarihine göre üretilmiş uydurma faturalar, banka ekstresi, giderler, borçlar ve çeklerle dolu ayrı bir işletme açar. Gerçek bir işletmeye ait değildir; kendi işletmenize "İşletme" kutusundan dönersiniz.
+
 Sol menüde **"Kendi verim"**i seçin. Ayarlar dört bölümde toplanmıştır.
 
 **1. Temel bilgiler.** Tahmin tarihi (genellikle bugün) ve kasa + bankadaki toplam paranız. Kasa tutarını her kullanımda güncelleyin.

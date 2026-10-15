@@ -12,7 +12,8 @@ import pandas as pd
 
 from . import actions
 from .anonymize import invoice_aliases, pseudonym
-from .open_data import cash_study, delay_study
+from .open_data import delay_study
+from .synthetic import observe
 from .pipeline import forecast, gap_summary, naive_collections, weekly_table
 
 
@@ -74,12 +75,44 @@ def build(obs: pd.DataFrame, as_of, opening: float = 0.0, outflows: pd.DataFrame
         quality["Banka tahsilatlarının faturalarla eşleşme oranı"] = _pct(1 - (len(unmatched) if unmatched is not None else 0) / n_payments)
     history_days = (obs["issue_date"].max() - obs["issue_date"].min()).days
     delays = delay_study(obs, origins=4, step=60) if history_days >= 300 else pd.DataFrame()
-    # Kasa testinde her tahmin tarihinin ufku veri kesiminden önce bitmeli; yoksa henüz gelmemiş
-    # tahsilatlar "gelmedi" sayılır ve basit yöntemler haksız yere kötü görünür.
-    cash = cash_study(obs, as_of - pd.Timedelta(days=30), origins=6) if history_days >= 300 else pd.DataFrame()
+    # Veri tahmin tarihinden eskiyse, son hareketten sonraki ödemeler bilinmez; geri test orada biter.
+    cash = cash_backtest(obs, min(as_of, last)) if history_days >= 300 else pd.DataFrame()
     return {"label": label, "as_of": as_of, "res": res, "quality": quality, "delays": delays, "cash": cash,
             "gap": gap_summary(res), "weeks": weekly_table(res), "top": _top(res, key, obs),
             "record": forward_record(obs, as_of)}
+
+
+def cash_backtest(obs: pd.DataFrame, as_of, horizons=(14, 30), origins: int = 4, step: int = 21,
+                  n_sims: int = 500) -> pd.DataFrame:
+    """Kasa düzeyinde geri test: geçmiş tarihlerde, o gün açık faturalardan 14 ve 30 günde tahsil edilen tutar.
+
+    open_data.cash_study ile aynı ölçüt; farkı, her tahmin tarihinde tek simülasyondan iki ufkun birden
+    okunmasıdır (açılış sıfır, gider ve yeni satış yokken kasa yolu birikmiş tahsilattır). Panelde rapor
+    süresini yarıdan fazla kısaltır. Her ufuk veri kesiminden (as_of) önce biter."""
+    as_of, H = pd.Timestamp(as_of), max(horizons)
+    full = obs.assign(true_paid_date=obs["paid_date"])
+    rows = []
+    for k in range(origins):
+        t = as_of - pd.Timedelta(days=H + k * step)
+        past = observe(full, t)
+        sim = forecast(past, t, 0.0, pd.DataFrame({"date": [], "amount": []}), H, n_sims,
+                       include_projected=False, seed=k)["sim"]
+        was_open = (full["issue_date"] <= t) & ~(full["true_paid_date"] <= t)
+        for h in horizons:
+            end = t + pd.Timedelta(days=h)
+            rows.append({"h": h, "actual": full.loc[was_open & (full["true_paid_date"] <= end), "amount"].sum(),
+                         "p10": sim.p10[h], "p50": sim.p50[h], "p90": sim.p90[h],
+                         **naive_collections(past, full[was_open], t, end)})
+    bt = pd.DataFrame(rows)
+    out = []
+    for h, g in bt.groupby("h"):
+        total = g["actual"].sum() or float("nan")
+        err = lambda col: (g[col] - g["actual"]).abs().sum() / total * 100
+        out.append({"ufuk_gun": h, "tahmin_tarihi_sayisi": len(g), "sapma_model_%": err("p50"),
+                    "sapma_medyan_%": err("naive_median"), "sapma_vade_%": err("naive_due"),
+                    "sapma_oran_%": err("naive_rate"),
+                    "bant_ici": ((g["p10"] <= g["actual"]) & (g["actual"] <= g["p90"])).mean()})
+    return pd.DataFrame(out)
 
 
 def forward_record(obs: pd.DataFrame, as_of, horizons=(14, 30), n_sims: int = 1000) -> pd.DataFrame:
