@@ -17,6 +17,7 @@ from .open_data import delay_study
 from .synthetic import observe
 from .pipeline import forecast, gap_summary, naive_collections, weekly_table
 from .reconcile import collection_events
+from .standards import SIGNIFICANCE, diebold_mariano, interval_report, passes as interval_passes
 
 VERSION = "2026.10.16"            # tahmin kaydına yazılır: hangi kod sürümüyle üretildiği
 MIN_HISTORY_DAYS = 365            # protokol 2. bölüm: en az 12 aylık fatura geçmişi; altında geri test yapılmaz
@@ -117,17 +118,30 @@ def cash_backtest(obs: pd.DataFrame, as_of, horizons=(14, 30), origins: int = 4,
             rows.append({"h": h, "actual": full.loc[was_open & (full["true_paid_date"] <= end), "amount"].sum(),
                          "p10": sim.p10[h], "p50": sim.p50[h], "p90": sim.p90[h],
                          **naive_collections(past, full[was_open], t, end)})
-    bt = pd.DataFrame(rows)
+    return summarize_backtest(pd.DataFrame(rows), step)
+
+
+def summarize_backtest(bt: pd.DataFrame, step: int) -> pd.DataFrame:
+    """Geri test satırlarından (h, actual, p10, p50, p90, naive_*) ufuk başına özet ve standart testler."""
     out = []
     for h, g in bt.groupby("h"):
         total = g["actual"].sum() or float("nan")
         err = lambda col: (g[col] - g["actual"]).abs().sum() / total * 100
+        errors = pd.DataFrame({"model": (g["p50"] - g["actual"]).abs(), "vade": (g["naive_due"] - g["actual"]).abs(),
+                               "medyan": (g["naive_median"] - g["actual"]).abs(),
+                               "oran": (g["naive_rate"] - g["actual"]).abs()})
+        acc = accuracy_test(errors, overlap=int(np.ceil(h / step)))
+        band = interval_report(g["actual"], g["p10"], g["p90"])
         out.append({"ufuk_gun": h, "tahmin_tarihi_sayisi": len(g), "sapma_model_%": err("p50"),
                     "sapma_medyan_%": err("naive_median"), "sapma_vade_%": err("naive_due"),
                     "sapma_oran_%": err("naive_rate"),
                     "bant_ici": ((g["p10"] <= g["actual"]) & (g["actual"] <= g["p90"])).mean(),
                     "bant_genisligi_%": (g["p90"] - g["p10"]).sum() / total * 100,
-                    "aralik_skoru_%": _interval_score(g["p10"], g["p90"], g["actual"]).sum() / total * 100})
+                    "aralik_skoru_%": _interval_score(g["p10"], g["p90"], g["actual"]).sum() / total * 100,
+                    "dm_sonuc": acc["sonuc"], "dm_kiyas": acc["kiyas"], "B1": acc["B1"],
+                    "alt_asim": band["below"], "ust_asim": band["above"],
+                    "basel_alt": band["basel_lower"]["zone"], "kupiec_p": band["kupiec_central"]["p_value"],
+                    "B2": interval_passes(band)})
     return pd.DataFrame(out)
 
 
@@ -173,42 +187,48 @@ def _top(res: dict, key: str | None, obs: pd.DataFrame) -> pd.DataFrame:
     return top
 
 
-# Önceden kayıtlı eşik (PILOT_PROTOKOLU.md, ölçüt B1): model, kasa düzeyinde müşteri medyanından en fazla
-# bu kadar puan kötüyse "başa baş" sayılır. Pilot verisi görülmeden belirlendi; sonradan değiştirilmez.
-NONINFERIORITY_POINTS = 2.0
+def accuracy_test(errors: pd.DataFrame, overlap: int) -> dict:
+    """Ölçüt B1 (standart): Diebold-Mariano testi, Harvey-Leybourne-Newbold düzeltmesiyle, %5 anlamlılık.
 
-
-def passes_b1(model: float, due: float, median: float, rate: float) -> bool | None:
-    """Ölçüt B1: model "vadesinde öder"den iyi ve iki güçlü basit yöntemin iyisinden en fazla eşik kadar kötü.
-
-    Eşik istatistiksel bir eşdeğerlik testi değil, önceden seçilmiş işletme toleransıdır. Model ya da
-    karşılaştırma hesaplanamıyorsa None ("değerlendirilemedi") döner; eksik bir değer sessizce geçmez."""
-    ok = lambda v: v is not None and v == v
-    strong = [v for v in (median, rate) if ok(v)]
-    if not ok(model) or not ok(due) or not strong:
-        return None
-    return bool(model < due and model <= min(strong) + NONINFERIORITY_POINTS)
+    `errors`: tahmin tarihi başına mutlak hatalar (sütunlar: model, vade, medyan, oran). Model, iki güçlü basit
+    yöntemden (medyan, oran) toplamda iyi olanla ve "vadesinde öder" ile karşılaştırılır. Sonuç:
+    "üstün" (en iyi basit yöntemden anlamlı biçimde iyi), "eşdeğer" (anlamlı fark yok), "geride" (herhangi
+    birinden anlamlı biçimde kötü). B1, "geride" değilse geçer. Kendi koyduğumuz bir tolerans yoktur."""
+    ok = lambda c: c in errors and errors[c].notna().all() and len(errors) > 0
+    strong = [m for m in ("medyan", "oran") if ok(m)]
+    if not ok("model") or not strong:
+        return {"B1": None, "sonuc": "değerlendirilemedi", "kiyas": None, "p_geride": float("nan"),
+                "p_ustun": float("nan")}
+    best = min(strong, key=lambda m: errors[m].sum())
+    vs_best = diebold_mariano(errors["model"], errors[best], overlap)
+    vs_due = diebold_mariano(errors["model"], errors["vade"], overlap) if ok("vade") else {"p_worse": 1.0}
+    if not np.isfinite(vs_best["p_worse"]):
+        return {"B1": None, "sonuc": "değerlendirilemedi (az kayıt)", "kiyas": best, "p_geride": float("nan"),
+                "p_ustun": float("nan")}
+    worse = vs_best["p_worse"] < SIGNIFICANCE or vs_due["p_worse"] < SIGNIFICANCE
+    better = vs_best["p_better"] < SIGNIFICANCE
+    return {"B1": not worse, "sonuc": "geride" if worse else ("üstün" if better else "eşdeğer"), "kiyas": best,
+            "p_geride": vs_best["p_worse"], "p_ustun": vs_best["p_better"]}
 
 
 def verdict(delays: pd.DataFrame, cash: pd.DataFrame) -> str:
-    """Protokoldeki karar kuralı (ölçüt B1), kasa düzeyindeki ortalama sapmaya göre."""
+    """Rapordaki geri test özeti: Diebold-Mariano sonucu (ölçüt B1) ve sapma yüzdeleri."""
     if cash is None or cash.empty:
         return ("Geri test için yeterli geçmiş yok (en az 12 aylık fatura gerekir); isabet ölçülemedi. "
                 "Tahminler bu işletmenin geçmişiyle sınanmadığı için yalnızca yön gösterici okunmalı.")
-    model, median, due = (cash[c].mean() for c in ("sapma_model_%", "sapma_medyan_%", "sapma_vade_%"))
-    rate = cash["sapma_oran_%"].mean() if "sapma_oran_%" in cash else float("nan")
-    result = passes_b1(model, due, median, rate)
-    if result is None:
+    if "dm_sonuc" not in cash:
         return "Geri test sonuçları eksik; karşılaştırma değerlendirilemedi."
-    best = min(v for v in (median, rate) if v == v)
-    if model <= best and model < due:
-        return "Tahmin, bu işletmenin geçmişinde bütün basit yöntemlerden daha isabetli."
-    if result:
-        return "Tahmin, 'vadesinde ödenir' varsayımından daha isabetli; en iyi basit yöntemle başa baş."
-    if model < due:
-        return ("Tahmin, 'vadesinde ödenir' varsayımından daha isabetli, ancak en iyi basit yöntemin gerisinde; "
-                "bu işletmede kasa tahminine temkinli yaklaşılmalı.")
-    return "Tahmin bu işletmede basit yöntemlerden daha isabetli değil; sonuçlara temkinli yaklaşılmalı."
+    results = set(cash["dm_sonuc"])
+    if results <= {"değerlendirilemedi", "değerlendirilemedi (az kayıt)"}:
+        return "Geri test tarihleri istatistiksel karşılaştırma için az; karşılaştırma değerlendirilemedi."
+    if "geride" in results:
+        return ("Tahmin bu işletmenin geçmişinde en az bir ufukta basit bir yöntemden istatistiksel olarak anlamlı "
+                "biçimde geride (Diebold-Mariano, %5); kasa tahminine temkinli yaklaşılmalı.")
+    if "üstün" in results:
+        return ("Tahmin bu işletmenin geçmişinde en iyi basit yöntemden istatistiksel olarak anlamlı biçimde daha "
+                "isabetli (Diebold-Mariano, %5).")
+    return ("Tahmin ile en iyi basit yöntem arasında istatistiksel olarak anlamlı bir fark yok (Diebold-Mariano, %5); "
+            "sapma yüzdeleri aşağıda.")
 
 
 def render(r: dict) -> str:
@@ -252,6 +272,8 @@ def render(r: dict) -> str:
             "Müşteri medyanı sapması": [f"%{v:.1f}" for v in c["sapma_medyan_%"]],
             "Vadesinde öder sapması": [f"%{v:.1f}" for v in c["sapma_vade_%"]],
             "Tahsilat oranı sapması": [f"%{v:.1f}" for v in c["sapma_oran_%"]],
+            "İsabet testi (Diebold-Mariano)": list(c.get("dm_sonuc", pd.Series(["–"] * len(c)))),
+            "Basel (kötümser uç)": list(c.get("basel_alt", pd.Series(["–"] * len(c)))),
             "Bant içinde kalan tarih": [_pct(v) for v in c["bant_ici"]]}))
     risk_line = (f"Kötümser senaryoda kasa {sim.breach_day}. günde ({sim.dates[sim.breach_day]:%d.%m.%Y}) eksiye düşüyor; "
                  f"en derin açık {_tl(gap['gap'])}." if sim.breach_day is not None
@@ -405,16 +427,21 @@ def score(records: list[dict], later: pd.DataFrame, events: pd.DataFrame | None 
             row["fark_guven_araligi"] = (float(np.percentile(diffs, 5)), float(np.percentile(diffs, 95)))
         else:
             row["fark_guven_araligi"] = None
+        overlap = max(1, int(np.ceil(h / 7)))                    # haftalık kayıtlar: ufuk kaç hafta üst üste biner
+        band = interval_report(g["gerceklesen"], g["p10"], g["p90"])
+        row.update({"alt_asim": band["below"], "ust_asim": band["above"], "basel_alt": band["basel_lower"]["zone"],
+                    "kupiec_p": band["kupiec_central"]["p_value"], "B2": interval_passes(band)})
+        errors = pd.DataFrame({m: (g[m] - g["gerceklesen"]).abs() for m in ["model"] + methods})
         if target == "tahsilat":
-            row["B1"] = passes_b1(e["model"], e["vade"], e["medyan"], e["oran"])
-            row["B2"] = bool(g["bant_ici"].mean() >= COVERAGE_FLOOR)
+            acc = accuracy_test(errors, overlap)
+        else:                                                    # kapanış kasası: tek karşılaştırma "kasa değişmez"
+            dm = diebold_mariano(errors["model"], errors["sabit"], overlap)
+            res = (None if not np.isfinite(dm["p_worse"]) else
+                   "geride" if dm["p_worse"] < SIGNIFICANCE else ("üstün" if dm["p_better"] < SIGNIFICANCE else "eşdeğer"))
+            acc = {"B1": None if res is None else res != "geride", "sonuc": res or "değerlendirilemedi (az kayıt)"}
+        row.update({"B1": acc["B1"], "dm_sonuc": acc["sonuc"]})
         summary.append(row)
     return detail, pd.DataFrame(summary)
-
-
-# Önceden kayıtlı (protokol B2): kötümser–iyimser bandın içinde kalan kayıt oranı en az bu kadar olmalı.
-# Hedef %80; açık verilerde kasa bandı %62–100 arasında çıktığı için alt sınır %70 alındı.
-COVERAGE_FLOOR = 0.70
 
 
 if __name__ == "__main__":

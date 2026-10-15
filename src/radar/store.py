@@ -115,8 +115,13 @@ class Store:
         path.parent.mkdir(parents=True, exist_ok=True)
         self.path = path
         self.db = sqlite3.connect(path, check_same_thread=False, timeout=10)
+        # Silinen kayıtlar dosyada sıfırlanır (KVKK Kişisel Veri Güvenliği Rehberi: silme, yok etme).
+        self.db.execute("PRAGMA secure_delete = ON")
         self.db.executescript("""
             CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT);
+            CREATE TABLE IF NOT EXISTS audit_log (
+                id INTEGER PRIMARY KEY AUTOINCREMENT, ts TEXT NOT NULL, action TEXT NOT NULL, detail TEXT,
+                user TEXT);
             CREATE TABLE IF NOT EXISTS events (
                 id INTEGER PRIMARY KEY AUTOINCREMENT, ts TEXT NOT NULL,
                 invoice_id TEXT NOT NULL, kind TEXT NOT NULL, value TEXT);
@@ -194,6 +199,7 @@ class Store:
             self.db.execute(f"DROP TABLE IF EXISTS {name}__onceki")
             self.db.execute(f"ALTER TABLE {name} RENAME TO {name}__onceki")
         df.to_sql(name, self.db, if_exists="replace", index=False)
+        self.audit("dosya yüklendi", f"{name}: {len(df)} satır")
         self._bump()
 
     def can_undo(self, name: str) -> bool:
@@ -208,6 +214,7 @@ class Store:
         self.db.execute(f"DROP TABLE IF EXISTS {name}")
         self.db.execute(f"ALTER TABLE {name}__onceki RENAME TO {name}")
         self.db.commit()
+        self.audit("son yükleme geri alındı", name)
         self._bump()
 
     def backup_bytes(self) -> bytes:
@@ -226,6 +233,7 @@ class Store:
         raw = decrypt_backup(blob, password)
         if not raw.startswith(b"SQLite format 3\x00"):
             raise ValueError("Bu dosya KOBİ Radar yedeği değil.")
+        self.audit("yedekten geri yükleme başladı")
         safety = self.path.with_name(f"{self.path.stem}.geri_yukleme_oncesi_{pd.Timestamp.now():%Y%m%d_%H%M%S}.db")
         safety.write_bytes(self.backup_bytes())
         with tempfile.TemporaryDirectory() as tmp:
@@ -239,6 +247,9 @@ class Store:
             finally:
                 src.close()
         self._pilot_table()
+        self.db.executescript("""CREATE TABLE IF NOT EXISTS audit_log (
+            id INTEGER PRIMARY KEY AUTOINCREMENT, ts TEXT NOT NULL, action TEXT NOT NULL, detail TEXT, user TEXT);""")
+        self.audit("yedekten geri yüklendi", f"önceki veri: {safety.name}")
         self._bump()
         return safety
 
@@ -257,11 +268,40 @@ class Store:
         return df
 
     def clear(self) -> None:
-        """Yüklenen tabloları siler; olay günlüğü ve ayarlar kalır."""
+        """Yüklenen tabloları siler; olay günlüğü ve ayarlar kalır. Silinen sayfalar dosyadan da temizlenir
+        (secure_delete + VACUUM): veri yalnızca tablodan değil, diskteki dosyadan da kalkar."""
         for name in TABLES:
             self.db.execute(f"DROP TABLE IF EXISTS {name}")
             self.db.execute(f"DROP TABLE IF EXISTS {name}__onceki")
+        self.db.commit()
+        self.db.execute("VACUUM")
+        self.audit("tablolar silindi")
         self._bump()
+
+    def audit(self, action: str, detail: str = "") -> None:
+        """İşlem kaydı (KVKK rehberi: erişim ve log kayıtları). Yalnızca eklenir; uygulamada silme yolu yoktur."""
+        self.db.execute("INSERT INTO audit_log (ts, action, detail, user) VALUES (?, ?, ?, ?)",
+                        (pd.Timestamp.now().isoformat(timespec="seconds"), action, detail,
+                         os.environ.get("USERNAME") or os.environ.get("USER") or ""))
+        self.db.commit()
+
+    def audit_log(self, limit: int = 200) -> pd.DataFrame:
+        return pd.read_sql("SELECT ts, action, detail, user FROM audit_log ORDER BY id DESC LIMIT ?", self.db,
+                           params=(limit,))
+
+    def destroy(self) -> list[Path]:
+        """İşletmenin bütün verisini imha eder: veritabanı dosyası ve geri yükleme öncesi kopyaları silinir.
+        Önce içerik sıfırlanır (secure_delete + VACUUM), sonra dosyalar kaldırılır. Dönen: silinen dosyalar."""
+        for (name,) in self.db.execute("SELECT name FROM sqlite_master WHERE type = 'table'").fetchall():
+            if not name.startswith("sqlite_"):
+                self.db.execute(f'DROP TABLE IF EXISTS "{name}"')
+        self.db.commit()
+        self.db.execute("VACUUM")
+        self.db.close()
+        gone = [self.path, *self.path.parent.glob(f"{self.path.stem}.geri_yukleme_oncesi_*.db")]
+        for f in gone:
+            f.unlink(missing_ok=True)
+        return gone
 
     def add_event(self, invoice_id: str, kind: str, value: str = "", ts=None) -> None:
         if kind not in EVENT_KINDS:

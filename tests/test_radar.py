@@ -865,15 +865,19 @@ def test_pilot_report_builds_and_renders(tmp_path):
     later = observe(generate(seed=5, n_customers=20, as_of=AS_OF), pd.Timestamp(AS_OF) + pd.Timedelta(days=60))
     detail, summary = pilot.score([pilot.read_record(page)], later)
     assert list(summary["ufuk_gun"]) == [14, 30] and (detail["gerceklesen"] > 0).all()
-    assert {"B1", "B2", "fark_guven_araligi"} <= set(summary.columns) and set(summary["hedef"]) == {"tahsilat"}
-    assert pilot.passes_b1(3.0, 9.0, float("nan"), None) is None             # karşılaştırma yoksa değerlendirilemedi
-    assert pilot.score([pilot.read_record(page)], obs)[0].empty             # ufuk dolmadan puanlanmaz
+    assert {"B1", "B2", "dm_sonuc", "basel_alt", "fark_guven_araligi"} <= set(summary.columns) and set(summary["hedef"]) == {"tahsilat"}
+    # B1: Diebold-Mariano (HLN) ile; kendi toleransımız yok.
+    rng = np.random.default_rng(1)
+    base = rng.uniform(80, 120, 20)
+    errs = pd.DataFrame({"model": base * 0.6, "medyan": base, "oran": base * 1.1, "vade": base * 2})
+    assert pilot.accuracy_test(errs, 2)["sonuc"] == "üstün"
+    assert pilot.accuracy_test(errs.assign(model=base * 1.6), 2)["sonuc"] == "geride"
+    assert pilot.accuracy_test(errs.assign(model=base * (1 + rng.normal(0, 0.05, 20))), 2)["sonuc"] == "eşdeğer"
+    assert pilot.accuracy_test(errs.assign(medyan=np.nan, oran=np.nan), 2)["B1"] is None
     assert pilot.verdict(pd.DataFrame(), pd.DataFrame()).startswith("Geri test için yeterli geçmiş yok")
-    good = pd.DataFrame({"sapma_model_%": [2.0], "sapma_medyan_%": [3.0], "sapma_vade_%": [9.0], "sapma_oran_%": [3.0]})
-    assert "bütün basit yöntemlerden daha isabetli" in pilot.verdict(None, good)
-    assert "gerisinde" in pilot.verdict(None, good.assign(**{"sapma_oran_%": [-1.0]}))   # oran yöntemi çok iyiyse
-    near = good.assign(**{"sapma_model_%": [4.5]})                         # medyandan 1,5 puan kötü: başa baş
-    assert "başa baş" in pilot.verdict(None, near) and "gerisinde" in pilot.verdict(None, good.assign(**{"sapma_model_%": [6.0]}))
+    assert "anlamlı biçimde daha" in pilot.verdict(None, pd.DataFrame({"dm_sonuc": ["üstün", "eşdeğer"]}))
+    assert "geride" in pilot.verdict(None, pd.DataFrame({"dm_sonuc": ["üstün", "geride"]}))
+    assert {"dm_sonuc", "basel_alt", "kupiec_p", "B1", "B2"} <= set(r["cash"].columns)
     hidden = pilot.render(pilot.build(obs, AS_OF, res=r["res"], label="X", key="gizli"))
     assert not any(name in hidden for name in r["top"]["Müşteri"])           # müşteri adları gizlendi
     assert not any(number in hidden for number in r["top"]["Fatura"])          # fatura numaraları da
@@ -1055,3 +1059,41 @@ def test_combined_model_recalibration_and_widening():
     assert early[50] < 0.35 and (np.diff(early) >= 0).all()               # erken gerçekleşme: kantil aşağı kayar
     res = pipeline.demo(seed=2, as_of=AS_OF, n_sims=300)
     assert res["info"]["widen"] >= 1.0 and res["ctx"]["calib"]["fresh"].get("recal") is not None
+
+
+def test_standards_reproduce_basel_table_and_tests():
+    from radar.standards import basel_zone, diebold_mariano, interval_report, kupiec_pof, passes
+
+    # BCBS 1996, Tablo 2: 250 gözlem, %99 kapsama -> 0-4 yeşil, 5-9 sarı, 10+ kırmızı; 5 için P(X<=5) = %95,88.
+    assert [basel_zone(250, x, 0.01)["zone"] for x in (4, 5, 9, 10)] == ["yeşil", "sarı", "sarı", "kırmızı"]
+    assert basel_zone(250, 5, 0.01)["cum_prob"] == pytest.approx(0.9588, abs=1e-4)
+    assert not kupiec_pof(250, 2, 0.01)["reject"] and kupiec_pof(384, 15, 0.10)["reject"]   # çok az aşım da kusur
+    rep = interval_report(np.arange(100.0), np.arange(100.0) - 5, np.arange(100.0) + 5)
+    assert rep["below"] == 0 and rep["kupiec_central"]["reject"] and not passes(rep)
+    d = diebold_mariano([1.0, 2, 3], [1.0, 2, 3])
+    assert np.isnan(d["stat"])                                                     # 4'ten az gözlem
+
+
+def test_audit_log_secure_delete_destroy_and_panel_password(tmp_path, monkeypatch):
+    from radar import access
+    from radar.store import Store
+
+    monkeypatch.setenv("RADAR_DB", str(tmp_path / "radar.db"))
+    store = Store(tmp_path / "radar.db")
+    secret = "GIZLIMUSTERI-ABC-12345"
+    store.save("invoices", pd.DataFrame({"invoice_id": ["A"], "customer_name": [secret], "amount": [1.0]}))
+    store.clear()
+    assert secret.encode() not in (tmp_path / "radar.db").read_bytes()          # silinen veri dosyada da yok
+    log = store.audit_log()
+    assert list(log["action"][:2]) == ["tablolar silindi", "dosya yüklendi"]
+    (tmp_path / "radar.geri_yukleme_oncesi_20260101_000000.db").write_bytes(b"x")
+    gone = store.destroy()
+    assert len(gone) == 2 and not any(f.exists() for f in gone)
+    assert not access.enabled() and access.check("ne olursa")
+    with pytest.raises(ValueError):
+        access.set_password("kisa")
+    access.set_password("uzun-parola-9")
+    assert access.enabled() and access.check("uzun-parola-9") and not access.check("yanlis-parola")
+    assert "uzun-parola-9" not in access.password_file().read_text(encoding="utf-8")
+    access.remove("uzun-parola-9")
+    assert not access.enabled()

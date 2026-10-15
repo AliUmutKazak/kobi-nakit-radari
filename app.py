@@ -12,7 +12,7 @@ import pandas as pd  # noqa: E402
 import plotly.graph_objects as go  # noqa: E402
 import streamlit as st  # noqa: E402
 
-from radar import actions, anonymize, ingest, mailer, pilot, pipeline  # noqa: E402
+from radar import access, actions, anonymize, ingest, mailer, pilot, pipeline  # noqa: E402
 from radar.reconcile import collection_events, reconcile, sender_key  # noqa: E402
 from radar.store import Store, create_business, encrypt_backup, list_businesses  # noqa: E402
 
@@ -244,6 +244,20 @@ if st.session_state.get("active_business") not in BUSINESSES:
     st.session_state["active_business"] = next(iter(BUSINESSES))
 store = get_store(str(BUSINESSES[st.session_state["active_business"]]))
 
+# İsteğe bağlı panel parolası (ortak kullanılan bilgisayarlar için; KVKK rehberi: kullanıcı hesap yönetimi).
+if access.enabled() and not st.session_state.get("auth_ok"):
+    st.title("KOBİ Nakit Akışı Radarı")
+    attempt = st.text_input("Panel parolası", type="password", key="login_pw")
+    if st.button("Giriş"):
+        if access.check(attempt):
+            st.session_state["auth_ok"] = True
+            store.audit("panel girişi")
+            st.rerun()
+        else:
+            store.audit("başarısız panel girişi")
+            st.error("Parola yanlış.")
+    st.stop()
+
 
 SAMPLE_NAME = "Örnek İşletme (uydurma veri)"
 
@@ -342,6 +356,7 @@ with st.sidebar:
                      "yeniden yazılır. Pilot çalışması için paylaşılacak dosya budur.")
             if has_data and st.button("Takma adlı paketi hazırla"):
                 blob, summary = anonymous_package(store, seller)
+                store.audit("takma adlı paket hazırlandı", f"{summary['fatura']} fatura, {summary['müşteri']} müşteri")
                 st.download_button("Paketi indir (zip)", blob, f"{summary['işletme_takma_adı']}.zip", "application/zip")
                 st.caption(f"{summary['fatura']} fatura, {summary['müşteri']} müşteri, dönem {summary['dönem']}. "
                            "Göndermeden önce zip dosyasını açıp gözle kontrol edin.")
@@ -379,7 +394,8 @@ with st.sidebar:
             backup_pw = st.text_input("Yedek parolası (en az 8 karakter)", type="password", key="backup_pw")
             if len(backup_pw) >= 8:
                 st.download_button("Şifreli yedeği indir", encrypt_backup(store.backup_bytes(), backup_pw),
-                                   f"kobi_radar_yedek_{pd.Timestamp.now():%Y%m%d}.kryedek")
+                                   f"kobi_radar_yedek_{pd.Timestamp.now():%Y%m%d}.kryedek",
+                                   on_click=lambda: store.audit("şifreli yedek indirildi"))
             restore_file = st.file_uploader("Yedekten geri yükle", ["kryedek", "db"], key="restore_file")
             if restore_file is not None:
                 restore_pw = st.text_input("Yedeğin parolası", type="password", key="restore_pw")
@@ -396,6 +412,38 @@ with st.sidebar:
                 for name in ("invoices", "payments", "outflows", "cheques", "payables"):
                     store.set(f"hash_{name}", "")
                 st.rerun()
+            st.write("**İşletmeyi tamamen sil (imha).** Bu işletmenin bütün verisi, kayıtları, pilot kayıtları ve "
+                     "geri yükleme öncesi kopyaları bilgisayardan kalıcı olarak silinir. Geri alınamaz; önce şifreli "
+                     "yedek almayı düşünün.")
+            confirm = st.text_input("Onay için işletmenin adını yazın", key="destroy_confirm")
+            if st.button("Tamamen sil", disabled=confirm.strip() != st.session_state["active_business"]):
+                gone = store.destroy()
+                get_store.clear()
+                st.session_state.pop("active_business", None)
+                st.success(f"{len(gone)} dosya silindi.")
+                st.rerun()
+            st.write("**Panel parolası** (isteğe bağlı; ortak kullanılan bilgisayarlar için).")
+            if access.enabled():
+                old = st.text_input("Mevcut parola", type="password", key="pw_old")
+                if st.button("Parolayı kaldır"):
+                    try:
+                        access.remove(old)
+                        store.audit("panel parolası kaldırıldı")
+                        st.rerun()
+                    except ValueError as err:
+                        st.error(str(err))
+            else:
+                new = st.text_input(f"Yeni parola (en az {access.MIN_LENGTH} karakter)", type="password", key="pw_new")
+                if st.button("Parolayı ayarla"):
+                    try:
+                        access.set_password(new)
+                        st.session_state["auth_ok"] = True
+                        store.audit("panel parolası ayarlandı")
+                        st.rerun()
+                    except ValueError as err:
+                        st.error(str(err))
+            st.caption("İşlem kayıtları: yükleme, paket, yedek, geri yükleme, silme ve giriş denemeleri "
+                       "'Tahmin doğruluğu' sekmesinin altında görünür.")
 
         if float(store.get("opening", 0)) != float(opening):
             store.set("opening_date", f"{pd.Timestamp.now():%Y-%m-%d}")     # kapanış kasası ölçümü için
@@ -717,6 +765,7 @@ with tab_accuracy:
         seller_name = (store.get("seller", "") if own else "Demo şirket") or "İşletme"
         label = anonymize.firm_alias(secret_key(store), seller_name) if hide and own else seller_name
         page = run_pilot(res_key, res, label, hide)
+        store.audit("pilot raporu hazırlandı", "adlar gizli" if hide else "adlar açık")
         st.download_button("Raporu indir (HTML; tarayıcıda açıp yazdırabilirsiniz)", page,
                            f"pilot_raporu_{pd.Timestamp(res['as_of']):%Y%m%d}.html", "text/html")
     records = store.pilot_records() if own else pd.DataFrame()
@@ -735,7 +784,7 @@ with tab_accuracy:
                     hedef=summary["hedef"].map({"tahsilat": "Tahsilat", "kasa": "Kapanış kasası"}),
                     fark_guven_araligi=summary["fark_guven_araligi"].map(
                         lambda v: f"{v[0]:+.1f} / {v[1]:+.1f} puan" if isinstance(v, tuple) else "az kayıt"),
-                    **{c: summary[c].map(lambda v: verdict.get(v if v == v else None, "–"))
+                    **{c: summary[c].map(lambda v: verdict.get(v if isinstance(v, bool) else None, "–"))
                        for c in ("B1", "B2") if c in summary})
                 show_table(view.rename(columns={
                     "hedef": "Hedef", "ufuk_gun": "Ufuk (gün)", "kayit": "Kayıt", "uyarili_kayit": "Uyarılı (dışarıda)",
@@ -743,10 +792,16 @@ with tab_accuracy:
                     "sapma_oran_%": "Tahsilat oranı (%)", "sapma_vade_%": "Vadesinde öder (%)",
                     "sapma_sabit_%": "Kasa değişmez (%)", "bant_ici": "Bant içinde",
                     "bant_genisligi_%": "Bant genişliği (%)", "aralik_skoru_%": "Aralık skoru (%)",
-                    "fark_guven_araligi": "Model eksi en iyi basit yöntem, %90 aralık"}), width="stretch", hide_index=True)
-                st.caption("Haftalık kayıtların ufukları üst üste bindiği için kayıtlar bağımsız sayılmaz; aralık, "
-                           "ardışık haftalar birlikte yeniden örneklenerek hesaplanır. B1'deki 2 puanlık pay istatistiksel "
-                           "bir test değil, önceden seçilmiş işletme toleransıdır.")
+                    "fark_guven_araligi": "Model eksi en iyi basit yöntem, %90 aralık",
+                    "dm_sonuc": "İsabet testi (Diebold-Mariano)", "alt_asim": "Kötümserin altı (adet)",
+                    "ust_asim": "İyimserin üstü (adet)", "basel_alt": "Basel bölgesi (alt uç)",
+                    "kupiec_p": "Kupiec p değeri", "B1": "B1 (isabet)", "B2": "B2 (aralık)"}),
+                    width="stretch", hide_index=True)
+                st.caption("Ölçütler uluslararası standartlardır, kendi eşiğimiz yoktur. B1: Diebold-Mariano testi "
+                           "(Harvey-Leybourne-Newbold düzeltmesi, %5): model basit yöntemlerden anlamlı biçimde kötü "
+                           "değilse geçer. B2: kötümser uç için Basel Komitesi trafik ışığı (BIS 1996) yeşil ve Kupiec "
+                           "(1995) kapsama testleri reddetmiyorsa geçer. Haftalık kayıtların ufukları üst üste bindiği "
+                           "için kayıtlar bağımsız sayılmaz; testler bunu hesaba katar.")
             else:
                 st.caption("Henüz süresi dolan kayıt yok: ilk karşılaştırma, ilk kayıttan 7–14 gün sonra yapılır.")
             show_table(records.drop(columns=["created", "meta"]).rename(columns={
@@ -755,6 +810,14 @@ with tab_accuracy:
                 "naive_due": "Vadesinde öder (TL)", "naive_median": "Müşteri medyanı (TL)",
                 "naive_rate": "Tahsilat oranı (TL)", "naive_flat": "Kasa değişmez (TL)", "opening": "O günkü kasa (TL)"}),
                 width="stretch", hide_index=True)
+
+    if own:
+        with st.expander("İşlem kayıtları (son 200)"):
+            st.caption("Yükleme, takma adlı paket, yedek, geri yükleme, silme ve giriş denemeleri buraya yazılır; "
+                       "uygulama içinden silinemez (KVKK Kişisel Veri Güvenliği Rehberi: log kayıtları).")
+            show_table(store.audit_log().rename(columns={"ts": "Zaman", "action": "İşlem", "detail": "Ayrıntı",
+                                                         "user": "Windows kullanıcısı"}),
+                       width="stretch", hide_index=True)
 
 with tab_collect:
     st.subheader("Öncelikli tahsilat listesi")
