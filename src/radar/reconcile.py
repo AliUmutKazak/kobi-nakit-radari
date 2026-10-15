@@ -93,6 +93,25 @@ def subset_match(amounts: pd.Series, target: float, tol: float = 0.01, max_items
     return None
 
 
+def collection_events(invoices: pd.DataFrame, allocations: pd.DataFrame | None = None, tol: float = 0.01) -> pd.DataFrame:
+    """Tahsilat olayları (tarih, fatura, tutar): gerçekleşen tahsilatın ölçüldüğü tablo.
+
+    Banka eşleştirmesinin her dağıtımı ayrı bir olaydır; kısmi ödemeler kendi tarihleriyle sayılır. Banka
+    kaydı olmayan ama dosyada ödendiği görünen faturalarda, bankadan gelmeyen kısım ödeme tarihinde tek
+    olaydır. Dosyada "kalan" tutarı düşük görünüp ödeme tarihi olmayan kısmi ödemelerin tarihi bilinmez;
+    bunlar olay üretmez (ölçümde yok sayılır, tahminde zaten açık tutar üzerinden çalışılır)."""
+    cols = ["date", "invoice_id", "amount"]
+    alloc = (allocations[cols] if allocations is not None and len(allocations) else pd.DataFrame(columns=cols))
+    covered = alloc.groupby("invoice_id")["amount"].sum()
+    paid = invoices[invoices["paid_date"].notna()]
+    rest = paid["amount"].astype(float) - paid["invoice_id"].map(covered).fillna(0.0)
+    extra = pd.DataFrame({"date": paid["paid_date"], "invoice_id": paid["invoice_id"], "amount": rest})[rest > tol]
+    out = pd.concat([alloc, extra], ignore_index=True)
+    out["date"] = pd.to_datetime(out["date"])
+    out["amount"] = out["amount"].astype(float)
+    return out.sort_values("date").reset_index(drop=True)
+
+
 def reconcile(invoices: pd.DataFrame, payments: pd.DataFrame, tol: float = 0.01, aliases: dict[str, str] | None = None):
     """invoices: invoice_id, customer_id, customer_name, vkn, due_date, open_amount
     payments: date, amount, description

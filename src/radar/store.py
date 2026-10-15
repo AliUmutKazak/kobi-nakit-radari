@@ -16,7 +16,7 @@ import pandas as pd
 
 TABLES = {"invoices": ["issue_date", "due_date", "paid_date", "promised_date"],
           "payments": ["date"], "outflows": ["date"], "cheques": ["date"], "payables": ["date"]}
-EVENT_KINDS = ("dispute", "promise", "message")
+EVENT_KINDS = ("dispute", "promise", "message", "writeoff")
 
 
 def default_path() -> Path:
@@ -88,15 +88,35 @@ class Store:
             CREATE TABLE IF NOT EXISTS events (
                 id INTEGER PRIMARY KEY AUTOINCREMENT, ts TEXT NOT NULL,
                 invoice_id TEXT NOT NULL, kind TEXT NOT NULL, value TEXT);
-            CREATE TABLE IF NOT EXISTS pilot_records (
-                as_of TEXT NOT NULL, horizon INTEGER NOT NULL, until TEXT NOT NULL,
-                p10 REAL, p50 REAL, p90 REAL, naive_due REAL, naive_median REAL, naive_rate REAL,
-                created TEXT NOT NULL, PRIMARY KEY (as_of, horizon));
         """)
+        self._pilot_table()
         if self.get("business_id") is None:
             # İşletmenin kalıcı kimliği: anonimleştirme anahtarı işletme başına bundan türetilir.
             self.db.execute("INSERT OR IGNORE INTO settings VALUES ('business_id', ?)", (secrets.token_hex(16),))
             self.db.commit()
+
+    PILOT_COLUMNS = ["target", "horizon", "until", "p10", "p50", "p90", "naive_due", "naive_median", "naive_rate",
+                     "naive_flat"]
+
+    def _pilot_table(self) -> None:
+        """İleriye dönük pilot kayıtları. Hedef: "tahsilat" (açık faturalardan) ya da "kasa" (kapanış kasası).
+        İlk sürümün tablosu (hedef sütunu yok) kayıplar olmadan yeni biçime taşınır."""
+        ddl = """CREATE TABLE IF NOT EXISTS pilot_records (
+            as_of TEXT NOT NULL, target TEXT NOT NULL DEFAULT 'tahsilat', horizon INTEGER NOT NULL, until TEXT NOT NULL,
+            p10 REAL, p50 REAL, p90 REAL, naive_due REAL, naive_median REAL, naive_rate REAL, naive_flat REAL,
+            opening REAL, meta TEXT, created TEXT NOT NULL, PRIMARY KEY (as_of, target, horizon))"""
+        cols = [r[1] for r in self.db.execute("PRAGMA table_info(pilot_records)")]
+        if cols and "target" not in cols:
+            self.db.execute("ALTER TABLE pilot_records RENAME TO pilot_records_v1")
+            self.db.execute(ddl)
+            self.db.execute("""INSERT INTO pilot_records (as_of, target, horizon, until, p10, p50, p90, naive_due,
+                               naive_median, naive_rate, created)
+                               SELECT as_of, 'tahsilat', horizon, until, p10, p50, p90, naive_due, naive_median,
+                               naive_rate, created FROM pilot_records_v1""")
+            self.db.execute("DROP TABLE pilot_records_v1")
+        else:
+            self.db.execute(ddl)
+        self.db.commit()
 
     @property
     def business_id(self) -> str:
@@ -196,22 +216,34 @@ class Store:
                         (ts.isoformat(), str(invoice_id), kind, str(value)))
         self._bump()
 
-    def add_pilot_record(self, as_of, record: pd.DataFrame) -> bool:
-        """İleriye dönük pilot kaydı. Kayıt dondurulmuştur: aynı tarih için ikinci kez yazılmaz, değiştirilmez,
-        "Tabloları sil" ile de silinmez. Önbelleği bozmamak için sürüm numarasını artırmaz."""
+    def add_pilot_record(self, as_of, record: pd.DataFrame, opening: float | None = None,
+                         meta: dict | None = None) -> bool:
+        """İleriye dönük pilot kaydı. Kayıt dondurulmuştur: aynı tarih ve hedef için ikinci kez yazılmaz,
+        değiştirilmez, "Tabloları sil" ile de silinmez. `meta`: kesim tarihi, veri özeti, yöntem, sürüm,
+        eşleşme oranı ve kapsam (sonradan "hangi veriyle, hangi kodla" sorusunu cevaplamak için).
+        Önbelleği bozmamak için sürüm numarasını artırmaz."""
+        import json
         as_of = f"{pd.Timestamp(as_of):%Y-%m-%d}"
-        cols = ["horizon", "until", "p10", "p50", "p90", "naive_due", "naive_median", "naive_rate"]
+        rec = record.reindex(columns=self.PILOT_COLUMNS)
+        rec["target"] = rec["target"].fillna("tahsilat")
+
+        def cell(col, v):
+            if v is None or (not isinstance(v, str) and pd.isna(v)):
+                return None
+            return v if col in ("target", "until") else (int(v) if col == "horizon" else float(v))
+
         before = self.db.total_changes
         self.db.executemany(
-            "INSERT OR IGNORE INTO pilot_records VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            [(as_of, *[None if pd.isna(v) else (int(v) if c == "horizon" else v if c == "until" else float(v))
-                       for c, v in zip(cols, row)], pd.Timestamp.now().isoformat(timespec="seconds"))
-             for row in record[cols].itertuples(index=False)])
+            "INSERT OR IGNORE INTO pilot_records VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            [(as_of, *[cell(c, v) for c, v in zip(self.PILOT_COLUMNS, row)],
+              None if opening is None else float(opening), json.dumps(meta or {}, ensure_ascii=False, default=str),
+              pd.Timestamp.now().isoformat(timespec="seconds"))
+             for row in rec.itertuples(index=False)])
         self.db.commit()
         return self.db.total_changes > before
 
     def pilot_records(self) -> pd.DataFrame:
-        return pd.read_sql("SELECT * FROM pilot_records ORDER BY as_of, horizon", self.db)
+        return pd.read_sql("SELECT * FROM pilot_records ORDER BY as_of, target, horizon", self.db)
 
     def events(self) -> pd.DataFrame:
         df = pd.read_sql("SELECT * FROM events ORDER BY id", self.db)
@@ -238,6 +270,13 @@ class Store:
                 inv.loc[hit, col] = ids[hit].map(values).to_numpy()
         if "message" in last.index.get_level_values("kind"):
             inv["last_contact"] = ids.map(last.xs("message", level="kind")["ts"])
+        # Tahsil edilemez sayılan (silinen) fatura: açık alacaktan ve tahminden çıkar, ödenmiş sayılmaz;
+        # modelin "hiç ödenmeme" oranını öğrendiği geçmişte ödenmemiş olarak kalır.
+        inv["written_off"] = False
+        if "writeoff" in last.index.get_level_values("kind"):
+            gone = ids.map(last.xs("writeoff", level="kind")["value"]).eq("1")
+            inv.loc[gone, "written_off"] = True
+            inv.loc[gone & inv["paid_date"].isna(), "open_amount"] = 0.0
         inv["disputed"] = inv["disputed"].astype(bool)
         inv["promised_date"] = pd.to_datetime(inv["promised_date"])
         return inv

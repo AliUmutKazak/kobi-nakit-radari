@@ -1,4 +1,4 @@
-"""Pilot için veri anonimleştirme (takma adlandırma).
+"""Pilot için takma adlandırma (anonimleştirme değildir).
 
 Mali müşavir ya da işletme, dosyaları paylaşmadan önce kendi bilgisayarında çalıştırır:
 
@@ -12,7 +12,7 @@ Mali müşavir ya da işletme, dosyaları paylaşmadan önce kendi bilgisayarın
   yalnızca "eşleşmedi" kalır.
 - Fatura numaraları da takma numaralarla değişir: GİB biçimindeki numaranın ilk üç harfi işletmeye
   özgü seridir; cari ekstreden okunan numarasız satırlarda ise kimlik müşteri adından üretilir.
-  Takma numara GİB biçimindedir (ANO + yıl + 9 hane), böylece banka eşleştirmesi anonim veride de çalışır.
+  Takma numara GİB biçimindedir (ANO + yıl + 9 hane), böylece banka eşleştirmesi takma adlı veride de çalışır.
 - Tutar ve tarihler korunur: tahminin dayandığı bilgi bunlardır.
 
 Sınır: Tutar ve tarih örüntüleri, dış bilgiyle birleştirildiğinde bir işletmeyi tanınabilir kılabilir.
@@ -143,38 +143,69 @@ def _safe_label(value) -> str:
 
 
 def package(company: str, invoices: pd.DataFrame, key: str, payments: pd.DataFrame | None = None,
-            extra: dict[str, pd.DataFrame] | None = None, records: pd.DataFrame | None = None) -> tuple[bytes, dict]:
-    """Bir işletmenin anonimleştirilmiş dosyalarını zip olarak verir; yanında ne yapıldığının özeti.
+            extra: dict[str, pd.DataFrame] | None = None, records: pd.DataFrame | None = None,
+            round_to: float | None = None, retention_days: int = 30) -> tuple[bytes, dict]:
+    """Bir işletmenin takma adlandırılmış dosyalarını zip olarak verir; yanında ne yapıldığının özeti.
 
-    `invoices` ve `payments` henüz anonimleştirilmemiş standart tablolardır; `extra` (giderler, çekler)
-    yalnızca tarih ve tutar içerir, açıklamaları atılır."""
+    `invoices` ve `payments` henüz takma adlandırılmamış standart tablolardır; `extra` (giderler, çekler)
+    yalnızca tarih ve tutar içerir, açıklamaları atılır. `round_to` verilirse bütün tutarlar o birime
+    yuvarlanır (ör. 100 TL): tekil büyük tutarlarla tanınma riskini azaltır, eşleştirme ve tahmin isabetinden
+    biraz kaybettirir. BENİ_OKU.txt veri sınıfını, saklama süresini ve her dosyanın SHA-256 özetini içerir;
+    alıcı, dosyaların yolda değişmediğini bu özetlerle doğrular."""
+    rnd = (lambda s: (s.astype(float) / round_to).round() * round_to) if round_to else (lambda s: s)
     firm = firm_alias(key, company)
     anon_inv = anonymize_invoices(invoices, key)
+    for col in ("amount", "open_amount"):
+        anon_inv[col] = rnd(anon_inv[col])
     summary = {"işletme_takma_adı": firm, "fatura": len(anon_inv), "müşteri": int(anon_inv["customer_id"].nunique()),
                "dönem": f"{invoices['issue_date'].min():%d.%m.%Y} – {invoices['issue_date'].max():%d.%m.%Y}",
-               "silinen_alanlar": "unvan ve VKN takma adla değişti; e-posta ve telefon silindi"}
+               "silinen_alanlar": "unvan, VKN/TCKN ve fatura numarası takma adla değişti; e-posta ve telefon silindi"}
+    files = {"faturalar.csv": to_csv_bytes(anon_inv, INVOICE_COLUMNS)}
+    if payments is not None and len(payments):
+        anon_pay = anonymize_payments(payments, invoices, key)
+        anon_pay["amount"] = rnd(anon_pay["amount"])
+        files["ekstre.csv"] = to_csv_bytes(anon_pay, PAYMENT_COLUMNS)
+        summary["banka_satırı"] = len(anon_pay)
+        summary["eşleşmeyen_banka_satırı"] = int((anon_pay["description"] == "GELEN | eşleşmedi").sum())
+        summary["silinen_alanlar"] += "; banka açıklamaları tümüyle yeniden yazıldı"
+    for name, frame in (extra or {}).items():
+        if frame is not None and len(frame):
+            safe = frame[[c for c in ("date", "amount", "label") if c in frame]].copy()
+            safe["amount"] = rnd(safe["amount"])
+            if "label" in safe:
+                safe["label"] = safe["label"].map(_safe_label)
+            files[f"{name}.csv"] = to_csv_bytes(safe, {"date": "Vade", "amount": "Tutar", "label": "Kalem"}
+                                                if "label" in safe else {"date": "Vade", "amount": "Tutar"})
+    if records is not None and len(records):
+        # İleriye dönük pilot kayıtları yalnızca tarih, ufuk ve tutar içerir; olduğu gibi aktarılır.
+        files["pilot_kayitlari.csv"] = records.to_csv(index=False).encode("utf-8-sig")
+        summary["pilot_kaydı"] = int(records["as_of"].nunique())
+    if round_to:
+        summary["yuvarlama"] = f"bütün tutarlar {round_to:,.0f} TL'ye yuvarlandı".replace(",", ".")
+    today = pd.Timestamp.now().normalize()
+    readme = [
+        "KOBİ Nakit Akışı Radarı pilotu için hazırlanmış veri paketi.",
+        "",
+        "Veri sınıfı: TAKMA ADLANDIRILMIŞ GİZLİ TİCARİ VERİ. Anonim değildir: tutar ve tarih örüntüleri dış bilgiyle",
+        "birleştirildiğinde işletmeyi ya da müşterisini tanınabilir kılabilir. Ticari sır olarak korunur.",
+        "Veri en aza indirme: yalnızca tahmin ve ölçüm için gereken alanlar (takma kimlik, tarih, tutar) vardır.",
+        f"Hazırlanma tarihi: {today:%d.%m.%Y}. Saklama: pilot bitiminden itibaren en geç {retention_days} gün "
+        "(pilot protokolü Ek A, madde 5); işletmenin talebiyle 7 gün içinde silinir.",
+        "Taşıma: parolalı arşiv (7-Zip, AES-256) ya da uçtan uca şifreli kanal; parola ayrı kanaldan. "
+        "Şifresiz e-posta eki kullanılmaz.",
+        "Takma adları üreten anahtar paylaşılmaz; yalnızca veriyi hazırlayanın bilgisayarındadır.",
+        "",
+        *[f"{k}: {v}" for k, v in summary.items()],
+        "",
+        "Dosya özetleri (SHA-256):",
+        *[f"  {name}  {hashlib.sha256(data).hexdigest()}" for name, data in files.items()],
+    ]
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
-        z.writestr(f"{firm}/faturalar.csv", to_csv_bytes(anon_inv, INVOICE_COLUMNS))
-        if payments is not None and len(payments):
-            anon_pay = anonymize_payments(payments, invoices, key)
-            z.writestr(f"{firm}/ekstre.csv", to_csv_bytes(anon_pay, PAYMENT_COLUMNS))
-            summary["banka_satırı"] = len(anon_pay)
-            summary["eşleşmeyen_banka_satırı"] = int((anon_pay["description"] == "GELEN | eşleşmedi").sum())
-            summary["silinen_alanlar"] += "; banka açıklamaları tümüyle yeniden yazıldı"
-        for name, frame in (extra or {}).items():
-            if frame is not None and len(frame):
-                cols = {c: c for c in ("date", "amount", "label") if c in frame}
-                safe = frame[list(cols)].copy()
-                if "label" in safe:
-                    safe["label"] = safe["label"].map(_safe_label)
-                z.writestr(f"{firm}/{name}.csv",
-                           to_csv_bytes(safe, {"date": "Vade", "amount": "Tutar", "label": "Kalem"} if "label" in safe
-                                        else {"date": "Vade", "amount": "Tutar"}))
-        if records is not None and len(records):
-            # İleriye dönük pilot kayıtları yalnızca tarih ve tutar içerir; olduğu gibi aktarılır.
-            z.writestr(f"{firm}/pilot_kayitlari.csv", records.to_csv(index=False).encode("utf-8-sig"))
-            summary["pilot_kaydı"] = int(records["as_of"].nunique())
-        z.writestr(f"{firm}/BENİ_OKU.txt", ("Bu klasör KOBİ Nakit Akışı Radarı pilotu için anonimleştirildi.\r\n"
-                                            + "\r\n".join(f"{k}: {v}" for k, v in summary.items())).encode("utf-8-sig"))
+        for name, data in files.items():
+            z.writestr(f"{firm}/{name}", data)
+        z.writestr(f"{firm}/BENİ_OKU.txt", "\r\n".join(readme).encode("utf-8-sig"))
+    summary["dosya_özetleri"] = {name: hashlib.sha256(data).hexdigest() for name, data in files.items()}
     return buf.getvalue(), summary
+
+

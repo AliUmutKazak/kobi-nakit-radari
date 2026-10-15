@@ -225,7 +225,7 @@ def weekly_table(res: dict, weeks: int = 13) -> pd.DataFrame:
                      "Açık faturalardan beklenen (TL)": float(in_week[~projected].sum()) + chq,
                      "Yeni satışlardan beklenen (TL)": float(in_week[projected].sum()),
                      "Bilinen çıkışlar (TL)": float(out_amt[(out_off >= lo) & (out_off <= hi)].sum()),
-                     "Hafta sonu kasa, beklenen (TL)": float(sim.p50[hi]),
+                     "Hafta sonu kasa, orta (P50) (TL)": float(sim.p50[hi]),
                      "Hafta sonu kasa, kötümser (TL)": float(sim.p10[hi]),
                      "Eksiye düşme olasılığı": float(sim.prob_negative[lo:hi + 1].max())})
     return pd.DataFrame(rows)

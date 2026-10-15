@@ -13,7 +13,7 @@ import plotly.graph_objects as go  # noqa: E402
 import streamlit as st  # noqa: E402
 
 from radar import actions, anonymize, ingest, mailer, pilot, pipeline  # noqa: E402
-from radar.reconcile import reconcile, sender_key  # noqa: E402
+from radar.reconcile import collection_events, reconcile, sender_key  # noqa: E402
 from radar.store import Store, create_business, list_businesses  # noqa: E402
 
 ROOT = Path(__file__).parent
@@ -142,24 +142,34 @@ def run_own(path: str, rev: int, as_of: str, include_projected: bool):
     obs = store.apply_events(store.load("invoices"), as_of)
     obs = obs[obs["issue_date"] <= pd.Timestamp(as_of)]
     payments = store.load("payments")
+    allocations, match_rate = None, None
     if payments is not None:
         payments = payments[payments["date"] <= pd.Timestamp(as_of)]
-        obs, _, unmatched = reconcile(obs, payments, aliases=json.loads(store.get("sender_aliases", "{}")))
-        notes.append(f"Ekstre: {len(payments)} tahsilatın {len(payments) - len(unmatched)} tanesi faturalarla eşleşti.")
+        obs, allocations, unmatched = reconcile(obs, payments, tol=float(store.get("match_tol", 0.01)),
+                                                aliases=json.loads(store.get("sender_aliases", "{}")))
+        incoming = float(payments["amount"].sum())
+        match_rate = 1 - float(unmatched["amount"].sum()) / incoming if len(unmatched) and incoming else 1.0
+        notes.append(f"Ekstre: {len(payments)} tahsilatın {len(payments) - len(unmatched)} tanesi faturalarla eşleşti "
+                     f"(tutarın %{match_rate * 100:.0f}'i).")
         if len(unmatched):
             notes.append(f"Eşleşmeyen tahsilat tutarı: {tl(unmatched['amount'].sum())} "
                          "(müşterisi bulunamayan ya da fazla ödeme).")
     outflows, cheques, payables = store.load("outflows"), store.load("cheques"), store.load("payables")
     notes += json.loads(store.get("notes_cheques", "[]"))
+    # Nakit takvimi için her çıkışın kaynağı ve kesinliği.
+    if outflows is not None:
+        outflows = outflows.assign(kaynak="Gider dosyası", tur="Planlı (dosyadan)")
     fixed = {k: float(store.get(f"fixed_{k}", 0)) for k in ("payroll", "muhtasar", "sgk", "kdv", "rent")}
     if any(fixed.values()):
         plan = ingest.fixed_cost_plan(as_of, payroll_day=int(float(store.get("fixed_payroll_day", 1))),
                                       rent_day=int(float(store.get("fixed_rent_day", 1))), **fixed)
         notes.append(f"Aylık sabit giderlerden {len(plan)} ödeme ({tl(plan['amount'].sum())}) eklendi.")
+        plan = plan.assign(kaynak="Aylık sabit giderler", tur="Varsayım (elle girilen)")
         outflows = plan if outflows is None else pd.concat([outflows, plan], ignore_index=True)
     if payables is not None:
         flows, n = ingest.payables_to_outflows(payables, as_of)
         notes += n + [f"Ödenecek faturalar: {len(payables)} adet, {tl(payables['amount'].sum())}."]
+        flows = flows.assign(kaynak="Ödenecek faturalar", tur="Kesin (borç faturası)")
         outflows = flows if outflows is None else pd.concat([outflows, flows], ignore_index=True)
     if cheques is not None:
         notes.append(f"Çek/senet portföyü: {len(cheques)} adet, {tl(cheques['amount'].sum())}.")
@@ -169,9 +179,14 @@ def run_own(path: str, rev: int, as_of: str, include_projected: bool):
     # Verideki son hareket: bundan sonraki ödemeler bilinmez, ödenmemiş görünür.
     dates = [obs["issue_date"].max(), obs["paid_date"].max()] + ([payments["date"].max()] if payments is not None else [])
     last = max(d for d in dates if pd.notna(d))
+    scope = {"banka_ekstresi": payments is not None, "gider_dosyasi": store.load("outflows") is not None,
+             "sabit_giderler": any(fixed.values()), "odenecek_faturalar": payables is not None,
+             "cekler": cheques is not None, "yeni_satislar": include_projected}
     return {k: res[k] for k in KEEP} | {"notes": notes, "has_outflows": outflows is not None,
                                         "unmatched": unmatched if payments is not None else None, "last_activity": last,
-                                        "n_payments": len(payments) if payments is not None else None}
+                                        "n_payments": len(payments) if payments is not None else None,
+                                        "events": collection_events(obs, allocations), "match_rate": match_rate,
+                                        "scope": scope, "cheques": cheques}
 
 
 @st.cache_data(show_spinner="Açığı kapatacak tahsilat hesaplanıyor...")
@@ -301,11 +316,11 @@ with st.sidebar:
                 port=int(st.number_input("Port", 1, 65535, int(store.get("smtp_port", 587)))),
                 username=st.text_input("Kullanıcı adı (e-posta adresiniz)", store.get("smtp_user", "")),
                 password=st.text_input("Parola", type="password"))
-        with st.expander("5. Pilot: anonim veri paketi"):
+        with st.expander("5. Pilot: takma adlı veri paketi"):
             st.write("Yüklediğiniz dosyaların, müşteri adları ve vergi numaraları takma adlarla değiştirilmiş bir "
                      "kopyası. Tutar ve tarihler aynen kalır; e-posta ve telefon silinir; banka açıklamaları tümüyle "
                      "yeniden yazılır. Pilot çalışması için paylaşılacak dosya budur.")
-            if has_data and st.button("Anonim paketi hazırla"):
+            if has_data and st.button("Takma adlı paketi hazırla"):
                 blob, summary = anonymous_package(store, seller)
                 st.download_button("Paketi indir (zip)", blob, f"{summary['işletme_takma_adı']}.zip", "application/zip")
                 st.caption(f"{summary['fatura']} fatura, {summary['müşteri']} müşteri, dönem {summary['dönem']}. "
@@ -316,7 +331,7 @@ with st.sidebar:
                                    store.get("pilot_on", "0") == "1",
                                    help="Panel haftada bir, bugünün tahmininden önümüzdeki 14 ve 30 günün tahsilat "
                                         "tahminini kaydeder. Kayıtlar değiştirilemez; süre dolunca gerçekleşenle "
-                                        "karşılaştırılır ve anonim pakete eklenir.")
+                                        "karşılaştırılır ve takma adlı pakete eklenir.")
             store.set("pilot_on", int(pilot_on))
         with st.expander("Diğer ayarlar"):
             terms = st.number_input("Vadesi yazmayan faturalar için vade (gün)", 0, 365, int(store.get("terms", 30)),
@@ -345,6 +360,8 @@ with st.sidebar:
                     store.set(f"hash_{name}", "")
                 st.rerun()
 
+        if float(store.get("opening", 0)) != float(opening):
+            store.set("opening_date", f"{pd.Timestamp.now():%Y-%m-%d}")     # kapanış kasası ölçümü için
         for key, value in (("opening", opening), ("terms", int(terms)), ("seller", seller), ("rates", rates_text),
                            ("iban", iban), ("bank", bank), ("smtp_host", mail.host), ("smtp_port", mail.port),
                            ("smtp_user", mail.username)):
@@ -428,9 +445,20 @@ if stale is not None and (pd.Timestamp(res["as_of"]) - stale).days > 7:
 if own and store.get("pilot_on", "0") == "1" and pilot.record_due(store.pilot_records(), res["as_of"],
                                                                   res.get("last_activity")) is None:
     with st.spinner("Bu haftanın pilot kaydı alınıyor; yarım dakika kadar sürer..."):
-        weekly = pilot.forward_record(res["obs"], res["as_of"])
-    if store.add_pilot_record(res["as_of"], weekly):
+        weekly = pd.concat([pilot.forward_record(res["obs"], res["as_of"]), pilot.cash_record(res)], ignore_index=True)
+    digest = hashlib.sha256("|".join(store.get(f"hash_{n}", "") for n in
+                                     ("invoices", "payments", "outflows", "payables", "cheques")).encode()).hexdigest()
+    meta = {"surum": pilot.VERSION, "kesim": f"{pd.Timestamp(res['as_of']):%Y-%m-%d}",
+            "son_hareket": f"{res['last_activity']:%Y-%m-%d}", "veri_ozeti": digest[:16],
+            "yontem": "müşteri medyanı (basit)" if res["simple_model"] else "LightGBM kantil",
+            "eslesme_orani": res.get("match_rate"), "kapsam": res.get("scope", {}),
+            "acilis_guncel": store.get("opening_date") == f"{pd.Timestamp(res['as_of']):%Y-%m-%d}"}
+    if store.add_pilot_record(res["as_of"], weekly, opening=res["opening"], meta=meta):
         st.toast("Bu haftanın pilot kaydı alındı.")
+    if res.get("match_rate") is not None and res["match_rate"] < pilot.MIN_MATCH_RATE:
+        st.warning(f"Banka tahsilatlarının yalnızca %{res['match_rate'] * 100:.0f}'i faturalarla eşleşti. Bu haftanın "
+                   "pilot kaydı uyarılı sayılır ve doğruluk ölçümüne girmez; eşleşmeyenleri 'Tahsilat işleri' "
+                   "sekmesinden müşterilere bağlayın.")
 if m["delay_trend_days"] >= 3:
     st.warning(f"Müşterilerinizin ödemeleri son 90 günde, önceki 90 güne göre medyan {m['delay_trend_days']:.0f} gün "
                "daha geç geliyor. Gecikmeler uzamaya devam ederse tahmin iyimser kalabilir; kötümser çizgiyi esas alın.")
@@ -473,7 +501,7 @@ with tab_cash:
     fig.add_scatter(x=sim.dates, y=sim.p90, line=dict(width=0), showlegend=False, hoverinfo="skip")
     fig.add_scatter(x=sim.dates, y=sim.p10, fill="tonexty", line=dict(width=0), name="Olası aralık (%80)",
                     fillcolor="rgba(31,119,180,0.2)")
-    fig.add_scatter(x=sim.dates, y=sim.p50, name="Beklenen", line=dict(color="rgb(31,119,180)"))
+    fig.add_scatter(x=sim.dates, y=sim.p50, name="Orta tahmin (P50)", line=dict(color="rgb(31,119,180)"))
     fig.add_hline(y=0, line_dash="dash", line_color="crimson")
     fig.update_layout(height=380, margin=dict(l=0, r=0, t=10, b=0), yaxis_title="Kasa (TL)", hovermode="x unified")
     turkish_axes(fig)
@@ -512,7 +540,7 @@ with tab_cash:
         fig2 = go.Figure()
         fig2.add_scatter(x=sim.dates, y=sim.p10, name="Kötümser, bugünkü durum", line=dict(color="crimson", dash="dot"))
         fig2.add_scatter(x=alt.dates, y=alt.p10, name="Kötümser, senaryo", line=dict(color="crimson"))
-        fig2.add_scatter(x=alt.dates, y=alt.p50, name="Beklenen, senaryo", line=dict(color="rgb(31,119,180)"))
+        fig2.add_scatter(x=alt.dates, y=alt.p50, name="Orta tahmin (P50), senaryo", line=dict(color="rgb(31,119,180)"))
         fig2.add_hline(y=0, line_dash="dash", line_color="gray")
         fig2.update_layout(height=320, margin=dict(l=0, r=0, t=10, b=0), yaxis_title="Kasa (TL)", hovermode="x unified")
         turkish_axes(fig2)
@@ -541,7 +569,7 @@ with tab_accuracy:
             st.info("Geri test için yeterli geçmiş yok: en az 9 aylık fatura ve ödeme kaydı gerekir.")
         else:
             st.write(f"{len(bt)} test tarihinin {int(bt['inside'].sum())} tanesinde gerçekleşen tahsilat, "
-                     f"tahmin bandının içinde kaldı. Beklenen değerin ortalama sapması: "
+                     f"tahmin bandının içinde kaldı. Orta tahminin (P50) ortalama sapması: "
                      f"%{bt['err_p50_pct'].mean():+.0f}.")
             mae = {k: bt[c].abs().mean() for k, c in (("model", "err_p50_pct"), ("vade", "err_due_pct"),
                                                       ("medyan", "err_median_pct"), ("oran", "err_rate_pct"))}
@@ -553,7 +581,7 @@ with tab_accuracy:
                         "**Model sizin verinizde basit yöntemlerden daha isabetli değil;** tahminlere temkinli yaklaşın."))
             show_table(bt.rename(columns={
                 "origin": "Tahmin tarihi", "actual": "Gerçekleşen (TL)", "p10": "Kötümser (TL)",
-                "p50": "Beklenen (TL)", "p90": "İyimser (TL)", "inside": "Bant içinde",
+                "p50": "Orta tahmin (TL)", "p90": "İyimser (TL)", "inside": "Bant içinde",
                 "err_p50_pct": "Sapma (%)", "naive_due": "Vade yöntemi (TL)", "naive_median": "Medyan yöntemi (TL)",
                 "err_due_pct": "Vade yöntemi sapma (%)", "err_median_pct": "Medyan yöntemi sapma (%)",
                 "naive_rate": "Oran yöntemi (TL)", "err_rate_pct": "Oran yöntemi sapma (%)"}).assign(**{"Tahmin tarihi": lambda d: pd.to_datetime(d["Tahmin tarihi"])}),
@@ -574,20 +602,35 @@ with tab_accuracy:
             reason = pilot.record_due(records, res["as_of"], res.get("last_activity"))
             if reason:
                 st.caption(reason)
-            detail, summary = pilot.score(pilot.records_from_table(records), res["obs"])
+            detail, summary = pilot.score(pilot.records_from_table(records), res["obs"], events=res.get("events"))
             if len(summary):
-                st.write("Süresi dolan kayıtlarda tahmin ile gerçekleşen tahsilat (sapma: düşük iyi):")
-                show_table(summary.rename(columns={
-                    "ufuk_gun": "Ufuk (gün)", "kayit": "Kayıt", "sapma_model_%": "Model sapması (%)",
-                    "sapma_medyan_%": "Müşteri medyanı (%)", "sapma_oran_%": "Tahsilat oranı (%)",
-                    "sapma_vade_%": "Vadesinde öder (%)", "bant_ici": "Bant içinde", "B1_gecti": "B1 geçti",
-                    "B2_gecti": "B2 geçti"}), width="stretch", hide_index=True)
+                st.write("Süresi dolan kayıtlarda tahmin ile gerçekleşen (sapma ve aralık skoru: düşük iyi). "
+                         "Tahsilat: açık faturalardan gelen para, kısmi ödemeler dahil. Kasa: o gün girdiğiniz "
+                         "kasa ve banka toplamı.")
+                verdict = {True: "geçti", False: "kaldı", None: "değerlendirilemedi"}
+                view = summary.assign(
+                    hedef=summary["hedef"].map({"tahsilat": "Tahsilat", "kasa": "Kapanış kasası"}),
+                    fark_guven_araligi=summary["fark_guven_araligi"].map(
+                        lambda v: f"{v[0]:+.1f} / {v[1]:+.1f} puan" if isinstance(v, tuple) else "az kayıt"),
+                    **{c: summary[c].map(lambda v: verdict.get(v if v == v else None, "–"))
+                       for c in ("B1", "B2") if c in summary})
+                show_table(view.rename(columns={
+                    "hedef": "Hedef", "ufuk_gun": "Ufuk (gün)", "kayit": "Kayıt", "uyarili_kayit": "Uyarılı (dışarıda)",
+                    "sapma_model_%": "Model (%)", "sapma_medyan_%": "Müşteri medyanı (%)",
+                    "sapma_oran_%": "Tahsilat oranı (%)", "sapma_vade_%": "Vadesinde öder (%)",
+                    "sapma_sabit_%": "Kasa değişmez (%)", "bant_ici": "Bant içinde",
+                    "bant_genisligi_%": "Bant genişliği (%)", "aralik_skoru_%": "Aralık skoru (%)",
+                    "fark_guven_araligi": "Model eksi en iyi basit yöntem, %90 aralık"}), width="stretch", hide_index=True)
+                st.caption("Haftalık kayıtların ufukları üst üste bindiği için kayıtlar bağımsız sayılmaz; aralık, "
+                           "ardışık haftalar birlikte yeniden örneklenerek hesaplanır. B1'deki 2 puanlık pay istatistiksel "
+                           "bir test değil, önceden seçilmiş işletme toleransıdır.")
             else:
-                st.caption("Henüz süresi dolan kayıt yok: ilk karşılaştırma, ilk kayıttan 14 gün sonra yapılır.")
-            show_table(records.drop(columns=["created"]).rename(columns={
-                "as_of": "Kayıt tarihi", "horizon": "Ufuk (gün)", "until": "Ufkun sonu", "p10": "Kötümser (TL)",
-                "p50": "Beklenen (TL)", "p90": "İyimser (TL)", "naive_due": "Vadesinde öder (TL)",
-                "naive_median": "Müşteri medyanı (TL)", "naive_rate": "Tahsilat oranı (TL)"}),
+                st.caption("Henüz süresi dolan kayıt yok: ilk karşılaştırma, ilk kayıttan 7–14 gün sonra yapılır.")
+            show_table(records.drop(columns=["created", "meta"]).rename(columns={
+                "as_of": "Kayıt tarihi", "target": "Hedef", "horizon": "Ufuk (gün)", "until": "Ufkun sonu",
+                "p10": "Kötümser (TL)", "p50": "Orta tahmin (TL)", "p90": "İyimser (TL)",
+                "naive_due": "Vadesinde öder (TL)", "naive_median": "Müşteri medyanı (TL)",
+                "naive_rate": "Tahsilat oranı (TL)", "naive_flat": "Kasa değişmez (TL)", "opening": "O günkü kasa (TL)"}),
                 width="stretch", hide_index=True)
 
 with tab_collect:

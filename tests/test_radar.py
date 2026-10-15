@@ -671,7 +671,7 @@ def test_dashboard_renders_demo_and_own_data_without_errors(tmp_path, monkeypatc
     assert len(at.dataframe) >= 1 and len(at.text_area) == 1
     assert not any("en son hareket" in e.value for e in at.error)
     monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))                   # anonimleştirme anahtarı testte buraya
-    next(b for b in at.sidebar.button if b.label == "Anonim paketi hazırla").click().run()
+    next(b for b in at.sidebar.button if b.label == "Takma adlı paketi hazırla").click().run()
     assert not at.exception, [e.value for e in at.exception]
     next(b for b in at.button if b.label == "Pilot raporunu hazırla").click().run()
     assert not at.exception, [e.value for e in at.exception]
@@ -717,7 +717,7 @@ def test_weekly_plan_adds_up():
     out = res["outflows"]
     off = (out["date"] - pd.Timestamp(AS_OF)).dt.days
     assert week["Bilinen çıkışlar (TL)"].sum() == pytest.approx(out.loc[(off >= 1) & (off <= 91), "amount"].sum())
-    assert (week["Hafta sonu kasa, kötümser (TL)"] <= week["Hafta sonu kasa, beklenen (TL)"]).all()
+    assert (week["Hafta sonu kasa, kötümser (TL)"] <= week["Hafta sonu kasa, orta (P50) (TL)"]).all()
     assert week["Eksiye düşme olasılığı"].between(0, 1).all()
 
 
@@ -852,14 +852,19 @@ def test_pilot_report_builds_and_renders(tmp_path):
     assert page.startswith("<!doctype html>") and "<svg" in page and "Isletme_TEST" in page
     assert "http" not in page.split("</style>")[0]                     # dış kaynak yok
     import json
-    rec = json.loads(page.split('id="ileriye-donuk-kayit">')[1].split("</script>")[0])["record"]
+    every = json.loads(page.split('id="ileriye-donuk-kayit">')[1].split("</script>")[0])["record"]
+    rec = [x for x in every if x["target"] == "tahsilat"]
+    cash = [x for x in every if x["target"] == "kasa"]
     assert [x["horizon"] for x in rec] == [14, 30] and all(x["p10"] <= x["p50"] <= x["p90"] for x in rec)
+    assert [x["horizon"] for x in cash] == [7, 14, 28] and cash[0]["naive_flat"] == round(opening)
+    assert {"bant_genisligi_%", "aralik_skoru_%"} <= set(r["cash"].columns) and "orta tahmin (P50" in page
     assert rec[0]["naive_due"] <= rec[1]["naive_due"]                     # uzun ufukta en az o kadar tahsilat
     # Ufuk dolunca: kayıt, gerçekleşen veriyle (aynı şirketin 60 gün sonraki hâli) puanlanır.
     later = observe(generate(seed=5, n_customers=20, as_of=AS_OF), pd.Timestamp(AS_OF) + pd.Timedelta(days=60))
     detail, summary = pilot.score([pilot.read_record(page)], later)
     assert list(summary["ufuk_gun"]) == [14, 30] and (detail["gerceklesen"] > 0).all()
-    assert {"B1_gecti", "B2_gecti"} <= set(summary.columns)
+    assert {"B1", "B2", "fark_guven_araligi"} <= set(summary.columns) and set(summary["hedef"]) == {"tahsilat"}
+    assert pilot.passes_b1(3.0, 9.0, float("nan"), None) is None             # karşılaştırma yoksa değerlendirilemedi
     assert pilot.score([pilot.read_record(page)], obs)[0].empty             # ufuk dolmadan puanlanmaz
     assert pilot.verdict(pd.DataFrame(), pd.DataFrame()).startswith("Geri test için yeterli geçmiş yok")
     good = pd.DataFrame({"sapma_model_%": [2.0], "sapma_medyan_%": [3.0], "sapma_vade_%": [9.0], "sapma_oran_%": [3.0]})
@@ -927,3 +932,36 @@ def test_formal_draft_follows_lawyer_remarks():
     assert "%43" not in d["body"] and "2.020" not in d["body"] and "TCMB tarafından ilan edilen" in d["body"]
     assert "ihtarname" not in d["subject"].lower() and "TTK m. 1530 bilgilendirmesi" in d["subject"]
     assert "KEP veya Noter" in actions.FORMAL_NOTICE_WARNING
+
+
+def test_partial_payments_and_closing_cash_are_scored_from_events():
+    from radar import pilot
+    from radar.reconcile import collection_events, reconcile
+
+    inv = pd.DataFrame({"invoice_id": ["A", "B"], "customer_id": ["1", "1"], "customer_name": ["X A.Ş."] * 2,
+                        "vkn": ["1234567890"] * 2, "issue_date": pd.to_datetime(["2026-09-01", "2026-09-05"]),
+                        "due_date": pd.to_datetime(["2026-10-01", "2026-10-05"]), "amount": [1000.0, 500.0],
+                        "open_amount": [1000.0, 500.0], "paid_date": pd.NaT})
+    pay = pd.DataFrame({"date": pd.to_datetime(["2026-10-12", "2026-11-20"]), "amount": [400.0, 1100.0],
+                        "description": ["X A.Ş. 1234567890 kısmi", "X A.Ş. 1234567890 kalan"]})
+    paid, alloc, _ = reconcile(inv, pay)
+    ev = collection_events(paid, alloc)
+    assert ev["amount"].sum() == pytest.approx(1500.0) and len(ev) == 3            # 400 + 600 + 500
+    # 10.10'da açık 1.500 TL; 14 gün içinde yalnızca 400 TL geldi. Fatura tutarı (1.000) değil, 400 sayılmalı.
+    rec = {"as_of": "2026-10-10", "record": [{"target": "tahsilat", "horizon": 14, "until": "2026-10-24", "p10": 0,
+                                              "p50": 500, "p90": 1500, "naive_due": 1500, "naive_median": 1000,
+                                              "naive_rate": 700}]}
+    detail, _ = pilot.score([rec], paid, events=ev)
+    assert detail["gerceklesen"].iloc[0] == pytest.approx(400.0)
+    # Kapanış kasası: 7 gün sonraki kayıtta girilen güncel kasa gerçekleşen sayılır.
+    k1 = {"as_of": "2026-10-10", "opening": 1000.0, "meta": {"acilis_guncel": True},
+          "record": [{"target": "kasa", "horizon": 7, "until": "2026-10-17", "p10": 800, "p50": 1200, "p90": 1500,
+                      "naive_flat": 1000}]}
+    k2 = {"as_of": "2026-10-17", "opening": 1300.0, "meta": {"acilis_guncel": True}, "record": []}
+    detail, summary = pilot.score([k1, k2], paid, events=ev)
+    row = summary[summary["hedef"] == "kasa"].iloc[0]
+    assert detail.loc[detail["hedef"] == "kasa", "gerceklesen"].iloc[0] == 1300.0
+    assert row["sapma_model_%"] < row["sapma_sabit_%"]                             # 100 TL'ye karşı 300 TL hata
+    # Eşleşmesi düşük kayıt uyarılıdır ve tahsilat ölçümüne girmez.
+    weak = {**rec, "meta": {"eslesme_orani": 0.5}}
+    assert pilot.score([weak], paid, events=ev)[1].empty
