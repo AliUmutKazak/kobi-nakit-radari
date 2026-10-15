@@ -626,6 +626,7 @@ with tab_collect:
         pick = st.selectbox("Fatura", todo["invoice_id"], format_func=lambda i: f"{i} · {by_id.at[i, 'customer_name']}")
         draft = actions.draft_message(by_id.loc[pick], seller, *((iban, bank) if own else ("", "")))
         body = st.text_area("Taslak (düzenleyebilirsiniz)", draft["body"], height=140, key=f"draft_{pick}")
+        st.warning(actions.FORMAL_NOTICE_WARNING)
         if draft["note"]:
             st.info(draft["note"])
         if own:

@@ -910,3 +910,14 @@ def test_accountant_mode_keeps_businesses_apart(tmp_path, monkeypatch):
     master = "m" * 64
     a, b = (anonymize.business_key(master, s.business_id) for s in (main, other))
     assert a != b and anonymize.pseudonym(a, "X") != anonymize.pseudonym(b, "X")      # işletmeler arası eşleşmez
+
+
+def test_formal_draft_follows_lawyer_remarks():
+    from radar import actions
+
+    row = {"invoice_id": "ABC2026000000001", "customer_name": "X A.Ş.", "stage": "resmi", "due_date": "2026-08-01",
+           "open_amount": 125000.0, "days_overdue": 75}
+    d = actions.draft_message(row, "Örnek Ticaret A.Ş.")
+    assert "%43" not in d["body"] and "2.020" not in d["body"] and "TCMB tarafından ilan edilen" in d["body"]
+    assert "ihtarname" not in d["subject"].lower() and "TTK m. 1530 bilgilendirmesi" in d["subject"]
+    assert "KEP veya Noter" in actions.FORMAL_NOTICE_WARNING

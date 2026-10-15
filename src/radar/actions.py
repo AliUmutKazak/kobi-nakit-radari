@@ -171,6 +171,11 @@ def payment_line(invoice_id: str, iban: str = "", bank: str = "") -> str:
     return f" Ödemeyi {where} hesabımıza, açıklamaya {invoice_id} yazarak yapabilirsiniz."
 
 
+# Avukat şerhi (15.10.2026): her mesaj taslağının yanında sabit olarak gösterilir.
+FORMAL_NOTICE_WARNING = ("Bu ileti TTK m. 18/3 kapsamında resmi ihtarname yerine geçmez; dava/icra öncesi KEP veya "
+                         "Noter kullanılmalıdır.")
+
+
 def draft_message(row, seller: str, iban: str = "", bank: str = "") -> dict | None:
     """Aşamaya göre WhatsApp/e-posta taslağı üretir. Tanıtım içeriği eklenmez.
 
@@ -197,13 +202,13 @@ def draft_message(row, seller: str, iban: str = "", bank: str = "") -> dict | No
         body = (f"Sayın yetkili, aramızdaki mal/hizmet tedariki kapsamında düzenlenen {ref} {due} tarihli vadesi "
                 f"dolmuş olup {int(row['days_overdue'])} gündür kayıtlarımızda açık görünmektedir. "
                 f"Türk Ticaret Kanunu m.1530 uyarınca ticari işletmeler arasındaki mal ve hizmet tedariklerinde ödeme "
-                f"süresinin aşılmasıyla ihtara gerek olmaksızın temerrüt hükümleri doğmaktadır. Gecikme faizi "
-                f"(2026 için yıllık %{LATE_INTEREST_RATE * 100:.0f}), en az {_tl(MIN_RECOVERY_COST_TL)} tahsil gideri ve "
-                f"kısmi ödemelerde kalan bakiye dahil tüm yasal ve sözleşmesel haklarımız saklıdır. Bakiyenin ödenmesini "
+                f"süresinin aşılmasıyla ihtara gerek olmaksızın temerrüt hükümleri doğmaktadır. TCMB tarafından ilan "
+                f"edilen ticari temerrüt faizi ve asgari giderim tazminatı ile kısmi ödemelerde kalan bakiye dahil tüm "
+                f"yasal ve sözleşmesel haklarımız saklıdır. Bakiyenin ödenmesini "
                 f"ya da ödeme yapıldıysa dekontun paylaşılmasını rica ederiz.{pay} {seller}")
-        note = ("Bu metin TTK m.18/3 anlamında ihtarname değildir; şekli ihtar için KEP (güvenli e-imzalı) ya da noter "
-                "kullanın. Göndermeden önce teslimin (irsaliye) belgelendiğini ve sözleşme koşullarını kontrol edin.")
+        # Avukat şerhi (15.10.2026): metinde sabit oran ve tutar yazılmaz, "TCMB tarafından ilan edilen" denir.
+        note = ("Göndermeden önce teslimin (irsaliye) belgelendiğini ve sözleşme koşullarını kontrol edin.")
     return {"invoice_id": row["invoice_id"], "customer_name": row["customer_name"], "stage": row["stage"],
-            "subject": (f"Vade aşımı ve TTK m.1530 kapsamında ödeme bildirimi: {row['invoice_id']}"
+            "subject": (f"Vade hatırlatma ve TTK m. 1530 bilgilendirmesi: {row['invoice_id']}"
                         if row["stage"] == "resmi" else f"{row['invoice_id']} numaralı fatura hakkında"), "body": body,
             "requires_approval": True, "note": note}
