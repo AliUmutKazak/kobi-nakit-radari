@@ -213,7 +213,8 @@ saklanır; ufuk dolduğunda gerçekleşen tahsilatla karşılaştırılır. Pilo
 <p class="note">Gecikme tahmini müşterilerin geçmiş ödeme davranışından öğrenilir (LightGBM kantil regresyonu; az veride müşteri medyanı).
 Kasa, 2.000 senaryolu Monte Carlo simülasyonuyla hesaplanır; müşterilerin birlikte gecikme eğilimi ve tahmin aralığı, geçmiş tahminlerin
 hatasından ölçülür. İki herkese açık gerçek veri setinde model, "müşteri her zamanki kadar geç öder" yöntemiyle başa baş, "vadesinde ödenir"
-varsayımından daha isabetli çıkmıştır (proje belgeleri: DOGRULAMA.md). Gecikmeler hızla kötüleşiyorsa tahmin iyimser kalabilir.
+varsayımından daha isabetli çıkmıştır; "son dönemin tahsilat oranı" yöntemi ise bir veri setinde modelden isabetli, diğerinde
+geride kalmıştır (proje belgeleri: DOGRULAMA.md). Bu yüzden rapor, modeli her işletmenin kendi geçmişinde bu yöntemlerle yarıştırır. Gecikmeler hızla kötüleşiyorsa tahmin iyimser kalabilir.
 Kur değişimi, yeni kredi ve plan dışı büyük giderler dahil değildir.</p>
 </body></html>"""
 
