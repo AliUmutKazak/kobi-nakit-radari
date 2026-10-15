@@ -123,6 +123,7 @@ def cash_study(obs: pd.DataFrame, end, horizons=(14, 30), origins: int = 8, step
                      "sapma_model_%": (bt["p50"] - bt["actual"]).abs().sum() / total * 100,
                      "sapma_medyan_%": (bt["naive_median"] - bt["actual"]).abs().sum() / total * 100,
                      "sapma_vade_%": (bt["naive_due"] - bt["actual"]).abs().sum() / total * 100,
+                     "sapma_oran_%": (bt["naive_rate"] - bt["actual"]).abs().sum() / total * 100,
                      "bant_ici": bt["inside"].mean()})
     return pd.DataFrame(rows)
 

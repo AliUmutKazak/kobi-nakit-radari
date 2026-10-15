@@ -12,7 +12,7 @@ import pandas as pd  # noqa: E402
 import plotly.graph_objects as go  # noqa: E402
 import streamlit as st  # noqa: E402
 
-from radar import actions, ingest, mailer, pipeline  # noqa: E402
+from radar import actions, anonymize, ingest, mailer, pilot, pipeline  # noqa: E402
 from radar.reconcile import reconcile, sender_key  # noqa: E402
 from radar.store import Store  # noqa: E402
 
@@ -166,7 +166,8 @@ def run_own(rev: int, as_of: str, include_projected: bool):
     dates = [obs["issue_date"].max(), obs["paid_date"].max()] + ([payments["date"].max()] if payments is not None else [])
     last = max(d for d in dates if pd.notna(d))
     return {k: res[k] for k in KEEP} | {"notes": notes, "has_outflows": outflows is not None,
-                                        "unmatched": unmatched if payments is not None else None, "last_activity": last}
+                                        "unmatched": unmatched if payments is not None else None, "last_activity": last,
+                                        "n_payments": len(payments) if payments is not None else None}
 
 
 @st.cache_data(show_spinner="Açığı kapatacak tahsilat hesaplanıyor...")
@@ -182,6 +183,20 @@ def run_scenario(key, _res, collect_ids, delay_labels, delay_days):
 @st.cache_data(show_spinner="Geçmiş tarihlere dönülüp tahmin yeniden üretiliyor; yarım dakikayı bulabilir...")
 def run_backtest(obs, as_of):
     return pipeline.backtest_own(obs, as_of)
+
+
+@st.cache_data(show_spinner="Pilot raporu hazırlanıyor; geçmiş tarihlerde test de yapıldığı için bir dakikayı bulabilir...")
+def run_pilot(key, _res, label, hide):
+    secret = anonymize.load_or_create_key() if hide else None
+    r = pilot.build(_res["obs"], _res["as_of"], res=_res, label=label, key=secret,
+                    unmatched=_res.get("unmatched"), n_payments=_res.get("n_payments"))
+    return pilot.render(r).encode("utf-8")
+
+
+def anonymous_package(store: Store, seller: str):
+    extra = {"giderler": store.load("outflows"), "odenecekler": store.load("payables"), "cekler": store.load("cheques")}
+    return anonymize.package(seller or "İşletme", store.load("invoices"), anonymize.load_or_create_key(),
+                             store.load("payments"), extra)
 
 
 store = get_store()
@@ -228,6 +243,17 @@ with st.sidebar:
                 port=int(st.number_input("Port", 1, 65535, int(store.get("smtp_port", 587)))),
                 username=st.text_input("Kullanıcı adı (e-posta adresiniz)", store.get("smtp_user", "")),
                 password=st.text_input("Parola", type="password"))
+        with st.expander("5. Pilot: anonim veri paketi"):
+            st.write("Yüklediğiniz dosyaların, müşteri adları ve vergi numaraları takma adlarla değiştirilmiş bir "
+                     "kopyası. Tutar ve tarihler aynen kalır; e-posta ve telefon silinir; banka açıklamaları tümüyle "
+                     "yeniden yazılır. Pilot çalışması için paylaşılacak dosya budur.")
+            if has_data and st.button("Anonim paketi hazırla"):
+                blob, summary = anonymous_package(store, seller)
+                st.download_button("Paketi indir (zip)", blob, f"{summary['işletme_takma_adı']}.zip", "application/zip")
+                st.caption(f"{summary['fatura']} fatura, {summary['müşteri']} müşteri, dönem {summary['dönem']}. "
+                           "Göndermeden önce zip dosyasını açıp gözle kontrol edin.")
+            st.caption(f"Takma adları üreten gizli anahtar yalnızca bu bilgisayarda: {anonymize.key_path()}. "
+                       "Anahtar paylaşılmaz; aynı anahtar her ay aynı takma adları verir.")
         with st.expander("Diğer ayarlar"):
             terms = st.number_input("Vadesi yazmayan faturalar için vade (gün)", 0, 365, int(store.get("terms", 30)),
                                     help="TTK m.1530: vade yazmıyorsa borçlu, faturayı aldıktan 30 gün sonra temerrüde düşer.")
@@ -445,19 +471,30 @@ with tab_accuracy:
                      f"tahmin bandının içinde kaldı. Beklenen değerin ortalama sapması: "
                      f"%{bt['err_p50_pct'].mean():+.0f}.")
             mae = {k: bt[c].abs().mean() for k, c in (("model", "err_p50_pct"), ("vade", "err_due_pct"),
-                                                      ("medyan", "err_median_pct"))}
-            better = mae["model"] < min(mae["vade"], mae["medyan"])
+                                                      ("medyan", "err_median_pct"), ("oran", "err_rate_pct"))}
+            better = mae["model"] < min(mae["vade"], mae["medyan"], mae["oran"])
             st.write(f"Basit yöntemlerle karşılaştırma (ortalama mutlak sapma): model %{mae['model']:.0f}, "
                      f"\"her fatura vadesinde ödenir\" %{mae['vade']:.0f}, \"müşteri her zamanki kadar geç öder\" "
-                     f"%{mae['medyan']:.0f}. "
+                     f"%{mae['medyan']:.0f}, \"son dönemin tahsilat oranı sürer\" %{mae['oran']:.0f}. "
                      + ("Model sizin verinizde basit yöntemlerden daha isabetli." if better else
                         "**Model sizin verinizde basit yöntemlerden daha isabetli değil;** tahminlere temkinli yaklaşın."))
             show_table(bt.rename(columns={
                 "origin": "Tahmin tarihi", "actual": "Gerçekleşen (TL)", "p10": "Kötümser (TL)",
                 "p50": "Beklenen (TL)", "p90": "İyimser (TL)", "inside": "Bant içinde",
                 "err_p50_pct": "Sapma (%)", "naive_due": "Vade yöntemi (TL)", "naive_median": "Medyan yöntemi (TL)",
-                "err_due_pct": "Vade yöntemi sapma (%)", "err_median_pct": "Medyan yöntemi sapma (%)"}).assign(**{"Tahmin tarihi": lambda d: pd.to_datetime(d["Tahmin tarihi"])}),
+                "err_due_pct": "Vade yöntemi sapma (%)", "err_median_pct": "Medyan yöntemi sapma (%)",
+                "naive_rate": "Oran yöntemi (TL)", "err_rate_pct": "Oran yöntemi sapma (%)"}).assign(**{"Tahmin tarihi": lambda d: pd.to_datetime(d["Tahmin tarihi"])}),
                 width="stretch", hide_index=True)
+    st.divider()
+    st.write("**Pilot raporu.** Tek sayfalık, yazdırılabilir özet: kasa bandı, 13 haftalık plan, öncelikli tahsilat ve "
+             "tahminin bu işletmenin geçmişinde basit yöntemlere karşı ne kadar tuttuğu.")
+    hide = st.checkbox("Müşteri ve işletme adlarını gizle (rapor paylaşılacaksa)", True)
+    if st.button("Pilot raporunu hazırla"):
+        seller_name = (store.get("seller", "") if own else "Demo şirket") or "İşletme"
+        label = anonymize.firm_alias(anonymize.load_or_create_key(), seller_name) if hide and own else seller_name
+        page = run_pilot(res_key, res, label, hide)
+        st.download_button("Raporu indir (HTML; tarayıcıda açıp yazdırabilirsiniz)", page,
+                           f"pilot_raporu_{pd.Timestamp(res['as_of']):%Y%m%d}.html", "text/html")
 
 with tab_collect:
     st.subheader("Öncelikli tahsilat listesi")

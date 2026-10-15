@@ -666,6 +666,12 @@ def test_dashboard_renders_demo_and_own_data_without_errors(tmp_path, monkeypatc
     assert not at.exception, [e.value for e in at.exception]
     assert len(at.dataframe) >= 1 and len(at.text_area) == 1
     assert not any("en son hareket" in e.value for e in at.error)
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))                   # anonimleştirme anahtarı testte buraya
+    next(b for b in at.sidebar.button if b.label == "Anonim paketi hazırla").click().run()
+    assert not at.exception, [e.value for e in at.exception]
+    next(b for b in at.button if b.label == "Pilot raporunu hazırla").click().run()
+    assert not at.exception, [e.value for e in at.exception]
+    assert (tmp_path / "KobiRadar" / "anonim_anahtar.txt").exists()
     at.sidebar.date_input[0].set_value(datetime.date(2026, 10, 20)).run()
     assert any("en son hareket" in e.value for e in at.error)             # 19 gün eski veri uyarısı
 
@@ -713,7 +719,7 @@ def test_message_outcomes_and_backtest_baselines(full):
     assert out.at[open_["invoice_id"], "Durum"] == "14 günden uzun süredir açık"
 
     bt = pipeline.backtest_own(obs, AS_OF, origins=2)
-    assert {"naive_due", "naive_median", "err_due_pct", "err_median_pct"} <= set(bt.columns)
+    assert {"naive_due", "naive_median", "naive_rate", "err_due_pct", "err_median_pct", "err_rate_pct"} <= set(bt.columns)
     assert bt["err_p50_pct"].abs().mean() < bt["err_due_pct"].abs().mean()
 
 
@@ -763,3 +769,87 @@ def test_subset_sum_closes_the_invoices_actually_paid():
     amounts = pd.Series([100.0, 200.0, 300.0])
     assert subset_match(amounts, 300.0) == [0, 1]          # yalnızca 2+ faturalık toplamlar aranır; tekli eşleşmeye reconcile önce bakar
     assert subset_match(pd.Series([100.0, 200.0, 150.0, 150.0]), 300.0) is None   # iki farklı çözüm: belirsiz, tahmin yok
+
+
+def test_anonymized_package_hides_identities_and_keeps_the_numbers(tmp_path):
+    import io
+    import zipfile
+
+    from radar import anonymize, ingest
+
+    from radar.synthetic import export_samples
+    export_samples(tmp_path, seed=3, as_of=AS_OF)
+    inv, _ = ingest.load_invoices(tmp_path / "faturalar.csv")
+    pay, _ = ingest.load_payments(tmp_path / "ekstre.csv")
+    chq, _ = ingest.load_cheques(tmp_path / "cekler.csv")
+    # Cari ekstreden gelen numarasız satırda kimlik müşteri adından üretilir; pakete sızmamalı.
+    inv.loc[0, "invoice_id"] = "CARI-" + inv.loc[0, "customer_name"].upper().replace(" ", "")[:20] + "-20260101-0"
+    inv.loc[1, "invoice_id"] = "KZY2024000000123"                       # GİB biçiminde numara, açıklamada geçiyor
+    pay.loc[0, "description"] = "GELEN HAVALE KZY2024000000123 ÖDEMESİ"
+    out = ingest.load_schedule(tmp_path / "giderler.csv")
+    key = anonymize.load_or_create_key(tmp_path / "anahtar.txt")
+    assert anonymize.load_or_create_key(tmp_path / "anahtar.txt") == key          # anahtar kalıcı
+    blob, summary = anonymize.package("Örnek Ticaret A.Ş.", inv, key, pay, {"giderler": out, "cekler": chq})
+
+    z = zipfile.ZipFile(io.BytesIO(blob))
+    text = "\n".join(z.read(n).decode("utf-8-sig") for n in z.namelist())
+    for name in inv["customer_name"].unique()[:10]:
+        assert name not in text                                                  # gerçek unvan yok
+    for vkn in inv["vkn"].unique()[:10]:
+        assert vkn not in text                                                   # gerçek VKN yok
+    assert "Örnek Ticaret" not in text and "GELEN HAVALE" not in text and "CARI-" not in text
+    for number in inv["invoice_id"]:
+        assert number not in text                                                # gerçek fatura no yok
+
+    folder = tmp_path / "anon"
+    z.extractall(folder)
+    firm = next(folder.iterdir())
+    a_inv, _ = ingest.load_invoices(firm / "faturalar.csv")
+    a_pay, _ = ingest.load_payments(firm / "ekstre.csv")
+    rec, _, unmatched = reconcile(a_inv.assign(open_amount=a_inv["amount"], paid_date=pd.NaT), a_pay)
+    truth, _, truth_unmatched = reconcile(inv, pay)
+    # Anonim veriden hesaplanan açık alacak ve eşleşmeyen tahsilatlar, gerçek veridekiyle aynı.
+    assert rec["open_amount"].sum() == pytest.approx(truth["open_amount"].sum(), rel=1e-6)
+    assert len(unmatched) == len(truth_unmatched)
+    assert "KZY2024000000123" not in text and a_pay.loc[0, "description"].endswith(a_inv.loc[1, "invoice_id"])
+    assert anonymize.pseudonym(key, "X") == anonymize.pseudonym(key, "X") != anonymize.pseudonym("başka", "X")
+    assert anonymize._safe_label("Maaş ödemesi") == "Maaş" and anonymize._safe_label("Ahmet Yılmaz kira") == "Kira"
+    assert anonymize._safe_label("Ahmet Yılmaz") == "Diğer"
+    # Ek dosyalar panelin okuyucularıyla yeniden okunabiliyor; keşideci adı kalmıyor.
+    a_chq, _ = ingest.load_cheques(firm / "cekler.csv")
+    assert a_chq["amount"].sum() == pytest.approx(chq["amount"].sum()) and set(a_chq["label"]) <= {"Diğer", ""}
+    assert ingest.load_schedule(firm / "giderler.csv")["amount"].sum() == pytest.approx(out["amount"].sum())
+
+
+def test_pilot_report_builds_and_renders(tmp_path):
+    from radar import pilot
+    from radar.synthetic import cash_plan
+
+    full = generate(seed=5, n_customers=20, as_of=AS_OF)
+    obs = observe(full, AS_OF)
+    opening, out = cash_plan(obs, AS_OF)
+    r = pilot.build(obs, AS_OF, opening, out, label="Isletme_TEST")
+    assert len(r["weeks"]) == 13 and not r["cash"].empty and not r["delays"].empty
+    page = pilot.render(r)
+    (tmp_path / "rapor.html").write_text(page, encoding="utf-8")
+    assert page.startswith("<!doctype html>") and "<svg" in page and "Isletme_TEST" in page
+    assert "http" not in page.split("</style>")[0]                     # dış kaynak yok
+    import json
+    rec = json.loads(page.split('id="ileriye-donuk-kayit">')[1].split("</script>")[0])["record"]
+    assert [x["horizon"] for x in rec] == [14, 30] and all(x["p10"] <= x["p50"] <= x["p90"] for x in rec)
+    assert rec[0]["naive_due"] <= rec[1]["naive_due"]                     # uzun ufukta en az o kadar tahsilat
+    # Ufuk dolunca: kayıt, gerçekleşen veriyle (aynı şirketin 60 gün sonraki hâli) puanlanır.
+    later = observe(generate(seed=5, n_customers=20, as_of=AS_OF), pd.Timestamp(AS_OF) + pd.Timedelta(days=60))
+    detail, summary = pilot.score([pilot.read_record(page)], later)
+    assert list(summary["ufuk_gun"]) == [14, 30] and (detail["gerceklesen"] > 0).all()
+    assert {"B1_gecti", "B2_gecti"} <= set(summary.columns)
+    assert pilot.score([pilot.read_record(page)], obs)[0].empty             # ufuk dolmadan puanlanmaz
+    assert pilot.verdict(pd.DataFrame(), pd.DataFrame()).startswith("Geri test için yeterli geçmiş yok")
+    good = pd.DataFrame({"sapma_model_%": [2.0], "sapma_medyan_%": [3.0], "sapma_vade_%": [9.0], "sapma_oran_%": [3.0]})
+    assert "bütün basit yöntemlerden daha isabetli" in pilot.verdict(None, good)
+    assert "gerisinde" in pilot.verdict(None, good.assign(**{"sapma_oran_%": [-1.0]}))   # oran yöntemi çok iyiyse
+    near = good.assign(**{"sapma_model_%": [4.5]})                         # medyandan 1,5 puan kötü: başa baş
+    assert "başa baş" in pilot.verdict(None, near) and "gerisinde" in pilot.verdict(None, good.assign(**{"sapma_model_%": [6.0]}))
+    hidden = pilot.render(pilot.build(obs, AS_OF, res=r["res"], label="X", key="gizli"))
+    assert not any(name in hidden for name in r["top"]["Müşteri"])           # müşteri adları gizlendi
+    assert not any(number in hidden for number in r["top"]["Fatura"])          # fatura numaraları da

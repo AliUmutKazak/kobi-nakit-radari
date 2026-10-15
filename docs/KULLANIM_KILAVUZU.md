@@ -61,6 +61,8 @@ Biçimi görmek için panelin ilk ekranında örnek dosyaları indirebilirsiniz.
 
 **4. Mesaj ayarları.** İmzanız (ticaret unvanı ve MERSİS no), tahsilat IBAN'ınız ve isterseniz e-posta hesabınız.
 
+**5. Pilot: anonim veri paketi.** Pilot çalışmasına katılıyorsanız, yüklediğiniz dosyaların paylaşılabilir kopyasını buradan hazırlarsınız. Müşteri unvanı ve vergi numarası takma adlarla değişir (aynı müşteri her ay aynı takma adı alır), e-posta ve telefon silinir, banka açıklamaları tümüyle yeniden yazılır; tutar ve tarihler aynen kalır. Takma adları üreten gizli anahtar yalnızca sizin bilgisayarınızda durur ve paylaşılmaz. Göndermeden önce zip dosyasını açıp birkaç satıra göz atın. Ayrıntılar: PILOT_PROTOKOLU.md (programla birlikte gelir).
+
 **Diğer ayarlar.** Vadesi yazmayan faturalar için varsayılan vade, döviz kurları (ör. `USD=41,50; EUR=48,20`; kuru girilmeyen döviz tahmine katılmaz), verilerin saklandığı dosyanın yeri, **son yüklemeyi geri alma** (yanlış dosya yüklerseniz bir önceki dosyaya döner), **verilerin yedeğini indirme** ve kayıtlı veriyi silme.
 
 ## 4. Paneli okumak
@@ -83,6 +85,8 @@ Biçimi görmek için panelin ilk ekranında örnek dosyaları indirebilirsiniz.
 - **Şüpheli alacaklar:** çok gecikmiş ve tahsil edilme olasılığı düşük faturalar ayrı gösterilir. Bunlar için hatırlatma yerine hukuki yolları değerlendirin.
 
 **"Tahmin doğruluğu" sekmesi.** Üstte tahminin neye dayandığı yazar: kaç fatura, ne kadar geçmiş, hangi yöntem. Altta panel geçmişteki birkaç tarihe dönüp "o gün tahmin etseydim ne kadar tutardı" diye kendini sınar ve sonucu iki basit yöntemle ("her fatura vadesinde ödenir", "müşteri her zamanki kadar geç öder") karşılaştırır. Model sizin verinizde bu basit yöntemlerden daha isabetli değilse panel bunu açıkça söyler. En az 9 aylık geçmiş gerekir.
+
+En altta **"Pilot raporunu hazırla"** düğmesi, tek sayfalık, yazdırılabilir bir rapor indirir: kasa bandı, 13 haftalık plan, öncelikli 10 fatura, tahminin sizin geçmişinizde basit yöntemlere karşı ne kadar tuttuğu ve "İleriye dönük kayıt" (önümüzdeki 14 ve 30 günde açık faturalardan beklenen tahsilat). Raporu paylaşacaksanız "adları gizle" kutusunu işaretli bırakın. Pilotta bu rapor her pazartesi alınır ve değiştirilmeden saklanır; birkaç hafta sonra kayıttaki tahminler gerçekleşenle karşılaştırılır.
 
 ## 5. Mesajlar hakkında bilmeniz gerekenler
 

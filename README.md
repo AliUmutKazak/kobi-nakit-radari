@@ -2,7 +2,7 @@
 
 Açık faturaların ne zaman tahsil edileceğini olasılıksal olarak tahmin eder, 90 günlük kasa bandını (P10 / P50 / P90) çıkarır ve açığı kapatmaya en çok yarayacak faturalar için onay bekleyen mesaj taslakları üretir.
 
-Şu an sentetik veriyle çalışır. Tasarım kararlarının gerekçesi: [docs/ARASTIRMA.md](docs/ARASTIRMA.md). Rakip karşılaştırması: [docs/RAKIPLER.md](docs/RAKIPLER.md). Doğrulama sonuçları: [docs/DOGRULAMA.md](docs/DOGRULAMA.md).
+Sentetik veride ve iki herkese açık gerçek veri setinde sınandı; Türk KOBİ verisiyle pilot aşamasında ([docs/pilot/PILOT_PROTOKOLU.md](docs/pilot/PILOT_PROTOKOLU.md)). Tasarım kararlarının gerekçesi: [docs/ARASTIRMA.md](docs/ARASTIRMA.md). Rakip karşılaştırması: [docs/RAKIPLER.md](docs/RAKIPLER.md). Doğrulama sonuçları: [docs/DOGRULAMA.md](docs/DOGRULAMA.md).
 
 ## Kullanım
 
@@ -38,7 +38,10 @@ C:\Users\HP\.venvs\kobi-radar\Scripts\python run_validation.py 48
 | `src/radar/store.py` | Kalıcı kayıt (SQLite): yüklenen tablolar, ayarlar, itiraz / ödeme sözü / mesaj günlüğü |
 | `src/radar/mailer.py` | Onaylanan taslağın kullanıcının e-posta hesabından gönderilmesi |
 | `src/radar/validation.py` | 192 sentetik şirkette kalibrasyon çalışması (`run_validation.py`) |
-| `src/radar/pipeline.py` | Uçtan uca akış ve geri testler |
+| `src/radar/pipeline.py` | Uçtan uca akış, geri testler ve basit kıyas yöntemleri (vade, müşteri medyanı, tahsilat oranı) |
+| `src/radar/open_data.py` | Herkese açık gerçek veri setleriyle doğrulama |
+| `src/radar/anonymize.py` | Pilot için takma adlandırılmış veri paketi (HMAC-SHA256; anahtar işletmede kalır) |
+| `src/radar/pilot.py` | Tek sayfalık pilot raporu, ileriye dönük kayıt ve ufku dolan kayıtların puanlanması (`python -m radar.pilot`) |
 | `app.py` | Streamlit paneli |
 
 ## Bilinen sınırlar

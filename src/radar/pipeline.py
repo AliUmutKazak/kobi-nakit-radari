@@ -243,6 +243,29 @@ def backtest_model(full: pd.DataFrame, as_of, holdout_days: int = 240) -> dict:
     return evaluate(model.predict(X[test]), y[test], X.loc[test, "hist_med"])
 
 
+def naive_collections(obs: pd.DataFrame, book: pd.DataFrame, as_of, end) -> dict:
+    """Üç basit yöntemle `as_of`tan `end`e kadar `book` (o gün açık faturalar) içinden tahsil edilecek tutar.
+
+    vade: vadesi `end`e kadar gelen (ya da geçmiş) her fatura ödenir. medyan: her fatura, müşterinin `obs`taki
+    geçmiş gecikme medyanı kadar geç ödenir (geçmişi olmayan müşteride genel medyan). oran: aynı uzunluktaki
+    bir önceki dönemde, dönem başında açık olan alacağın yüzde kaçı tahsil edildiyse bugün de o kadarı
+    tahsil edilir (muhasebede yaygın "tahsilat oranı" yaklaşımı). İlk iki yöntem vadesi çoktan geçmiş
+    faturaları "yakında ödenir" sayar; şüpheli alacağı çok olan işletmede oran yöntemi en güçlü rakiptir."""
+    as_of, end = pd.Timestamp(as_of), pd.Timestamp(end)
+    prev = as_of - (end - as_of)
+    before = obs[(obs["issue_date"] <= prev) & ~(obs["paid_date"] <= prev)]
+    base = before["amount"].sum()
+    rate = before.loc[before["paid_date"] <= as_of, "amount"].sum() / base if base > 0 else float("nan")
+    paid = obs.dropna(subset=["paid_date"])
+    lateness = (paid["paid_date"] - paid["due_date"]).dt.days
+    overall = float(lateness.median()) if len(paid) else 0.0
+    delay = pd.to_timedelta(book["customer_id"].map(lateness.groupby(paid["customer_id"]).median())
+                            .fillna(overall).round(), unit="D")
+    return {"naive_due": float(book.loc[book["due_date"] <= end, "amount"].sum()),
+            "naive_median": float(book.loc[book["due_date"] + delay <= end, "amount"].sum()),
+            "naive_rate": float(rate * book["amount"].sum())}
+
+
 def backtest_collections(full: pd.DataFrame, as_of, horizon: int = 90, origins: int = 6, step: int = 30,
                          n_sims: int = 1000) -> pd.DataFrame:
     """Geçmiş tarihlerde tahmin üretip, sonraki `horizon` günde gerçekleşen tahsilatla karşılaştırır."""
@@ -258,19 +281,12 @@ def backtest_collections(full: pd.DataFrame, as_of, horizon: int = 90, origins: 
         got = was_open & (full["true_paid_date"] <= end)
         actual = full.loc[got, "amount"].sum()
         lo, mid, hi = np.percentile(res["sim"].collections, [10, 50, 90])
-        # Basit yöntemler: vadesi ufuk içinde (ya da geçmiş) her fatura ödenir / müşteri medyanı kadar geç ödenir.
-        book = full[was_open]
-        paid = obs.dropna(subset=["paid_date"])
-        med = (paid["paid_date"] - paid["due_date"]).dt.days.groupby(paid["customer_id"]).median()
-        overall = float((paid["paid_date"] - paid["due_date"]).dt.days.median()) if len(paid) else 0.0
-        delay = pd.to_timedelta(book["customer_id"].map(med).fillna(overall).round(), unit="D")
-        naive_due = book.loc[book["due_date"] <= end, "amount"].sum()
-        naive_median = book.loc[book["due_date"] + delay <= end, "amount"].sum()
+        naive = naive_collections(obs, full[was_open], t, end)
+        pct = lambda pred: (pred - actual) / actual * 100 if actual else float("nan")   # tahsilatsız dönem
         rows.append({"origin": t.date(), "actual": actual, "p10": lo, "p50": mid, "p90": hi,
-                     "inside": lo <= actual <= hi, "err_p50_pct": (mid - actual) / actual * 100,
-                     "naive_due": naive_due, "naive_median": naive_median,
-                     "err_due_pct": (naive_due - actual) / actual * 100,
-                     "err_median_pct": (naive_median - actual) / actual * 100})
+                     "inside": lo <= actual <= hi, "err_p50_pct": pct(mid), **naive,
+                     "err_due_pct": pct(naive["naive_due"]), "err_median_pct": pct(naive["naive_median"]),
+                     "err_rate_pct": pct(naive["naive_rate"])})
     return pd.DataFrame(rows)
 
 
