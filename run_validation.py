@@ -24,6 +24,12 @@ if __name__ == "__main__":
     print("\nBasit yöntemlere karşı (hatalar aylık ciro cinsinden, düşük olan iyi; fark = model eksi yöntem, eksi = model daha iyi):")
     print(s["baselines"].to_string(float_format=lambda v: f"{v:.3f}"))
     print(f"Aralık skoru (%80, Gneiting-Raftery; düşük olan iyi): {s['interval_score']:.3f}")
+    st = s["standards"]
+    print("")
+    print(f"Standart testler: Basel (alt uç) {st['basel_lower']['zone']} ({st['basel_lower']['exceptions']} aşım, "
+          f"beklenen {st['basel_lower']['expected']:.0f}); Kupiec p: alt {st['kupiec_lower']['p_value']:.3f}, "
+          f"üst {st['kupiec_upper']['p_value']:.3f}, merkezi {st['kupiec_central']['p_value']:.3f}; "
+          f"Spiegelhalter p {st['spiegelhalter']['p_value']:.3f} (Brier {st['spiegelhalter']['brier']:.4f})")
     print("\nEksiye düşme olasılığı kalibrasyonu:")
     print(s["reliability"].to_string())
     for name, table in s["by_regime"].items():

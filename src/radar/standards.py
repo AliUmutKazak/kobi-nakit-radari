@@ -16,6 +16,10 @@ Projede kabul eşikleri kendimiz tarafından belirlenmez; aşağıdaki kurum ve 
   Journal of Forecasting 13(2). İki tahminin isabeti eşit mi; ufuklar üst üste bindiğinde kayıp farkının
   otokorelasyonu hesaba katılır.
 
+- Spiegelhalter, D. (1986), "Probabilistic prediction in patient management and clinical trials",
+  Statistics in Medicine 5(5). Olasılık tahminlerinin (ör. "90 günde eksiye düşme olasılığı %30")
+  kalibrasyonu için Brier skoruna dayalı z testi; olasılık tahminlerinde standart doğrulama testidir.
+
 Tüm testlerde anlamlılık düzeyi %5'tir (bilimsel yayınlarda ve Basel sarı bölge sınırında kullanılan düzey).
 """
 from __future__ import annotations
@@ -107,3 +111,18 @@ def passes(report: dict) -> bool:
     """Aralık standartları sağlanıyor mu: alt uç Basel yeşil ve hiçbir Kupiec testi reddetmiyor."""
     return (report["basel_lower"]["zone"] == "yeşil" and not report["kupiec_lower"]["reject"]
             and not report["kupiec_upper"]["reject"] and not report["kupiec_central"]["reject"])
+
+
+def spiegelhalter(prob, outcome) -> dict:
+    """Spiegelhalter (1986) kalibrasyon z testi ve Brier skoru. `prob`: tahmin edilen olasılıklar,
+    `outcome`: 0/1 gerçekleşme. p < 0,05 ise olasılıklar kalibre değildir (sistematik iyimser ya da kötümser)."""
+    p, y = np.clip(np.asarray(prob, float), 1e-9, 1 - 1e-9), np.asarray(outcome, float)
+    brier = float(np.mean((y - p) ** 2))
+    num = np.sum((y - p) * (1 - 2 * p))
+    den = math.sqrt(np.sum((1 - 2 * p) ** 2 * p * (1 - p)))
+    if den == 0:
+        return {"brier": brier, "z": float("nan"), "p_value": float("nan"), "reject": None, "n": len(p)}
+    z = float(num / den)
+    pv = float(2 * stats.norm.sf(abs(z)))
+    return {"brier": brier, "z": z, "p_value": pv, "reject": bool(pv < SIGNIFICANCE), "n": len(p),
+            "mean_prob": float(p.mean()), "observed": float(y.mean())}

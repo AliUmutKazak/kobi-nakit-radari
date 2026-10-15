@@ -168,4 +168,16 @@ def summarize(df: pd.DataFrame) -> dict:
         "brier_baseline": float(base * (1 - base)),
         "reliability": reliability,
         "by_regime": {k: table(k) for k in REGIMES},
+        "standards": standards_summary(cases, df),
     }
+
+
+def standards_summary(cases: pd.DataFrame, df: pd.DataFrame) -> dict:
+    """Uluslararası testler: dönem sonu kasa bandı için Basel bölgesi (alt uç) ve Kupiec (alt, üst, merkezi);
+    eksiye düşme olasılıkları için Spiegelhalter ve Brier. Her açılış düzeyi ayrı satır olduğu için
+    Spiegelhalter gözlemleri tam bağımsız değildir; sonuç bu nedenle temkinli okunur."""
+    from .standards import basel_zone, kupiec_pof, spiegelhalter
+    n, below, above = len(cases), int(cases["below"].sum()), int(cases["above"].sum())
+    return {"basel_lower": basel_zone(n, below, 0.10), "kupiec_lower": kupiec_pof(n, below, 0.10),
+            "kupiec_upper": kupiec_pof(n, above, 0.10), "kupiec_central": kupiec_pof(n, below + above, 0.20),
+            "spiegelhalter": spiegelhalter(df["p_breach"], df["breached"])}

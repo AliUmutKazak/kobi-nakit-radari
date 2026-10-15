@@ -12,7 +12,7 @@ import pandas as pd  # noqa: E402
 import plotly.graph_objects as go  # noqa: E402
 import streamlit as st  # noqa: E402
 
-from radar import access, actions, anonymize, ingest, mailer, pilot, pipeline  # noqa: E402
+from radar import access, actions, anonymize, ingest, mailer, pilot, pipeline, standards  # noqa: E402
 from radar.reconcile import collection_events, reconcile, sender_key  # noqa: E402
 from radar.store import Store, create_business, encrypt_backup, list_businesses  # noqa: E402
 
@@ -750,6 +750,17 @@ with tab_accuracy:
                      f"%{mae['medyan']:.0f}, \"son dönemin tahsilat oranı sürer\" %{mae['oran']:.0f}. "
                      + ("Model sizin verinizde basit yöntemlerden daha isabetli." if better else
                         "**Model sizin verinizde basit yöntemlerden daha isabetli değil;** tahminlere temkinli yaklaşın."))
+            band = standards.interval_report(bt["actual"], bt["p10"], bt["p90"])
+            acc = pilot.accuracy_test(pd.DataFrame({
+                "model": (bt["p50"] - bt["actual"]).abs(), "vade": (bt["naive_due"] - bt["actual"]).abs(),
+                "medyan": (bt["naive_median"] - bt["actual"]).abs(), "oran": (bt["naive_rate"] - bt["actual"]).abs()}),
+                overlap=3)
+            st.write(f"Uluslararası testler ({len(bt)} tarih): kötümser uç için Basel Komitesi trafik ışığı "
+                     f"**{band['basel_lower']['zone']}** ({band['below']} aşım); Kupiec kapsama testi p = "
+                     f"{band['kupiec_central']['p_value']:.2f} ({'reddedildi' if band['kupiec_central']['reject'] else 'reddedilmedi'}); "
+                     f"isabet (Diebold-Mariano): **{acc['sonuc']}**.")
+            st.caption("Az sayıda tarihle testlerin gücü düşüktür: 'yeşil' ve 'reddedilmedi', modelin doğru olduğunu "
+                       "değil, aksine kanıt bulunmadığını gösterir. Pilot süresince kayıtlar biriktikçe güç artar.")
             show_table(bt.rename(columns={
                 "origin": "Tahmin tarihi", "actual": "Gerçekleşen (TL)", "p10": "Kötümser (TL)",
                 "p50": "Orta tahmin (TL)", "p90": "İyimser (TL)", "inside": "Bant içinde",

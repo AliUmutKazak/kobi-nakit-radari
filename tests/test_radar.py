@@ -672,6 +672,9 @@ def test_dashboard_renders_demo_and_own_data_without_errors(tmp_path, monkeypatc
     assert not at.exception, [e.value for e in at.exception]
     assert len(at.dataframe) >= 1 and len(at.text_area) == 1
     assert not any("en son hareket" in e.value for e in at.error)
+    next(b for b in at.button if b.label == "Geri testi çalıştır").click().run()
+    assert not at.exception, [e.value for e in at.exception]
+    assert any("Basel Komitesi trafik ışığı" in m.value for m in at.markdown)
     monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))                   # anonimleştirme anahtarı testte buraya
     next(b for b in at.sidebar.button if b.label == "Takma adlı paketi hazırla").click().run()
     assert not at.exception, [e.value for e in at.exception]
@@ -1070,6 +1073,11 @@ def test_standards_reproduce_basel_table_and_tests():
     assert not kupiec_pof(250, 2, 0.01)["reject"] and kupiec_pof(384, 15, 0.10)["reject"]   # çok az aşım da kusur
     rep = interval_report(np.arange(100.0), np.arange(100.0) - 5, np.arange(100.0) + 5)
     assert rep["below"] == 0 and rep["kupiec_central"]["reject"] and not passes(rep)
+    from radar.standards import spiegelhalter
+    rng = np.random.default_rng(3)
+    probs = rng.uniform(0, 1, 3000)
+    assert not spiegelhalter(probs, rng.uniform(0, 1, 3000) < probs)["reject"]          # kalibre
+    assert spiegelhalter(probs, rng.uniform(0, 1, 3000) < probs ** 0.5)["reject"]      # olasılıklar düşük
     d = diebold_mariano([1.0, 2, 3], [1.0, 2, 3])
     assert np.isnan(d["stat"])                                                     # 4'ten az gözlem
 
