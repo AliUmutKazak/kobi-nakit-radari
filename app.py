@@ -8,6 +8,7 @@ from pathlib import Path
 
 sys.path.insert(0, "src")
 
+import numpy as np  # noqa: E402
 import pandas as pd  # noqa: E402
 import plotly.graph_objects as go  # noqa: E402
 import streamlit as st  # noqa: E402
@@ -173,9 +174,17 @@ def run_own(path: str, rev: int, as_of: str, include_projected: bool):
         outflows = flows if outflows is None else pd.concat([outflows, flows], ignore_index=True)
     if cheques is not None:
         notes.append(f"Çek/senet portföyü: {len(cheques)} adet, {tl(cheques['amount'].sum())}.")
+    # Pilot kayıtları biriktikçe bant iki uçta ayrı ayrı çevrimiçi ayarlanır (pilot.online_adjustment).
+    online = pilot.online_adjustment(store.pilot_records(), obs, collection_events(obs, allocations))
+
+    def hook(calib):
+        w0 = calib.get("widen", 1.0)
+        w0 = (w0, w0) if np.isscalar(w0) else w0
+        return calib | {"widen": (w0[0] * online["lo"], w0[1] * online["hi"]), "online": online}
+
     res = pipeline.forecast(obs.reset_index(drop=True), as_of, float(store.get("opening", 0)),
                             outflows if outflows is not None else pd.DataFrame({"date": [], "amount": []}),
-                            include_projected=include_projected, cheques=cheques)
+                            include_projected=include_projected, cheques=cheques, calib_hook=hook)
     # Verideki son hareket: bundan sonraki ödemeler bilinmez, ödenmemiş görünür.
     dates = [obs["issue_date"].max(), obs["paid_date"].max()] + ([payments["date"].max()] if payments is not None else [])
     last = max(d for d in dates if pd.notna(d))
@@ -537,7 +546,8 @@ if own and store.get("pilot_on", "0") == "1" and pilot.record_due(store.pilot_re
             "son_hareket": f"{res['last_activity']:%Y-%m-%d}", "veri_ozeti": digest[:16],
             "yontem": "müşteri medyanı (basit)" if res["simple_model"] else "LightGBM + müşteri medyanı birleşimi",
             "eslesme_orani": res.get("match_rate"), "kapsam": res.get("scope", {}),
-            "acilis_guncel": store.get("opening_date") == f"{pd.Timestamp(res['as_of']):%Y-%m-%d}"}
+            "acilis_guncel": store.get("opening_date") == f"{pd.Timestamp(res['as_of']):%Y-%m-%d}",
+            "cevrimici_ayar": res["ctx"]["calib"].get("online"), "genisletme": res["info"].get("widen")}
     if store.add_pilot_record(res["as_of"], weekly, opening=res["opening"], meta=meta):
         st.toast("Bu haftanın pilot kaydı alındı.")
     if res.get("match_rate") is not None and res["match_rate"] < pilot.MIN_MATCH_RATE:
@@ -734,9 +744,11 @@ with tab_accuracy:
              + (" Bu sayı az; aralıklar varsayılan değerlere yakın." if info["n_calibration"] < 100 else ""))
     st.write(f"• Müşterilerin birlikte gecikme eğilimi: piyasa geneli {info['rho_market']:.2f}, aynı müşterinin faturaları "
              f"{info['rho_customer']:.2f} (0 = bağımsız, 1 = tamamen birlikte).")
-    if info.get("widen", 1.0) > 1.0:
-        st.write(f"• Geçmiş tarihlerde toplam tahsilat aralığın dışına sık düştüğü için aralık {info['widen']:.2f} kat "
-                 "genişletildi (işletmenin kendi geçmiş hatalarına göre).")
+    widen = info.get("widen", 1.0)
+    w_lo, w_hi = (widen, widen) if np.isscalar(widen) else widen
+    if (w_lo, w_hi) != (1.0, 1.0):
+        st.write(f"• Aralık işletmenin kendi geçmiş hatalarına göre ayarlandı: kötümser taraf {w_lo:.2f}, iyimser taraf "
+                 f"{w_hi:.2f} kat (1 = değişiklik yok). Pilot kayıtları biriktikçe iki taraf ayrı ayrı güncellenir.")
     st.divider()
     st.write("Geçmişteki birkaç tarihe dönülür, o gün eldeki bilgiyle 90 günlük tahsilat tahmin edilir "
              "ve sonradan gerçekleşenle karşılaştırılır.")

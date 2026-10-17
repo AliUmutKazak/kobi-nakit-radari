@@ -269,12 +269,15 @@ def simulate(inv: pd.DataFrame, Q: np.ndarray, as_of, opening: float, outflows: 
     keep = (off >= 1) & (off <= horizon)
     np.add.at(out, off[keep], outflows["amount"].to_numpy(float)[keep])
     balance = opening + np.cumsum(inflow - out, axis=1)
-    if widen != 1.0:
-        # Toplam düzeyde konformal genişletme: senaryolar günlük medyan etrafında açılır.
+    w_lo, w_hi = (widen, widen) if np.isscalar(widen) else widen
+    if (w_lo, w_hi) != (1.0, 1.0):
+        # Toplam düzeyde genişletme: medyanın altı (kötümser taraf) ve üstü ayrı katsayıyla ölçeklenir.
         med = np.median(balance, axis=0)
-        balance = med + widen * (balance - med)
+        dev = balance - med
+        balance = med + np.where(dev < 0, w_lo * dev, w_hi * dev)
         cmed = np.median(collections)
-        collections = cmed + widen * (collections - cmed)
+        cdev = collections - cmed
+        collections = cmed + np.where(cdev < 0, w_lo * cdev, w_hi * cdev)
 
     p10, p50, p90 = np.percentile(balance, [10, 50, 90], axis=0)
     below = np.flatnonzero(p10 < 0)

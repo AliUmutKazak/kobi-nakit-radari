@@ -1124,3 +1124,27 @@ def test_panel_password_gate(tmp_path, monkeypatch):
     at.text_input[0].set_value("dogru-parola-1").run()
     at.button[0].click().run()
     assert not at.exception and len(at.metric) == 5                       # demo şirket açıldı
+
+
+def test_online_quantile_tracking_moves_each_tail_separately():
+    from radar import pilot
+
+    inv = pd.DataFrame({"invoice_id": [f"F{i}" for i in range(30)], "customer_id": "1", "customer_name": "X",
+                        "issue_date": pd.Timestamp("2026-01-01"), "due_date": pd.Timestamp("2026-02-01"),
+                        "amount": 100.0, "open_amount": 0.0,
+                        "paid_date": [pd.Timestamp("2026-03-01") + pd.Timedelta(days=7 * i) for i in range(30)]})
+    weeks = [pd.Timestamp("2026-02-20") + pd.Timedelta(days=7 * i) for i in range(20)]
+
+    def table(lo, hi):
+        return pd.DataFrame({"as_of": [f"{d:%Y-%m-%d}" for d in weeks], "target": "tahsilat", "horizon": 14,
+                             "until": [f"{d + pd.Timedelta(days=14):%Y-%m-%d}" for d in weeks], "p10": lo, "p50": 150.0,
+                             "p90": hi})
+    # Her 14 günde ~200 TL geliyor. Bant çok yüksekte: hep kötümserin altında -> kötümser taraf genişler.
+    low = pilot.online_adjustment(table(500.0, 900.0), inv)
+    assert low["n"] > 10 and low["lo"] > 1.5 and low["hi"] == pytest.approx(1 - 0.1 * 0.1 * low["n"])   # aşımsız her kayıt -0,01
+    # Bant çok aşağıda: hep iyimserin üstünde -> iyimser taraf genişler, kötümser 1'de kalır.
+    high = pilot.online_adjustment(table(0.0, 50.0), inv)
+    assert high["lo"] == 1.0 and high["hi"] > 1.5
+    # Bant doğru: kötümser 1'in altına inmez (Basel ihtiyatı); kayıt yoksa ayar yok.
+    ok = pilot.online_adjustment(table(0.0, 900.0), inv)
+    assert ok["lo"] == 1.0 and pilot.online_adjustment(pd.DataFrame(), inv) == {"lo": 1.0, "hi": 1.0, "n": 0}

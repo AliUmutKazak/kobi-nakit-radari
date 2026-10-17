@@ -20,6 +20,10 @@ Projede kabul eşikleri kendimiz tarafından belirlenmez; aşağıdaki kurum ve 
   Statistics in Medicine 5(5). Olasılık tahminlerinin (ör. "90 günde eksiye düşme olasılığı %30")
   kalibrasyonu için Brier skoruna dayalı z testi; olasılık tahminlerinde standart doğrulama testidir.
 
+- Dimitriadis, T., Gneiting, T. ve Jordan, A. (2021), "Stable reliability diagrams for probabilistic
+  classifiers", PNAS 118(8). CORP: güvenilirlik diyagramı izotonik regresyonla (PAV) kurulur; Brier skoru
+  kalibrasyon hatası (MCB), ayırt etme (DSC) ve belirsizlik (UNC) olarak ayrışır: Brier = MCB − DSC + UNC.
+
 Tüm testlerde anlamlılık düzeyi %5'tir (bilimsel yayınlarda ve Basel sarı bölge sınırında kullanılan düzey).
 """
 from __future__ import annotations
@@ -50,21 +54,30 @@ def basel_zone(n: int, exceptions: int, tail_prob: float) -> dict:
 
 
 def kupiec_pof(n: int, exceptions: int, rate: float) -> dict:
-    """Kupiec (1995) olabilirlik oranı testi: aşım oranı beklenen `rate`e eşit mi (iki yönlü)."""
+    """Kupiec (1995) olabilirlik oranı testi: aşım oranı beklenen `rate`e eşit mi (iki yönlü).
+
+    p değeri kesin hesaplanır: doğru modelde aşım sayısı Binom(n, rate) dağılır; LR istatistiğinin bu dağılım
+    altında gözlenen değere eşit ya da büyük olma olasılığı toplanır. Asimptotik ki-kare yaklaşımı küçük
+    örneklemde ve uç kapsama düzeylerinde ciddi boyut sapması yapar (Kaszyński, Kamiński ve Pankratz;
+    ExactVaRTest); küçük işletmenin az sayıdaki kaydında kesin p değeri esastır. Ki-kare p değeri de verilir."""
     if n <= 0:
         return {"lr": float("nan"), "p_value": float("nan"), "reject": None, "observed_rate": float("nan")}
     x = int(exceptions)
-    phat = x / n
 
-    def loglik(p: float) -> float:
-        p = min(max(p, 1e-12), 1 - 1e-12)
-        return (n - x) * math.log(1 - p) + x * math.log(p)
+    def lr_of(k: np.ndarray) -> np.ndarray:
+        k = np.asarray(k, float)
+        ph = k / n
+        with np.errstate(divide="ignore", invalid="ignore"):
+            l0 = (n - k) * np.log(1 - rate) + k * np.log(rate)
+            l1 = np.where(k > 0, k * np.log(np.where(k > 0, ph, 1)), 0) + np.where(k < n, (n - k) * np.log(np.where(k < n, 1 - ph, 1)), 0)
+        return np.maximum(-2 * (l0 - l1), 0.0)
 
-    lr = -2 * (loglik(rate) - (loglik(phat) if 0 < x < n else (n * math.log(1 - 1e-12) if x == 0 else 0.0)))
-    lr = max(lr, 0.0)
-    p_value = float(stats.chi2.sf(lr, 1))
-    return {"lr": float(lr), "p_value": p_value, "reject": bool(p_value < SIGNIFICANCE),
-            "observed_rate": phat, "expected_rate": rate, "n": int(n), "exceptions": x}
+    lr = float(lr_of(np.array([x]))[0])
+    support = np.arange(n + 1)
+    exact = float(stats.binom.pmf(support, n, rate)[lr_of(support) >= lr - 1e-9].sum())
+    return {"lr": lr, "p_value": min(exact, 1.0), "p_value_chi2": float(stats.chi2.sf(lr, 1)),
+            "reject": bool(exact < SIGNIFICANCE), "observed_rate": x / n, "expected_rate": rate, "n": int(n),
+            "exceptions": x}
 
 
 def diebold_mariano(loss_model, loss_bench, overlap: int = 1) -> dict:
@@ -126,3 +139,19 @@ def spiegelhalter(prob, outcome) -> dict:
     pv = float(2 * stats.norm.sf(abs(z)))
     return {"brier": brier, "z": z, "p_value": pv, "reject": bool(pv < SIGNIFICANCE), "n": len(p),
             "mean_prob": float(p.mean()), "observed": float(y.mean())}
+
+
+def corp(prob, outcome) -> dict:
+    """CORP güvenilirlik analizi ve Brier ayrıştırması (Dimitriadis, Gneiting ve Jordan 2021).
+
+    PAV ile yeniden ayarlanmış olasılıklar, tahminin "doğru ayarlı olsaydı" hâlidir. MCB (miscalibration):
+    yeniden ayarla kazanılabilecek Brier; DSC (discrimination): ayırt etme gücü; UNC: olayın kendi belirsizliği.
+    `curve`, diyagram için (tahmin, yeniden ayarlı) çiftleridir."""
+    from sklearn.isotonic import IsotonicRegression
+    p, y = np.asarray(prob, float), np.asarray(outcome, float)
+    rec = IsotonicRegression(y_min=0.0, y_max=1.0, increasing=True, out_of_bounds="clip").fit_transform(p, y)
+    brier = lambda q: float(np.mean((y - q) ** 2))
+    s, s_c, s_r = brier(p), brier(rec), brier(np.full_like(y, y.mean()))
+    order = np.argsort(p)
+    return {"brier": s, "mcb": s - s_c, "dsc": s_r - s_c, "unc": s_r,
+            "curve": list(zip(p[order].round(4).tolist(), rec[order].round(4).tolist()))}

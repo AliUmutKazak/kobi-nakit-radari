@@ -143,7 +143,8 @@ def aggregate_widen(stored, final, as_of, calib, horizons=(14, 30, 60, 90), leve
 def forecast(obs: pd.DataFrame, as_of, opening: float, outflows: pd.DataFrame, horizon: int = 90,
              n_sims: int = 2000, include_projected: bool = True, seed: int = 0,
              cheques: pd.DataFrame | None = None, calib_hook=None) -> dict:
-    """calib_hook: kalibrasyon sözlüğünü değiştiren isteğe bağlı fonksiyon (yalnızca deneyler için)."""
+    """calib_hook: kalibrasyon sözlüğünü değiştiren isteğe bağlı fonksiyon (deneyler ve pilot sırasındaki
+    çevrimiçi kantil izleme için; bkz. pilot.online_adjustment)."""
     as_of = pd.Timestamp(as_of)
     feats_issue = build_features(obs)
     X, y = training_frame(obs, as_of, feats=feats_issue)

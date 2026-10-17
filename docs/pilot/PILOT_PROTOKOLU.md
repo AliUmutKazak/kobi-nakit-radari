@@ -1,6 +1,6 @@
 # Pilot Protokolü
 
-Sürüm 1.3 — 16 Ekim 2026. 1.1: Ek A hukuk müşavirliği taslağına göre güncellendi, Ek D eklendi. 1.2: bağımsız derin inceleme (15.10.2026) üzerine ölçüm tanımları kesinleştirildi. **1.3: kendi belirlediğimiz eşikler (B1'de +2 puan tolerans, B2'de %70 bant içi) kaldırıldı; yerlerine uluslararası ve Türkiye'de geçerli standart testler kondu (Basel Komitesi / BDDK geriye dönük test bölgeleri, Kupiec kapsama testi, Diebold-Mariano testi).** Bütün değişiklikler pilot verisi görülmeden yapıldı. Bu belge, ilk gerçek işletme verisi görülmeden yazılmıştır. Başarı ölçütleri pilot sırasında değiştirilmez; değişiklik gerekirse yeni sürüm numarasıyla, gerekçesiyle ve hangi verinin görüldüğü belirtilerek yapılır.
+Sürüm 1.4 — 17 Ekim 2026. 1.4: Kupiec p değeri kesin binom hesabıyla; pilot sırasında çevrimiçi kantil izleme; pilot sonrası olasılık yeniden ayarı önceden kaydedildi (bkz. 6. bölüm sonu). 1.3 — 16 Ekim 2026. 1.1: Ek A hukuk müşavirliği taslağına göre güncellendi, Ek D eklendi. 1.2: bağımsız derin inceleme (15.10.2026) üzerine ölçüm tanımları kesinleştirildi. **1.3: kendi belirlediğimiz eşikler (B1'de +2 puan tolerans, B2'de %70 bant içi) kaldırıldı; yerlerine uluslararası ve Türkiye'de geçerli standart testler kondu (Basel Komitesi / BDDK geriye dönük test bölgeleri, Kupiec kapsama testi, Diebold-Mariano testi).** Bütün değişiklikler pilot verisi görülmeden yapıldı. Bu belge, ilk gerçek işletme verisi görülmeden yazılmıştır. Başarı ölçütleri pilot sırasında değiştirilmez; değişiklik gerekirse yeni sürüm numarasıyla, gerekçesiyle ve hangi verinin görüldüğü belirtilerek yapılır.
 
 ## 1. Amaç
 
@@ -93,6 +93,10 @@ Her pilot raporu "İleriye dönük kayıt" bölümünde, o gün açık faturalar
 - Eşleşmeyen banka tahsilatı oranı (veri kalitesi).
 - **Hedef B, kapanış kasası:** her kayıtta açılış kasasından başlayıp bilinen giderler, borçlar, çekler, açık faturalar ve (açıksa) yeni satışlarla 7, 14 ve 28 gün sonraki kasa (P10/P50/P90) yazılır. Gerçekleşen, ufkun sonuna ±3 gün içindeki kayıtta kullanıcının o gün girdiği kasa ve banka toplamıdır (yalnızca o gün güncellenmiş bakiyeler kullanılır). Karşılaştırma: "kasa değişmez". Hedef A'dan ayrı raporlanır; toplam nakit isabeti tahsilat isabetiyle karıştırılmaz. Kapsam dışı kaynaklar (ör. gider dosyası yok) kayıt künyesinde yazılıdır.
 - Pilot sonu görüşmesi: en çok ve en az işe yarayan bölüm, güvenilmeyen sayı, eksik özellik.
+
+**Pilot sırasında çevrimiçi ayar (önceden kayıtlı algoritma).** Her işletmenin bandı, ufku dolmuş kendi haftalık tahsilat kayıtlarıyla iki uçta ayrı ayrı güncellenir: katsayı ← katsayı + 0,1 × (aşım − 0,10) (Angelopoulos, Candès ve Tibshirani 2023; Gibbs ve Candès 2021). Kötümser uç başlangıç genişliğinin altına daralmaz; iyimser uç en fazla yarıya daralır. Bu bir el ayarı değil, önceden tanımlı bir algoritmadır; pilot verisine bakılarak değiştirilmez. Uygulanan katsayılar kayıt künyesine yazılır.
+
+**Pilot sonrası analiz (önceden kayıtlı).** (1) Eksiye düşme olasılıkları ve kapanış kasası bantları için CORP güvenilirlik analizi ve Brier ayrıştırması (Dimitriadis vd. 2021). (2) Kalibrasyon hatası anlamlıysa (Spiegelhalter, %5), bütün pilot işletmelerinin birleşik verisiyle izotonik yeniden ayar kurulur ve işletme dışarıda bırakılarak (leave-one-firm-out) sınanır; yalnızca dışarıda bırakılan işletmelerde Brier'i düşürüyorsa ürüne alınır.
 
 Bu ölçütlerde değişim görülse bile araca bağlanamaz: mevsim, faiz ortamı ve müşteri karışımı aynı dönemde değişir. Nedensel bir etki iddiası ancak rastgele seçilmiş karşılaştırma grubuyla (örneğin müşterilerin yarısına öncelik listesi uygulanır, yarısına uygulanmaz) kurulabilir; bu, pilotun ikinci aşamasına bırakılmıştır.
 

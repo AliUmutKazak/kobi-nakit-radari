@@ -19,7 +19,7 @@ from .pipeline import forecast, gap_summary, naive_collections, weekly_table
 from .reconcile import collection_events
 from .standards import SIGNIFICANCE, diebold_mariano, interval_report, passes as interval_passes
 
-VERSION = "2026.10.16"            # tahmin kaydına yazılır: hangi kod sürümüyle üretildiği
+VERSION = "2026.10.17"            # tahmin kaydına yazılır: hangi kod sürümüyle üretildiği
 MIN_HISTORY_DAYS = 365            # protokol 2. bölüm: en az 12 aylık fatura geçmişi; altında geri test yapılmaz
 MIN_MATCH_RATE = 0.80             # banka tahsilatlarının bu oranın altında eşleştiği kayıt uyarılıdır, B1'e girmez
 ALPHA = 0.2                       # P10–P90 aralığı: %80 merkezi aralık
@@ -321,6 +321,42 @@ varsayımından daha isabetli çıkmıştır; "son dönemin tahsilat oranı" yö
 geride kalmıştır (proje belgeleri: DOGRULAMA.md). Bu yüzden rapor, modeli her işletmenin kendi geçmişinde bu yöntemlerle yarıştırır. Gecikmeler hızla kötüleşiyorsa tahmin iyimser kalabilir.
 Kur değişimi, yeni kredi ve plan dışı büyük giderler dahil değildir.</p>
 </body></html>"""
+
+
+ONLINE_ETA = 0.1          # adım büyüklüğü; açık verilerde 0,1 / 0,2 / 0,4 aynı sonucu verdi
+ONLINE_RISK_FLOOR = 1.0   # kötümser uç, kalibrasyonun verdiği genişliğin altına daralmaz (Basel ihtiyatı)
+ONLINE_UPPER_FLOOR = 0.5
+
+
+def online_adjustment(table: pd.DataFrame, later: pd.DataFrame, events: pd.DataFrame | None = None,
+                      tail: float = 0.10) -> dict:
+    """Çevrimiçi kantil izleme (Angelopoulos, Candès ve Tibshirani 2023, "Conformal PID control", P terimi;
+    Gibbs ve Candès 2021, uyarlanabilir konformal çıkarım).
+
+    İşletmenin ufku dolmuş haftalık tahsilat kayıtları dolma sırasıyla işlenir. Her uç için katsayı
+    w ← w + eta (aşım − 0,10): kayıt o gün gösterilen kötümser (iyimser) değerin altında (üstünde) kaldıysa
+    aşım 1'dir. Uzun dönemde her uçta aşım oranı, verinin nasıl üretildiğinden bağımsız olarak %10'a yaklaşır.
+    Kötümser katsayı 1'in altına inmez: az kayıtla riskin küçümsenmesi kabul edilmez. Kayıt yoksa (1, 1)."""
+    if table is None or not len(table):
+        return {"lo": 1.0, "hi": 1.0, "n": 0}
+    rec = table[table.get("target", pd.Series("tahsilat", index=table.index)).fillna("tahsilat") == "tahsilat"]
+    if not len(rec):
+        return {"lo": 1.0, "hi": 1.0, "n": 0}
+    events = collection_events(later) if events is None else events
+    issued = later.set_index(later["invoice_id"].astype(str))["issue_date"]
+    ev = events.assign(issue=events["invoice_id"].astype(str).map(issued))
+    data_end = max(later["issue_date"].max(), events["date"].max() if len(events) else later["issue_date"].max())
+    w_lo = w_hi = 1.0
+    n = 0
+    for r in rec.assign(until=pd.to_datetime(rec["until"]), as_of=pd.to_datetime(rec["as_of"])).sort_values("until").itertuples():
+        if r.until > data_end:
+            continue
+        hit = (ev["issue"] <= r.as_of) & (ev["date"] > r.as_of) & (ev["date"] <= r.until)
+        actual = float(ev.loc[hit, "amount"].sum())
+        w_lo = max(ONLINE_RISK_FLOOR, w_lo + ONLINE_ETA * (float(actual < r.p10) - tail))
+        w_hi = max(ONLINE_UPPER_FLOOR, w_hi + ONLINE_ETA * (float(actual > r.p90) - tail))
+        n += 1
+    return {"lo": w_lo, "hi": w_hi, "n": n}
 
 
 def records_from_table(table: pd.DataFrame) -> list[dict]:

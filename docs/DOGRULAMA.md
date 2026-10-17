@@ -2,6 +2,30 @@
 
 Tarih: 14 Ekim 2026. Yeniden üretmek için: `python run_validation.py 24` (yaklaşık 3 dakika).
 
+## Literatürün önerdiği çözümler ve uygulananlar (17 Ekim 2026)
+
+Soru: Kupiec ve Spiegelhalter testlerinde görülen sapmalar için güncel bilimsel literatür ne öneriyor; az veriyle çalışan küçük işletmede hangisi uygulanabilir?
+
+| Sorun | Literatürün önerisi | Kaynak | Uygulandı mı |
+|---|---|---|---|
+| Kupiec'in ki-kare yaklaşımı küçük örneklemde ve uç kapsama düzeylerinde boyut sapması yapar (fazla ya da az reddeder) | Kesin (binom) p değeri | Kaszyński, Kamiński ve Pankratz; ExactVaRTest (CRAN) | **Evet.** 16 kayıtta hiç aşım yokken ki-kare p = 0,066 (sınırda alarm), kesin p = 0,20. |
+| Kapsama testlerinin gücü az gözlemde düşük | Birden çok test birlikte; sonuçlar "kanıt yok" diye okunur, "doğru" diye değil | Christoffersen (2004); Berkowitz vd. (2011) | **Evet** (panel ve raporda yazılı) |
+| Zamanla değişen davranış ve işletmeye özgü sapma (gerçek veride iyimser uç dar, sentetikte geniş: tek genel ayar ikisini düzeltemez) | Çevrimiçi uyarlanabilir aralık: her yeni gerçekleşmeyle kapsama hatası kadar düzeltme; veri üretiminden bağımsız uzun dönem kapsama garantisi | Gibbs ve Candès (2021), NeurIPS, "Adaptive conformal inference under distribution shift"; Angelopoulos, Candès ve Tibshirani (2023), NeurIPS, "Conformal PID control for time series prediction" | **Evet.** Her işletmenin ufku dolmuş haftalık kayıtlarıyla iki uç ayrı izlenir (`pilot.online_adjustment`; adım 0,1; kötümser uç başlangıç genişliğinin altına daralmaz). |
+| Olasılıkların kalibrasyonunu kararlı ölçmek | CORP: izotonik regresyonla güvenilirlik diyagramı; Brier = MCB − DSC + UNC | Dimitriadis, Gneiting ve Jordan (2021), PNAS | **Evet** (doğrulama raporu) |
+| Ortaya sıkışık (az kendinden emin) olasılıkları düzeltmek | Gerçekleşmiş sonuçlarla yeniden ayar: izotonik (PAV) ya da beta dönüşümü | Ranjan ve Gneiting (2010), JRSS-B; Kull vd. (2017); Dimitriadis vd. (2021) | **Hayır, pilot sonrasına önceden kaydedildi.** Sonuç verisi gerektirir; tek işletmenin az sayıdaki olayıyla yapılan yeniden ayarın değişkenliği büyüktür (Van Calster vd.). Sentetik veriyle yapmak üretecin varsayımlarını ürüne gömer. |
+
+**Çevrimiçi kantil izlemenin sınanması.** Kaydedilmiş 16 tarihlik geri testler zaman sırasıyla, her tarihte yalnızca ufku dolmuş kayıtları kullanarak yeniden oynatıldı:
+
+| | IBM 14 | IBM 30 | PD 14 | PD 30 |
+|---|---|---|---|---|
+| İyimser uç aşımı (önce → sonra) | 2 → 2 | 1 → 1 | 1 → 1 | **5 → 4** |
+| Kupiec iyimser uç p (önce → sonra) | 0,75 → 0,75 | 0,59 → 0,59 | 0,59 → 0,59 | **0,019 → 0,086** (geçer) |
+| Basel (kötümser uç) | yeşil | yeşil | yeşil | yeşil |
+
+Sonuç, adım büyüklüğünden bağımsız (0,1 / 0,2 / 0,4 aynı). Yöntem işletmenin kendi kayıtlarıyla çalıştığı için pilotun ilk haftalarında etkisizdir; kayıt biriktikçe devreye girer.
+
+**CORP (sentetik, eksiye düşme olasılığı):** Brier 0,0947 = MCB 0,0129 − DSC 0,1474 + UNC 0,2292. Ayırt etme güçlü; kalibrasyon hatası Brier'in yaklaşık %14'ü: olasılıkların sırası doğru, ölçeği sıkışık. İzotonik yeniden ayar Brier'i yaklaşık 0,082'ye indirebilir; bunu yapmak için gereken gerçek sonuç verisi pilotta toplanır (protokol 1.4).
+
 ## Uluslararası standartlarla değerlendirme (16 Ekim 2026)
 
 Kabul ölçütleri projede belirlenmez; şu kaynaklardan alınır (kod: `src/radar/standards.py`, testler Basel Tablo 2'yi birebir üretir):

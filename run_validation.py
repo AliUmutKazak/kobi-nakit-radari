@@ -30,6 +30,9 @@ if __name__ == "__main__":
           f"beklenen {st['basel_lower']['expected']:.0f}); Kupiec p: alt {st['kupiec_lower']['p_value']:.3f}, "
           f"üst {st['kupiec_upper']['p_value']:.3f}, merkezi {st['kupiec_central']['p_value']:.3f}; "
           f"Spiegelhalter p {st['spiegelhalter']['p_value']:.3f} (Brier {st['spiegelhalter']['brier']:.4f})")
+    c = st["corp"]
+    print(f"CORP Brier ayrıştırması: kalibrasyon hatası (MCB) {c['mcb']:.4f}, ayırt etme (DSC) {c['dsc']:.4f}, "
+          f"belirsizlik (UNC) {c['unc']:.4f}")
     print("\nEksiye düşme olasılığı kalibrasyonu:")
     print(s["reliability"].to_string())
     for name, table in s["by_regime"].items():
