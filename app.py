@@ -964,10 +964,14 @@ with tab_collect:
 
     doubtful = ranked[ranked["stage"] == "supheli"]
     if len(doubtful):
-        with st.expander(f"Şüpheli alacaklar: {len(doubtful)} fatura, {tl(doubtful['open_amount'].sum())}"):
+        with st.expander(f"Tahsili zor görünen alacaklar: {len(doubtful)} fatura, {tl(doubtful['open_amount'].sum())}"):
             st.write(f"Bu faturalar {actions.DOUBTFUL_MIN_OVERDUE} günden fazla gecikmiş ve geçmiş verinize göre önümüzdeki "
                      f"90 günde tahsil edilme olasılıkları %{actions.DOUBTFUL_MAX_COLLECT_PROB * 100:.0f}'in altında. "
                      "Hatırlatma listesinde gösterilmezler; yeni bir hatırlatma yerine hukuki yolları değerlendirin.")
+            st.caption("Bu, geçmiş verinize dayanan istatistiksel bir sınıflamadır. Vergi bakımından \"şüpheli alacak\" "
+                       "sayılması ve karşılık ayrılması ayrı şartlara bağlıdır (VUK m.323: dava veya icra safhasında olmak "
+                       "ya da protestoya veya yazıyla birden fazla istenmesine rağmen ödenmemiş olup belirlenen tutarı "
+                       "aşmamak). Muhasebe kaydını mali müşavirinizle değerlendirin.")
             show_table(doubtful[["invoice_id", "customer_name", "due_date", "open_amount", "days_overdue", "p_collect"]]
                          .rename(columns={"invoice_id": "Fatura", "customer_name": "Müşteri", "due_date": "Vade",
                                           "open_amount": "Tutar (TL)", "days_overdue": "Gecikme (gün)",
@@ -975,8 +979,9 @@ with tab_collect:
             if own:
                 gone = st.selectbox("Tahsil edilemez sayılacak fatura", doubtful["invoice_id"], key="writeoff_pick")
                 if st.button("Tahsil edilemez olarak kaydet",
-                             help="Fatura açık alacaktan ve kasa tahmininden çıkar; ödenmiş sayılmaz. Muhasebede şüpheli "
-                                  "alacak karşılığı ya da silme kararı mali müşavirinizle verilmelidir. Geri alınabilir."):
+                             help="Fatura açık alacaktan ve kasa tahmininden çıkar; ödenmiş sayılmaz. Yalnızca bu panelin "
+                                  "tahminini etkiler, muhasebe kaydı değildir. Şüpheli alacak karşılığı (VUK m.323) ya da "
+                                  "değersiz alacak (VUK m.322) kararı mali müşavirinizle verilmelidir. Geri alınabilir."):
                     record(gone, "writeoff", "1")
     if own and "written_off" in res["obs"] and res["obs"]["written_off"].any():
         lost = res["obs"][res["obs"]["written_off"]]

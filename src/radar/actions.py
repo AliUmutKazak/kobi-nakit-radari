@@ -20,7 +20,8 @@ MIN_RECOVERY_COST_TL = 2020
 # Aynı fatura için yeni hatırlatma önermeden önce beklenen süre.
 CONTACT_COOLDOWN_DAYS = 7
 # 90 günden fazla gecikmiş ve simülasyonda ufuk içinde tahsil olasılığı bunun altında kalan fatura
-# "şüpheli alacak" sayılır: hatırlatma listesine girmez, ayrı gösterilir. Eşik bir iş kuralıdır.
+# "tahsili zor" sayılır: hatırlatma listesine girmez, ayrı gösterilir. Eşik bir iş kuralıdır; vergi bakımından
+# şüpheli alacak (VUK m.323) ayrı şartlara bağlıdır ve panelde bu ayrım açıkça yazılır.
 DOUBTFUL_MIN_OVERDUE = 90
 DOUBTFUL_MAX_COLLECT_PROB = 0.15
 
