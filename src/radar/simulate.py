@@ -200,7 +200,8 @@ def simulate(inv: pd.DataFrame, Q: np.ndarray, as_of, opening: float, outflows: 
              cheques: pd.DataFrame | None = None, cheque_bounce: float = CHEQUE_BOUNCE,
              z_shift: float = 0.0, z_scale: float = 1.0, widen: float = 1.0,
              recal: np.ndarray | None = None, sales_level: np.ndarray | None = None,
-             cheque_p: np.ndarray | None = None, cheque_terms: np.ndarray | None = None) -> SimResult:
+             cheque_p: np.ndarray | None = None, cheque_terms: np.ndarray | None = None,
+             cheque_by_customer: bool = False) -> SimResult:
     """inv sütunları: customer_id, issue_date, due_date, open_amount, p_default, projected.
 
     cheque_p / cheque_terms: fatura kapandığında ödemenin çekle yapılma olasılığı ve senaryo başına çek vadesi
@@ -234,7 +235,11 @@ def simulate(inv: pd.DataFrame, Q: np.ndarray, as_of, opening: float, outflows: 
     if cheque_p is not None:
         # Ayrı rastgele akış: çek ayarı olmadan sonuçlar eskisiyle birebir aynı kalır.
         rng_c = np.random.default_rng(seed + 31)
-        by_cheque = rng_c.random((n, n_sims)) < np.asarray(cheque_p, float)[:, None]
+        # Çekle ödeme fatura başına çekilir. Müşteri başına çekmek (müşteri bir senaryoda ya hep çekle ya hep
+        # havaleyle öder) laboratuvarda denendi ve reddedildi: bandı gereğinden geniş yaptı, aralık skoru
+        # kötüleşti (LAB_RAPORU.md, 17 Ekim 2026). Seçenek deneyin tekrarlanabilmesi için duruyor.
+        u = rng_c.random((n_cust, n_sims))[codes] if cheque_by_customer else rng_c.random((n, n_sims))
+        by_cheque = u < np.asarray(cheque_p, float)[:, None]
         zc = np.sqrt(rho_market) * zm + np.sqrt(1 - rho_market) * rng_c.standard_normal((n, n_sims))
         bounced = by_cheque & (ndtr(zc) > 1 - cheque_bounce)
     pay_day = np.full((n, n_sims), horizon + 1, dtype=np.int32)

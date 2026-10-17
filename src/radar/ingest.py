@@ -396,7 +396,7 @@ def load_ledger(file, default_terms: int = 30, fallback_customer: str | None = N
             if r.credit > 0:
                 remaining = r.credit
                 text = _key(r.description)
-                is_cheque = (bool(re.search(r"\b(cek|senet|bono)\b", text)) and pd.notna(r.due_date)
+                is_cheque = (bool(CHEQUE_WORDS.search(text)) and pd.notna(r.due_date)
                              and r.due_date > r.issue_date)
                 while remaining > 0.005 and queue:
                     take = min(remaining, queue[0]["open_amount"])
@@ -424,6 +424,9 @@ def load_ledger(file, default_terms: int = 30, fallback_customer: str | None = N
     return _finish_invoices(out, default_terms, notes), notes, cheque_frame
 
 
+# Cari hesapta çek/senet tahsilatı açıklamaları (aksansız, küçük harf): "Çek tahsilatı", "Müşteri çeki",
+# "Alınan çekler", "Senedi alındı", "Bono". "Çekim" gibi ilgisiz sözcükler eşleşmez.
+CHEQUE_WORDS = re.compile(r"\b(cek|ceki|cekler|cekleri|cekle|senet|senedi|senetler|senetle|bono|bonosu)\b")
 CHEQUE_EXCLUDED = ("ciro", "iskonto", "faktoring", "tahsil edildi", "odendi", "karsiliksiz", "iade")
 
 

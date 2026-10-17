@@ -14,6 +14,9 @@ Boyutlar ve dayanakları (aralıkların kaynağı RANGES içinde; varsayım olan
 - Müşteri yoğunlaşması: gerçek KOBİ'de 40 müşterilik alt örneklemlerde Gini 0,56-0,70 (çeyrekler arası);
   size_sigma bu aralığı üretecek biçimde seçildi.
 - Geçmiş uzunluğu, kötüleşme, şok: varsayım (ürünün karşılaşacağı işletme çeşitliliği).
+- Çek: karşılıksızlık oranı TBB Risk Merkezi'nden; çekle ödeyen müşteri payı ve çek vadesi için kurumsal
+  istatistik bulunamadı (varsayım). Ürün bu iki değeri her işletmenin kendi cari hesabından öğrenir
+  (pipeline.cheque_habits); laboratuvar geniş bir aralıkta bu öğrenmenin tuttuğunu sınar.
 
 Geliştirme ve sınav ayrımı:
 - "gelistirme": yöntem değişiklikleri yalnızca burada denenir. Tohumlar 100000'den başlar.
@@ -54,6 +57,9 @@ RANGES = {
     "history": ((15, 36), (8, 15), "varsayım: işletmenin sisteme verdiği geçmiş (ay)"),
     "trend": ((0.0, 1.2), (1.2, 1.8), "varsayım: gecikmelerin dönem içinde kötüleşmesi"),
     "shock": ((0.0, 0.30), (0.30, 0.45), "varsayım: çeyreklik ortak piyasa şoku"),
+    "cheque_share": ((0.0, 0.60), (0.60, 0.90), "varsayım: çekle ödeyen müşteri payı (kurumsal istatistik yok)"),
+    "cheque_term": ((30, 120), (120, 180), "varsayım: çek vadesi ortancası, gün (kurumsal istatistik yok)"),
+    "cheque_bounce": ((0.028, 0.034), (0.034, 0.07), "TBB Risk Merkezi 2026: tutar bazında %2,8-3,4; saklı: kriz"),
 }
 DSO_LIMITS = (15.0, 180.0)        # üreticinin ulaşabildiği aralık; dışı kırpılır ve raporlanır
 LOG = Path(__file__).resolve().parents[2] / "docs" / "lab" / "sinav_kaydi.csv"
@@ -95,7 +101,9 @@ def sample(split: str, n: int, seed: int = 0, focus: dict | None = None) -> pd.D
 def _gen(row, delay_scale: float = 1.0) -> dict:
     return {"months": int(row["history"]) + 3, "season_amp": float(row["season_amp"]),
             "season_peak": int(row["season_peak"]), "inflation": float(row["inflation"]),
-            "size_sigma": float(row["size_sigma"]), "delay_scale": delay_scale, "terms_scale": min(1.0, delay_scale)}
+            "size_sigma": float(row["size_sigma"]), "delay_scale": delay_scale, "terms_scale": min(1.0, delay_scale),
+            "cheque_share": float(row["cheque_share"]), "cheque_term": float(row["cheque_term"]),
+            "cheque_bounce": float(row["cheque_bounce"])}
 
 
 def dso(obs: pd.DataFrame, as_of, doubtful_days: int = 180) -> float:
@@ -126,19 +134,20 @@ def fit_delay_scale(row, iters: int = 8) -> tuple[float, float]:
     return scale, float(measure(scale))
 
 
-def run_one(row: dict, n_sims: int = 1000) -> list[dict]:
+def run_one(row: dict, n_sims: int = 1000, forecast_kwargs: dict | None = None) -> list[dict]:
     scale, achieved = fit_delay_scale(row)
     out = run_case(int(row["seed"]), int(row["customers"]), float(row["trend"]), float(row["shock"]),
-                   as_of=AS_OF, horizon=HORIZON, n_sims=n_sims, gen=_gen(row, scale))
+                   as_of=AS_OF, horizon=HORIZON, n_sims=n_sims, gen=_gen(row, scale), forecast_kwargs=forecast_kwargs)
     return [r | {k: row[k] for k in row if k not in r} | {"delay_scale": scale, "dso": achieved} for r in out]
 
 
 def run(split: str = "gelistirme", n: int = 200, seed: int = 0, n_jobs: int = -1, n_sims: int = 1000,
-        confirm_test: bool = False, focus: dict | None = None) -> pd.DataFrame:
+        confirm_test: bool = False, focus: dict | None = None, forecast_kwargs: dict | None = None) -> pd.DataFrame:
+    """forecast_kwargs: bir düzeltmenin etkisini aynı senaryolarda ölçmek için (ör. {"cheque_aware": False})."""
     if split == "sinav" and not confirm_test:
         raise PermissionError("Sınav kümesi yalnızca bir sürüm tamamlandığında ve açık onayla koşulur (confirm_test=True).")
     spec = sample(split, n, seed, focus)
-    rows = Parallel(n_jobs=n_jobs)(delayed(run_one)(r, n_sims) for r in spec.to_dict("records"))
+    rows = Parallel(n_jobs=n_jobs)(delayed(run_one)(r, n_sims, forecast_kwargs) for r in spec.to_dict("records"))
     df = pd.DataFrame([r for case in rows for r in case])
     if split == "sinav":
         from .pilot import VERSION
@@ -176,7 +185,8 @@ def robustness_map(df: pd.DataFrame) -> dict[str, pd.DataFrame]:
         labels = pd.Series("4) saklı (geliştirme aralığı dışı)", index=cases.index, dtype=object)
         x = cases.loc[inside, name]
         edges = np.unique(np.quantile(x, [0, 1 / 3, 2 / 3, 1]))
-        fmt = (lambda v: f"{v:.0f}") if name in ("history", "dso", "customers") else (lambda v: f"{v:.2f}")
+        fmt = ((lambda v: f"{v:.0f}") if name in ("history", "dso", "customers", "cheque_term")
+               else (lambda v: f"{v:.3f}") if name == "cheque_bounce" else (lambda v: f"{v:.2f}"))
         idx = np.clip(np.searchsorted(edges, x, side="right") - 1, 0, len(edges) - 2)
         labels.loc[inside] = [f"{i + 1}) {fmt(edges[i])}–{fmt(edges[i + 1])}" for i in idx]
         maps[name] = bin_report(cases, df, labels)

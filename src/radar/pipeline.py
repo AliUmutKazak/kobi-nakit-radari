@@ -243,7 +243,8 @@ def aggregate_widen(stored, final, as_of, calib, horizons=(14, 30, 60, 90), leve
 
 def forecast(obs: pd.DataFrame, as_of, opening: float, outflows: pd.DataFrame, horizon: int = 90,
              n_sims: int = 2000, include_projected: bool = True, seed: int = 0,
-             cheques: pd.DataFrame | None = None, calib_hook=None, cheque_aware: bool = True) -> dict:
+             cheques: pd.DataFrame | None = None, calib_hook=None, cheque_aware: bool = True,
+             cheque_by_customer: bool = False) -> dict:
     """calib_hook: kalibrasyon sözlüğünü değiştiren isteğe bağlı fonksiyon (deneyler ve pilot sırasındaki
     çevrimiçi kantil izleme için; bkz. pilot.online_adjustment).
     cheque_aware: çekle ödeyen müşterilerde paranın çek vadesinde gelmesi (cheque_habits; yalnızca deneylerde kapatılır)."""
@@ -293,7 +294,8 @@ def forecast(obs: pd.DataFrame, as_of, opening: float, outflows: pd.DataFrame, h
     habits = cheque_habits(obs, as_of) if cheque_aware else None
     ctx = {"sim_inv": sim_inv, "Q": model.predict(feats), "aging": aging_curve(obs, as_of), "cheques": cheques,
            "horizon": horizon, "n_sims": n_sims, "seed": seed, "calib": calib, "sales_level": sales_level,
-           "cheque_args": _cheque_args(habits, sim_inv, n_sims, seed)}
+           "cheque_args": _cheque_args(habits, sim_inv, n_sims, seed)
+           | ({"cheque_by_customer": cheque_by_customer} if habits else {})}
     sim = simulate(sim_inv, ctx["Q"], as_of, opening, outflows, horizon, n_sims, seed=seed, aging=ctx["aging"],
                    cheques=cheques, sales_level=sales_level, **_sim_args(calib, sim_inv, as_of), **ctx["cheque_args"])
     real = ~target["projected"].to_numpy()

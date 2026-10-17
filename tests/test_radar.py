@@ -515,6 +515,15 @@ def test_ledger_import_mikro_style_with_cheque(tmp_path):
     assert by.at["MKR003", "due_date"] == pd.Timestamp("2026-10-11")              # vade yok: +30 gün
     assert list(chq["amount"]) == [200000] and chq.at[0, "date"] == pd.Timestamp("2026-12-15")
     assert any("çek" in n for n in notes)
+    assert "cheque_due" not in inv          # son kapatan havale: para o gün gelmiş sayılır
+
+    q = tmp_path / "cek_kapatir.csv"
+    q.write_text(
+        "Evrak Tarihi;Evrak No;Cari İsmi;Vade Tarihi;Açıklama;Borç;Alacak\n"
+        "02.08.2026;F1;Ege Plastik A.Ş.;01.09.2026;Fatura;100.000,00;0\n"
+        "06.09.2026;C1;Ege Plastik A.Ş.;15.12.2026;Müşteri çeki;0;100.000,00\n", encoding="utf-8")
+    inv2, _, _ = ingest.load_ledger(q)
+    assert inv2.set_index("invoice_id").at["F1", "cheque_due"] == pd.Timestamp("2026-12-15")
 
 
 def test_ledger_single_customer_bizimhesap_style(tmp_path):

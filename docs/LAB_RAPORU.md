@@ -1,6 +1,38 @@
 # Senaryo Laboratuvarı
 
-Tarih: 17 Ekim 2026. Kod: `src/radar/lab.py`. Ayrıntılı tablolar: [lab/gelistirme_v1.md](lab/gelistirme_v1.md), [lab/sinav_v1.md](lab/sinav_v1.md). Sınav koşuları kaydı: [lab/sinav_kaydi.csv](lab/sinav_kaydi.csv).
+Tarih: 17 Ekim 2026. Kod: `src/radar/lab.py`. Güncel sürüm 2 (12 boyut, çek dahil). Ayrıntılı tablolar: sürüm 2 [geliştirme](lab/gelistirme_v2.md), [geliştirme, çek düzeltmesi kapalı](lab/gelistirme_v2_cek_duzeltmesi_kapali.md), [sınav](lab/sinav_v2.md); sürüm 1 [geliştirme](lab/gelistirme_v1.md), [sınav](lab/sinav_v1.md). Sınav koşuları kaydı: [lab/sinav_kaydi.csv](lab/sinav_kaydi.csv) (tohum 0: sürüm 1; tohum 1: sürüm 2).
+
+## Sürüm 2: çekle ödeyen müşteriler (17 Ekim 2026)
+
+**Laboratuvarın bulduğu kusur.** Türk KOBİ'lerinde müşterinin çekle ödemesi yaygındır. Cari hesapta çek alındığında fatura kapanır, para ise çekin vadesinde gelir. Sistem elde bulunan çekleri vadesinde sayıyordu. Ama henüz açık olan faturaların ve gelecek satışların da çekle ödenebileceğini hesaba katmıyordu. Bu yüzden çekle ödeyen müşterisi olan işletmede kasa olduğundan erken dolu görünüyordu.
+
+**Kaynak durumu.** TCMB ve TBB karşılıksız çek oranını yayımlar (TBB Risk Merkezi, 2026'da tutar bazında %2,8–3,4). Çekle tahsilatın payını ya da çek vadesinin dağılımını veren kurumsal bir istatistik bulunamadı. Bu yüzden iki değer dışarıdan sabit alınmaz. Ürün, her işletmenin son bir yıllık cari hesap kayıtlarından öğrenir (`pipeline.cheque_habits`):
+- müşteri bazında çekle kapanan fatura payı, işletme ortalamasına büzülerek,
+- çek vadeleri (müşterinin kendi çekleri, yetmezse işletmenin bütün çekleri).
+
+Simülasyonda çekle kapanan faturanın parası vadede gelir ve karşılıksız çıkabilir. Karşılıksızlık TBB oranıyla ve piyasa şokuyla birlikte modellenir. Cari hesap ekstresinde "çek", "müşteri çeki", "alınan çekler", "senet", "bono" açıklamalı alacak satırı faturayı kapatırsa, faturaya çekin vadesi yazılır. Laboratuvarda çekle ödeyen müşteri payı (%0–60, saklı %60–90) ve çek vadesi (30–120 gün, saklı 120–180) varsayımdır. Karşılıksızlık oranı TBB aralığından, saklı rejimde kriz düzeyinden (%3,4–7) çekilir.
+
+**Etkisi (aynı 240 geliştirme işletmesi):**
+
+| | Alt aşım (hedef %10) | Üst aşım | Basel | Orta tahmin sapması (aylık ciro) | Ortalama hata | Aralık skoru |
+|---|---|---|---|---|---|---|
+| Çek düzeltmesi kapalı | %40 | %3 | kırmızı (37 kesitin hepsinde sarı/kırmızı) | +0,56 | 0,83 | 4,15 |
+| Çek düzeltmesi açık | %10 | %7 | yeşil | −0,06 | 0,46 | 2,19 |
+
+Düzeltme olmadan model, basit "son 90 günün tahsilat hızı sürer" yönteminin (0,68) bile gerisindeydi. Düzeltmeyle bütün basit yöntemleri geçiyor ("müşteri her zamanki kadar geç öder": 1,61; "vadesinde ödenir": 2,23).
+
+**Denenip reddedilen.** Geliştirme kümesinde çekle ödeme payı en yüksek kesitte (%40–60) alt aşım %14 çıktı. Akla gelen açıklama şuydu: gerçekte müşteri ya hep çekle ya hep havaleyle öder, simülasyon ise ödeme aracını fatura fatura bağımsız çekiyordu. Bu açıklama, bu bölgede yeni 120 işletmeyle sınandı. Müşteri bazında çekmek bandı gereğinden fazla genişletti (alt %7,5, üst %5,8) ve aralık skorunu kötüleştirdi (2,19'a karşı 2,11). Fatura bazında çekmek bu bölgede tam hedefteydi (alt %10,0). Yöntem değişmedi; %14 örneklem değişkenliğiydi.
+
+**Sınav (sürüm 2, yeni tohumlar, 240 işletme, bir kez koşuldu):**
+
+| Kesit | İşletme | Alt aşım | Üst aşım | Basel | Kupiec alt / üst p | Spiegelhalter p | Model − basit yöntem |
+|---|---|---|---|---|---|---|---|
+| Tümü | 240 | %8 | %6 | yeşil | 0,29 / 0,043 | 0,011 | −0,95 ± 0,08 |
+| Geliştirme aralığı içi | 120 | %6 | %5 | yeşil | 0,13 / 0,054 | 0,09 | −1,03 ± 0,13 |
+
+- Kötümser uç hedefte. Ortalama hata aylık cironun 0,37'si.
+- İyimser uç ve eksiye düşme olasılıkları reddedildi: bant iyimser tarafta biraz geniş, olasılıklar ortaya sıkışık. Bu iki bulgu önceki çalışmalarla aynı yönde; pilot sonrası için ön kayıtlı kalibrasyon güncellemesinin konusu.
+- Saklı rejimlerde iki küçük kesit sarı çıktı: aşırı hızlı kötüleşme (11 işletme, alt %36) ve kriz düzeyinde karşılıksızlık (13 işletme, alt %23). Geliştirme tarafında 120'şer yeni işletmeyle incelendi. İkisi de yeşil çıktı (alt aşım %5,8 ve %6,7; Kupiec p 0,13 ve 0,23). Kriz düzeyinde karşılıksızlıkta olasılık kalibrasyonu reddedildi (Spiegelhalter p = 0,016). Karşılıksızlık oranı TBB verisinden aylık güncellenmelidir. İşletmenin kendi karşılıksız çek geçmişinden öğrenmek, pilot verisiyle yapılacak bir sonraki adım.
 
 ## Amaç: ezber değil genelleme
 
@@ -26,6 +58,9 @@ Sistem dört katmandan oluşur:
 | Geçmiş uzunluğu | 15–36 ay | 8–15 ay | varsayım |
 | Gecikmelerin kötüleşmesi | 0–1,2 | 1,2–1,8 | varsayım |
 | Çeyreklik piyasa şoku | 0–0,30 | 0,30–0,45 | varsayım |
+| Çekle ödeyen müşteri payı (sürüm 2) | %0–60 | %60–90 | varsayım (kurumsal istatistik yok) |
+| Çek vadesi ortancası (sürüm 2) | 30–120 gün | 120–180 gün | varsayım (kurumsal istatistik yok) |
+| Karşılıksız çek oranı (sürüm 2) | %2,8–3,4 | %3,4–7 | TBB Risk Merkezi 2026; saklı aralık kriz varsayımı |
 
 Örnekleme Latin hiperküp yöntemiyle yapılır; her boyut kendi aralığında eşit kaplanır.
 
@@ -33,7 +68,7 @@ Sistem dört katmandan oluşur:
 
 **Laboratuvarın ortaya çıkardığı bir üretici kusuru:** Eski sentetik veri, gerçek bir KOBİ'ye göre daha az yoğunlaşmıştı. 40 müşteride Gini 0,56 çıkıyordu; gerçek KOBİ'nin alt örneklemlerinde ise 0,61. Laboratuvar artık gerçek aralığı kapsıyor. Eski çalışmaların varsayılan verisi değişmedi; yeni boyutlar ayrı rastgele sayı akışıyla eklendi.
 
-## Sonuçlar
+## Sürüm 1 sonuçları (9 boyut, çek yok)
 
 ### Gerçekçilik denetimi
 
@@ -78,7 +113,7 @@ Büyük örneklemde iki bölge de yeşil. Sınavdaki sarı, 17–20 işletmelik 
 ## Kapsamadıkları (sonraki sürüm)
 
 - Kısmi ödemeler ve veri kalitesi sorunları (eksik vade, mükerrer fatura) laboratuvarda yok. Bunlar uygulamada ayrı testlerle sınanıyor.
-- Çek ve senet: üretici çek üretmiyor. Karşılıksız çek oranı (TBB) simülasyonda sabit.
+- Çek ve senet sürüm 2'de eklendi. Ciro edilen ya da iskontoya verilen çekler ve keşideci bazlı risk laboratuvarda yok. Karşılıksızlık oranı ülke geneli (TBB) olarak alınıyor.
 - Müşteri sayısı aralıkları ve geçmiş uzunluğu varsayımdır. Fatura düzeyinde açık bir Türk KOBİ verisi bulunamadı; pilot verisi geldikçe bu aralıklar gerçek dağılıma çekilecek.
 
 ## Kullanım

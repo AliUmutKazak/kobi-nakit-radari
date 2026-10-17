@@ -2,6 +2,10 @@
 
 Tarih: 14 Ekim 2026. Yeniden üretmek için: `python run_validation.py 24` (yaklaşık 3 dakika).
 
+## Senaryo laboratuvarı, sürüm 2: çek (17 Ekim 2026)
+
+Laboratuvar, çekle ödeyen müşterisi olan işletmelerde kasanın olduğundan erken dolu göründüğünü ortaya çıkardı. Cari hesapta fatura çek alınınca kapanır, para ise vadede gelir. Aynı 240 işletmede düzeltmeden önce alt aşım %40'tı (Basel kırmızı, orta tahmin +0,56 aylık ciro iyimser). Çekle ödeme payı ve çek vadesi her işletmenin kendi cari hesabından öğrenilince alt aşım %10'a indi (Basel yeşil, sapma −0,06). Yeni tohumlarla sınavda alt aşım %8, üst aşım %6 çıktı (Basel yeşil); iyimser uç ve olasılık kalibrasyonu ise reddedildi (Kupiec üst p = 0,043, Spiegelhalter p = 0,011). Ayrıntı: [LAB_RAPORU.md](LAB_RAPORU.md).
+
 ## Senaryo laboratuvarı (17 Ekim 2026)
 
 Ayrıntı: [LAB_RAPORU.md](LAB_RAPORU.md). Sentetik çalışma 3 boyuttan 9 boyuta genişletildi: ölçek, sektör ve tahsil süresi (TCMB–TÜİK), mevsimsellik (gerçek KOBİ), enflasyon (TÜİK TÜFE), müşteri yoğunlaşması (gerçek KOBİ), geçmiş uzunluğu, kötüleşme ve şok. Geliştirme kümesi ve saklı rejimler içeren ayrı bir sınav kümesi var; sınav kümesi bir kez koşuldu ve kayda yazıldı. Sınavda 240 işletmede alt aşım %10, üst aşım %9 (Basel yeşil, Kupiec p = 1,00 / 0,67), Spiegelhalter p = 0,28. Model her kesitte basit yöntemden iyi (−0,93 ± 0,09 aylık ciro). Saklı rejimlerde iki küçük kesit (17 ve 20 işletme) Basel sarı çıktı; geliştirme tarafında 120'şer yeni işletmeyle incelendiklerinde ikisi de yeşil çıktı (alt aşım %5,8 ve %6,7).
