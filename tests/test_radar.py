@@ -1179,3 +1179,39 @@ def test_sector_benchmark_from_tcmb_tables():
     assert len(benchmark.sectors()) > 50 and benchmark.lookup("ZZ", "kucuk") is None
     assert "en iyi çeyrekte" in benchmark.compare(10, "C", "kucuk")
     assert "en kötü çeyrekte" in benchmark.compare(400, "C", "kucuk") and benchmark.compare(float("nan"), "C", "kucuk") is None
+
+
+def test_scenario_lab_generator_split_and_source_anchors(tmp_path, monkeypatch):
+    from radar import lab
+    # Yeni boyutlar varsayılanda eski veriyi birebir üretir (eski testler ve sonuçlar geçerli kalır).
+    a = generate(seed=4, n_customers=12, as_of=AS_OF)
+    b = generate(seed=4, n_customers=12, as_of=AS_OF, season_amp=0.0, inflation=0.0, delay_scale=1.0,
+                 terms_scale=1.0, size_sigma=0.6)
+    pd.testing.assert_frame_equal(a, b)
+    # Mevsimsellik tepe ayında satışı artırır, enflasyon eski faturaları ucuzlatır.
+    s = generate(seed=4, n_customers=60, as_of=AS_OF, season_amp=0.4, season_peak=11)
+    monthly = s.groupby(s["issue_date"].dt.month)["amount"].sum()
+    assert monthly[11] > monthly[5]
+    i = generate(seed=4, n_customers=12, as_of=AS_OF, inflation=0.5)
+    assert i["amount"].iloc[:5].lt(a["amount"].iloc[:5]).all()
+
+    dev, test = lab.sample("gelistirme", 30), lab.sample("sinav", 30)
+    assert not set(dev["seed"]) & set(test["seed"])
+    for name, (rng_dev, _, _) in lab.RANGES.items():
+        assert dev[name].between(*rng_dev).all()
+    held = test[test["saklı_boyut"] != ""]
+    assert len(held) == 15 and all(
+        lab.RANGES[r["saklı_boyut"]][1][0] <= r[r["saklı_boyut"]] <= lab.RANGES[r["saklı_boyut"]][1][1] for _, r in held.iterrows())
+    assert dev["dso_hedef"].between(*lab.DSO_LIMITS).all()
+    with pytest.raises(PermissionError):
+        lab.run("sinav", 2)
+
+    # Tahsil süresi sektör hedefine oturtulur ve küçük bir koşu raporlanır.
+    row = dev.iloc[0].to_dict() | {"dso_hedef": 60.0}
+    scale, achieved = lab.fit_delay_scale(row)
+    assert abs(achieved - 60) / 60 < 0.15
+    monkeypatch.setattr(lab, "LOG", tmp_path / "sinav_kaydi.csv")
+    df = lab.run("sinav", 2, n_jobs=1, n_sims=200, confirm_test=True)
+    assert (tmp_path / "sinav_kaydi.csv").exists() and df["seed"].nunique() == 2
+    text = lab.report(df)
+    assert "Zayıf bölgeler" in text and "Gerçekçilik denetimi" in text

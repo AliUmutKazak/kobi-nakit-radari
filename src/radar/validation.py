@@ -34,10 +34,11 @@ OPENINGS = [0.2, 0.45, 0.8]      # açılış kasası (aylık ciro cinsinden); a
 
 
 def run_case(seed: int, customers: int, trend: float, shock: float, as_of="2026-07-01",
-             horizon: int = 90, n_sims: int = 1000, calib_hook=None) -> list[dict]:
+             horizon: int = 90, n_sims: int = 1000, calib_hook=None, gen: dict | None = None) -> list[dict]:
+    """gen: senaryo laboratuvarının ek üretici ayarları (synthetic.generate; bkz. lab.py)."""
     as_of = pd.Timestamp(as_of)
     end = as_of + pd.Timedelta(days=horizon)
-    full = generate(seed=seed, n_customers=customers, as_of=end, trend=trend, shock=shock)
+    full = generate(seed=seed, n_customers=customers, as_of=end, trend=trend, shock=shock, **(gen or {}))
     obs = observe(full, as_of)
     _, outflows = cash_plan(obs, as_of, horizon)
     res = forecast(obs, as_of, 0.0, outflows, horizon, n_sims, seed=seed, calib_hook=calib_hook)

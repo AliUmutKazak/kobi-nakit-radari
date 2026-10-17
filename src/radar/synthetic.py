@@ -14,9 +14,18 @@ _KINDS = ["Yapı", "Tekstil", "Gıda", "Lojistik", "Makine", "Plastik", "Kimya",
 
 
 def generate(seed: int = 7, n_customers: int = 40, months: int = 24, as_of="2026-10-01",
-             trend: float = 0.6, shock: float = 0.0) -> pd.DataFrame:
-    """Tüm gerçeği (true_paid_date dahil) içeren fatura tablosunu üretir."""
+             trend: float = 0.6, shock: float = 0.0, season_amp: float = 0.0, season_peak: int = 11,
+             inflation: float = 0.0, delay_scale: float = 1.0, terms_scale: float = 1.0,
+             size_sigma: float = 0.6) -> pd.DataFrame:
+    """Tüm gerçeği (true_paid_date dahil) içeren fatura tablosunu üretir.
+
+    Senaryo laboratuvarı boyutları (varsayılanlarla eski veri birebir üretilir):
+    season_amp / season_peak: satış sayısında yıllık mevsimsellik, 1 + A cos(2π(ay − tepe)/12) (gerçek bir KOBİ'de
+    A = 0,30, tepe kasım; UCI Online Retail II). inflation: fatura tutarlarının yıllık nominal artışı.
+    delay_scale / terms_scale: gecikmeleri ve vadeleri ölçekler (tahsil süresini sektör dağılımına oturtmak için). size_sigma: müşteri
+    büyüklüğünün log-normal yayılımı (büyük = cironun birkaç müşteride toplanması)."""
     rng = np.random.default_rng(seed)
+    rng_lab = np.random.default_rng(seed + 10_000)          # yeni boyutlar ayrı akış: eski veri değişmez
     as_of = pd.Timestamp(as_of)
     start = as_of - pd.DateOffset(months=months)
     n_days = (as_of - start).days
@@ -26,18 +35,27 @@ def generate(seed: int = 7, n_customers: int = 40, months: int = 24, as_of="2026
     frames = []
     for i in range(n_customers):
         terms = int(rng.choice([30, 45, 60, 90], p=[0.35, 0.25, 0.30, 0.10]))
+        if terms_scale != 1.0:
+            terms = max(1, int(round(terms * terms_scale)))
         p_ontime = rng.beta(2, 2)
-        base_delay = rng.gamma(2.0, 7.0)
+        base_delay = rng.gamma(2.0, 7.0) * delay_scale
         sigma = rng.uniform(0.5, 1.0)
         pay_day = int(rng.choice([0, 15, 31], p=[0.5, 0.25, 0.25]))
         rate = min(rng.pareto(2.0) * 1.5 + 0.4, 8.0)
-        size = rng.lognormal(0, 0.6)
+        size = np.exp(size_sigma / 0.6 * np.log(rng.lognormal(0, 0.6)))   # aynı çekiliş, ölçeklenmiş yayılım
         p_default = 0.08 if rng.random() < 0.10 else rng.uniform(0, 0.02)
 
-        k = rng.poisson(rate * months)
+        k = rng.poisson(rate * months * (1 + season_amp))
         if k == 0:
             continue
         offs = rng.integers(0, n_days, k)
+        if season_amp > 0:                                    # inceltme: ortalama fatura sayısı değişmez
+            months_of = (start + pd.to_timedelta(offs, unit="D")).month
+            keep = rng_lab.random(k) < (1 + season_amp * np.cos(2 * np.pi * (months_of - season_peak) / 12)) / (1 + season_amp)
+            offs = offs[keep]
+            k = len(offs)
+            if k == 0:
+                continue
         issue = start + pd.to_timedelta(offs, unit="D")
         due = issue + pd.Timedelta(days=terms)
         # Finansal sıkılaşma: dönem ilerledikçe gecikmeler uzar; Ocak ve Ağustos'ta ek sarkma.
@@ -45,8 +63,10 @@ def generate(seed: int = 7, n_customers: int = 40, months: int = 24, as_of="2026
             * market.reindex((issue + pd.Timedelta(days=terms)).to_period("Q")).to_numpy()
         amount = rng.lognormal(np.log(45_000 * size), 0.8, k)
         z = (np.log(amount) - np.log(45_000 * size)) / 0.8
+        if inflation:
+            amount = amount * (1 + inflation) ** ((offs - n_days) / 365)   # bugünkü fiyatlarla aynı ölçek
         ontime = rng.random(k) < p_ontime / macro
-        late = rng.lognormal(np.log(base_delay * macro + 3), sigma) * np.clip(1 + 0.15 * z, 0.5, 2.0)
+        late = rng.lognormal(np.log(base_delay * macro + 3 * delay_scale), sigma) * np.clip(1 + 0.15 * z, 0.5, 2.0)
         delay = np.where(ontime, rng.normal(-1, 2, k), late).round()
         paid = pd.DatetimeIndex(due + pd.to_timedelta(delay, unit="D"))
         if pay_day == 31:

@@ -2,7 +2,7 @@
 
 Açık faturaların ne zaman tahsil edileceğini olasılıksal olarak tahmin eder, 90 günlük kasa bandını (P10 / P50 / P90) çıkarır ve açığı kapatmaya en çok yarayacak faturalar için onay bekleyen mesaj taslakları üretir.
 
-Sentetik veride ve iki herkese açık gerçek veri setinde sınandı; Türk KOBİ verisiyle pilot aşamasında ([docs/pilot/PILOT_PROTOKOLU.md](docs/pilot/PILOT_PROTOKOLU.md)). Tasarım kararlarının gerekçesi: [docs/ARASTIRMA.md](docs/ARASTIRMA.md). Rakip karşılaştırması: [docs/RAKIPLER.md](docs/RAKIPLER.md). Doğrulama sonuçları: [docs/DOGRULAMA.md](docs/DOGRULAMA.md).
+Sentetik veride ve iki herkese açık gerçek veri setinde sınandı; Türk KOBİ verisiyle pilot aşamasında ([docs/pilot/PILOT_PROTOKOLU.md](docs/pilot/PILOT_PROTOKOLU.md)). Tasarım kararlarının gerekçesi: [docs/ARASTIRMA.md](docs/ARASTIRMA.md). Rakip karşılaştırması: [docs/RAKIPLER.md](docs/RAKIPLER.md). Doğrulama sonuçları: [docs/DOGRULAMA.md](docs/DOGRULAMA.md). Kaynaklara dayanan çok boyutlu senaryo laboratuvarı (geliştirme / sınav ayrımı, saklı rejimler): [docs/LAB_RAPORU.md](docs/LAB_RAPORU.md).
 
 ## Kullanım
 
@@ -38,11 +38,12 @@ C:\Users\HP\.venvs\kobi-radar\Scripts\python run_validation.py 48
 | `src/radar/store.py` | Kalıcı kayıt (SQLite): yüklenen tablolar, ayarlar, itiraz / ödeme sözü / mesaj günlüğü |
 | `src/radar/mailer.py` | Onaylanan taslağın kullanıcının e-posta hesabından gönderilmesi |
 | `src/radar/validation.py` | 192 sentetik şirkette kalibrasyon çalışması (`run_validation.py`) |
+| `src/radar/lab.py` | Senaryo laboratuvarı: sektör, ölçek, mevsimsellik, enflasyon, yoğunlaşma boyutlarında geliştirme ve sınav kümeleri, sağlamlık haritası (`python -m radar.lab`) |
 | `src/radar/pipeline.py` | Uçtan uca akış, geri testler ve basit kıyas yöntemleri (vade, müşteri medyanı, tahsilat oranı) |
 | `src/radar/open_data.py` | Herkese açık gerçek veri setleriyle doğrulama |
 | `src/radar/anonymize.py` | Pilot için takma adlandırılmış veri paketi (HMAC-SHA256; anahtar işletmede kalır) |
 | `src/radar/benchmark.py` | Türkiye'de sektör ve ölçeğe göre tahsil süresi (TCMB–TÜİK Sektör Bilançoları 2025) |
-| `src/radar/standards.py` | Basel/BDDK, Kupiec (kesin), Diebold-Mariano, Spiegelhalter, CORP |
+| `src/radar/standards.py` | Basel/BDDK, Kupiec (kesin), Diebold-Mariano, Spiegelhalter, CORP, Benjamini-Hochberg |
 | `src/radar/pilot.py` | Tek sayfalık pilot raporu, ileriye dönük kayıt ve ufku dolan kayıtların puanlanması (`python -m radar.pilot`) |
 | `app.py` | Streamlit paneli |
 
@@ -61,3 +62,4 @@ C:\Users\HP\.venvs\kobi-radar\Scripts\python run_validation.py 48
 - Pilot ölçümü kısmi ödemeleri banka dağıtımlarından sayar; ödeme tarihi bilinmeyen kısmi ödemeler ölçüme girmez. Kapanış kasası ölçümü, kullanıcının her hafta güncel kasa bakiyesini girmesine bağlıdır.
 - Yeni satış tahmini gerçek bir KOBİ'nin satış verisiyle (UCI Online Retail II) sınandı: bir yıllık geçmiş varsa işletmenin geçmişinde anlamlı biçimde daha isabetliyse geçen yılın aynı dönemi esas alınır (90 günlük sapma %37'den %8'e). Bir yıldan kısa geçmişte mevsimsellik bilinemez; panel uyarır.
 - Değerlendirme uluslararası standartlarla yapılır: Basel/BDDK trafik ışığı, Kupiec, Diebold-Mariano, Spiegelhalter (src/radar/standards.py). Riskli uç bütün verilerde Basel yeşil. Açık kalanlar: büyük portföyde 30 günlük iyimser uç dar (Kupiec kesin p = 0,017; pilotta çevrimiçi kantil izleme bunu düzeltir, geri oynatmada p = 0,25); sentetikte eksiye düşme olasılıkları ortaya sıkışık (Spiegelhalter p < 0,001): yüksek riskte gerçek risk gösterilenden yüksek olabilir, panel bunu uyarır (docs/DOGRULAMA.md).
+- Senaryo laboratuvarında (docs/LAB_RAPORU.md) 240 sınav işletmesinde iki uç da hedefte (alt %10, üst %9; Basel yeşil, Spiegelhalter p = 0,28). Çok yoğunlaşmış müşteri yapısında ve aşırı piyasa şokunda bant hedefte ama hata daha büyük. Laboratuvar sentetiktir; kısmi ödeme, çek ve veri kalitesi boyutları henüz yok.

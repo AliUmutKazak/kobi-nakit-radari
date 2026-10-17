@@ -24,6 +24,10 @@ Projede kabul eşikleri kendimiz tarafından belirlenmez; aşağıdaki kurum ve 
   classifiers", PNAS 118(8). CORP: güvenilirlik diyagramı izotonik regresyonla (PAV) kurulur; Brier skoru
   kalibrasyon hatası (MCB), ayırt etme (DSC) ve belirsizlik (UNC) olarak ayrışır: Brier = MCB − DSC + UNC.
 
+- Benjamini, Y. ve Hochberg, Y. (1995), "Controlling the false discovery rate", Journal of the Royal
+  Statistical Society B 57(1); pozitif bağımlı testlerde geçerliliği Benjamini ve Yekutieli (2001), Annals
+  of Statistics 29(4). Çok sayıda kesit aynı anda sınandığında yalnızca şansla "reddedilen" kesitler ayıklanır.
+
 Tüm testlerde anlamlılık düzeyi %5'tir (bilimsel yayınlarda ve Basel sarı bölge sınırında kullanılan düzey).
 """
 from __future__ import annotations
@@ -155,3 +159,21 @@ def corp(prob, outcome) -> dict:
     order = np.argsort(p)
     return {"brier": s, "mcb": s - s_c, "dsc": s_r - s_c, "unc": s_r,
             "curve": list(zip(p[order].round(4).tolist(), rec[order].round(4).tolist()))}
+
+
+def benjamini_hochberg(p_values) -> np.ndarray:
+    """Benjamini-Hochberg düzeltilmiş p değerleri (q değerleri); q < %5 olan bulgularda yanlış keşif oranı
+    en çok %5'tir. NaN değerler NaN kalır."""
+    p = np.asarray(p_values, float)
+    out = np.full_like(p, np.nan)
+    ok = ~np.isnan(p)
+    m = int(ok.sum())
+    if not m:
+        return out
+    order = np.argsort(p[ok])
+    ranked = p[ok][order] * m / np.arange(1, m + 1)
+    q = np.minimum.accumulate(ranked[::-1])[::-1].clip(max=1.0)
+    res = np.empty(m)
+    res[order] = q
+    out[ok] = res
+    return out

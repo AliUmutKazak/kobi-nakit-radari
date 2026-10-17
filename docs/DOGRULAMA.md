@@ -2,6 +2,10 @@
 
 Tarih: 14 Ekim 2026. Yeniden üretmek için: `python run_validation.py 24` (yaklaşık 3 dakika).
 
+## Senaryo laboratuvarı (17 Ekim 2026)
+
+Ayrıntı: [LAB_RAPORU.md](LAB_RAPORU.md). Sentetik çalışma 3 boyuttan 9 boyuta genişletildi: ölçek, sektör ve tahsil süresi (TCMB–TÜİK), mevsimsellik (gerçek KOBİ), enflasyon (TÜİK TÜFE), müşteri yoğunlaşması (gerçek KOBİ), geçmiş uzunluğu, kötüleşme ve şok. Geliştirme kümesi ve saklı rejimler içeren ayrı bir sınav kümesi var; sınav kümesi bir kez koşuldu ve kayda yazıldı. Sınavda 240 işletmede alt aşım %10, üst aşım %9 (Basel yeşil, Kupiec p = 1,00 / 0,67), Spiegelhalter p = 0,28. Model her kesitte basit yöntemden iyi (−0,93 ± 0,09 aylık ciro). Saklı rejimlerde iki küçük kesit (17 ve 20 işletme) Basel sarı çıktı; geliştirme tarafında 120'şer yeni işletmeyle incelendiklerinde ikisi de yeşil çıktı (alt aşım %5,8 ve %6,7).
+
 ## Türkiye verisi: sektör karşılaştırması ve çek riski (17 Ekim 2026)
 
 - **Sektöre göre tahsil süresi:** TCMB–TÜİK Sektör Bilançoları 2023-2025 (vergi idaresine verilen bilanço ve gelir tablolarından, yaklaşık 1 milyon girişim), ölçek kırılımlı standart oranlar tablosu, Alacak Devir Hızı çeyreklikleri (2025). 308 sektör × ölçek satırı `src/radar/data/sektor_alacak_2025.csv`'ye çıkarıldı (kaynak dosya "Dosya 2", SHA-256 b0e935635f4e1fdddf93ff3b3e875b885ae95cc05fec1427a895a9f65150daa4). Örnek ortanca tahsil süreleri (365 / devir hızı): imalat küçük ölçek 74 gün (50.579 firma; çeyrekler 41–135), toptan ticaret küçük 69 gün, tekstil küçük 80 gün, gıda imalatı küçük 45 gün. Panel, işletmenin sektörü ve ölçeği seçilirse tahsil süresini bu dağılıma yerleştirir. Tahmine girmez; tanımlar yakındır ama aynı değildir (TCMB: yıllık ortalama ticari alacak; panel: bugünkü açık alacak / son 90 günün satışı).
