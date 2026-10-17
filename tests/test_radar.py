@@ -1148,3 +1148,22 @@ def test_online_quantile_tracking_moves_each_tail_separately():
     # Bant doğru: kötümser 1'in altına inmez (Basel ihtiyatı); kayıt yoksa ayar yok.
     ok = pilot.online_adjustment(table(0.0, 900.0), inv)
     assert ok["lo"] == 1.0 and pilot.online_adjustment(pd.DataFrame(), inv) == {"lo": 1.0, "hi": 1.0, "n": 0}
+
+
+def test_sales_method_is_chosen_by_own_history_and_level_is_unbiased():
+    rng = np.random.default_rng(4)
+    days = pd.date_range("2024-01-01", "2026-09-30", freq="D")
+
+    def book(seasonal: bool) -> pd.DataFrame:
+        base = 1000 * (1 + (0.9 * np.sin(2 * np.pi * days.dayofyear / 365) if seasonal else 0))
+        amount = np.maximum(base * rng.lognormal(0, 0.15, len(days)), 1)
+        return pd.DataFrame({"invoice_id": [f"F{i}" for i in range(len(days))], "customer_id": "1",
+                             "issue_date": days, "due_date": days + pd.Timedelta(days=30), "amount": amount})
+    as_of = pd.Timestamp("2026-09-30")
+    assert pipeline.sales_method(book(True), as_of, 90) == "mevsimsel"     # güçlü mevsimsellik: geçen yıl
+    assert pipeline.sales_method(book(False), as_of, 90) == "hiz"          # mevsimsellik yok: anlamlı fark yok
+    short = book(True)[lambda d: d["issue_date"] > "2026-01-01"]
+    assert pipeline.sales_method(short, as_of, 90) == "hiz"                # bir yıldan kısa geçmiş
+    res = pipeline.demo(seed=7, as_of=AS_OF, n_sims=400)
+    lvl = res["ctx"]["sales_level"]
+    assert lvl is not None and np.allclose(lvl.mean(axis=1), 1.0) and res["info"]["sales_errors_n"] >= 8

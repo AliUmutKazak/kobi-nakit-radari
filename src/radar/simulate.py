@@ -60,6 +60,7 @@ class SimResult:
 
 
 PRIOR_RHO = (0.15, 0.35)
+CHEQUE_BOUNCE = 0.034     # TBB Risk Merkezi, Ağustos 2026, tutar bazında karşılıksız çek oranı
 RECAL_GRID = np.linspace(0.0, 1.0, 101)
 
 
@@ -196,9 +197,9 @@ def aging_curve(inv: pd.DataFrame, as_of, max_days: int = 720) -> np.ndarray:
 def simulate(inv: pd.DataFrame, Q: np.ndarray, as_of, opening: float, outflows: pd.DataFrame,
              horizon: int = 90, n_sims: int = 2000, rho_market: float = 0.15,
              rho_customer: float = 0.35, seed: int = 0, aging: np.ndarray | None = None,
-             cheques: pd.DataFrame | None = None, cheque_bounce: float = 0.034,
+             cheques: pd.DataFrame | None = None, cheque_bounce: float = CHEQUE_BOUNCE,
              z_shift: float = 0.0, z_scale: float = 1.0, widen: float = 1.0,
-             recal: np.ndarray | None = None) -> SimResult:
+             recal: np.ndarray | None = None, sales_level: np.ndarray | None = None) -> SimResult:
     """inv sütunları: customer_id, issue_date, due_date, open_amount, p_default, projected.
 
     cheques (date, amount): portföydeki çek/senetler vade gününde kasaya girer; her biri
@@ -249,9 +250,15 @@ def simulate(inv: pd.DataFrame, Q: np.ndarray, as_of, opening: float, outflows: 
             ok = (u_default[i] >= p_post) & (day <= horizon)
         pay_day[i, ok] = day[ok]
         if projected[i]:
-            # Gelecek satışların kendisi de belirsizdir: her senaryoda geçmiş dönemin faturaları
-            # Poisson(1) ağırlığıyla yeniden örneklenir (Poisson bootstrap), kimi hiç kesilmez, kimi iki kez.
-            np.add.at(inflow, (sims[ok], day[ok]), amount[i] * rng.poisson(1.0, n_sims)[ok])
+            # Gelecek satışların kendisi de belirsizdir. `sales_level` verilmişse (işletmenin geçmiş satış tahmini
+            # hatalarından, bkz. pipeline.sales_errors) senaryo başına ortak bir düzey katsayısı uygulanır; yoksa
+            # faturalar Poisson(1) ağırlığıyla yeniden örneklenir (gerçek KOBİ verisinde bu tek başına fazla dardı).
+            if sales_level is not None:
+                block = int(inv["sales_block"].iloc[i]) if "sales_block" in inv else 0
+                weight = sales_level[min(block, len(sales_level) - 1)]
+            else:
+                weight = rng.poisson(1.0, n_sims)
+            np.add.at(inflow, (sims[ok], day[ok]), amount[i] * weight[ok])
         else:
             np.add.at(inflow, (sims[ok], day[ok]), amount[i])
             collections += ok * amount[i]

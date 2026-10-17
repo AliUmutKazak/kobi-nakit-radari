@@ -2,6 +2,37 @@
 
 Tarih: 14 Ekim 2026. Yeniden üretmek için: `python run_validation.py 24` (yaklaşık 3 dakika).
 
+## Gerçek bir KOBİ'nin satış verisiyle yeni satış tahmini (17 Ekim 2026)
+
+**Veri.** UCI Online Retail II (Chen 2012, doi:10.24432/C5CG6D, CC BY 4.0): İngiltere'de kayıtlı, mağazası olmayan küçük bir hediyelik eşya şirketinin 01.12.2009–09.12.2011 arasındaki bütün satışları (1.067.371 satır, 53.628 fatura; müşterilerin çoğu toptancı). Ödeme tarihi yoktur; bu yüzden yalnızca tahminin "yeni satışlar" parçası sınanabilir. Dosya: `data/acik/online_retail/online_retail_II.xlsx`, SHA-256 bcbe73b35f5b7babf197fb0cb983a11f5d9ff929078d4aa53d171b1f2df2e980. İptal faturaları (C ile başlayan) eksi tutarla toplama katılır. Fatura ve ödeme tarihini birlikte içeren açık bir KOBİ verisi bulunamadı (bulunan aday, zaten kullanılan Payment Date verisinin kopyasıydı).
+
+**Bulgu: eski yöntem gerçek KOBİ'de standardı geçemedi.** Eski yöntem son 90 günün faturalarını 90 gün ileri taşıyor, belirsizliği faturaların Poisson yeniden örneklenmesiyle veriyordu. 40 haftalık tahmin tarihinde (Aralık 2010 – Eylül 2011):
+
+| | 30 gün | 90 gün |
+|---|---|---|
+| Eski yöntem, sapma | %47,9 | %37,4 |
+| Son 90 günün hızı, sapma | %35,4 | %37,4 |
+| Geçen yılın aynı dönemi (52 hafta önce), sapma | **%10,6** | **%7,2** |
+| Eski yöntem, Basel (kötümser uç) | kırmızı (14/40) | kırmızı (13/40) |
+
+Mevsimsellik yok sayılıyor, belirsizlik de satış düzeyindeki dalgalanmayı göremiyordu. Büyüme düzeltmeli mevsimsel yöntem bu şirkette yardımcı olmadı (şirketin 2010 ve 2011 satışları aynı düzeyde).
+
+**Uygulanan.**
+1. **Yöntem işletmenin kendi geçmişinde seçilir** (zaman sırasına uygun geri test; Tashman 2000; Hyndman ve Athanasopoulos): geçen yılın aynı dönemi ile son dönemin hızı aynı geçmiş haftalarda 30 günlük satışı tahmin eder; mevsimsel yönteme yalnızca Diebold-Mariano testine göre anlamlı biçimde (%5) daha isabetliyse geçilir. Bir yıldan kısa geçmişte son dönemin hızı kullanılır.
+2. **Belirsizlik işletmenin kendi geçmiş satış tahmini hatalarından gelir:** 90 günlük ufuk üç aylık bloğa bölünür; her bloğun düzeyi geçmiş 30 günlük hatalardan yeniden örneklenir, ortalaması 1'e eşitlenir (orta tahmin kaymaz). En az 8 geçmiş hata yoksa daha uzun geçmişli yöntemin hataları, o da yoksa eski yeniden örnekleme kullanılır.
+
+**Sonuç (aynı gerçek veride, ürünün kendi fonksiyonlarıyla, haftalık 66 tahmin tarihi):**
+
+| Durum | Ufuk | Sapma | Kötümser altı | İyimser üstü | Basel | Kupiec (alt / üst / merkezi, kesin) |
+|---|---|---|---|---|---|---|
+| Bir yıl+ geçmiş (mevsimsel seçildi) | 30 gün | %10,8 | 2 / 36 | 8 / 36 | yeşil | 0,43 / **0,046** / 0,29 |
+| Bir yıl+ geçmiş (mevsimsel seçildi) | 90 gün | %7,6 | 0 / 36 | 5 / 36 | yeşil | **0,025** / 0,58 / 0,41 |
+| Bir yıldan kısa (son dönemin hızı) | 90 gün | %37,9 | 6 / 30 | 17 / 30 | **sarı** | 0,12 / 0,000 / 0,000 |
+
+Bir yıl ve üzeri geçmişte sapma %37'den %8'e indi ve risk tarafı Basel yeşil; kalan iki Kupiec reddi güvenli yönde (90 günde kötümser uç gereğinden geniş, 30 günde satış zaman zaman iyimser tahmini aştı). Bir yıldan kısa geçmişte mevsimsellik bilinemez: yoğun sezonun ardından tahmin iyimser kalıyor (Basel sarı). Panel bu durumda açıkça uyarır ve kararın kötümser çizgiye göre verilmesini ya da yeni satışların hesaptan çıkarılmasını önerir.
+
+**Sentetik çalışmaya etkisi** (mevsimsellik içermeyen üreteç): hata 0,332 → 0,338, Brier 0,0947 → 0,0950, Basel yeşil (19/192). Seçim kuralı mevsimselliği olmayan şirketleri eski yöntemde tuttu. Denenip bırakılanlar: seçimin anlamlılık testi olmadan yapılması (sentetikte hata 0,377–0,405, Basel sarı) ve hataların ortancaya göre merkezlenmesi (sentetikte hata 0,377).
+
 ## Literatürün önerdiği çözümler ve uygulananlar (17 Ekim 2026)
 
 Soru: Kupiec ve Spiegelhalter testlerinde görülen sapmalar için güncel bilimsel literatür ne öneriyor; az veriyle çalışan küçük işletmede hangisi uygulanabilir?

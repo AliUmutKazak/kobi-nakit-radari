@@ -7,7 +7,7 @@ import pandas as pd
 from . import actions
 from .features import build_features
 from .model import DelayModel, FallbackModel, evaluate, fit_model, training_frame
-from .simulate import (RECAL_GRID, pit_recalibration, PRIOR_RHO, aging_curve, censored_normal_fit, conditional_scores, correlation_from_scores,
+from .simulate import (CHEQUE_BOUNCE, RECAL_GRID, pit_recalibration, PRIOR_RHO, aging_curve, censored_normal_fit, conditional_scores, correlation_from_scores,
                        simulate)
 from .synthetic import cash_plan, observe
 
@@ -22,17 +22,78 @@ def default_rates(obs: pd.DataFrame, as_of, prior_n: float = 20.0) -> pd.Series:
     return rate.reindex(obs["customer_id"].unique()).fillna(g)
 
 
-def project_sales(obs: pd.DataFrame, as_of, horizon: int) -> pd.DataFrame:
-    """Henüz kesilmemiş faturalar: son `horizon` günün satışları aynı ritimle ileri taşınır."""
+SEASON_DAYS = 364                 # 52 hafta: geçen yılın aynı dönemi, haftanın günü korunur
+
+
+def _sales_shift(obs: pd.DataFrame, as_of, horizon: int, method: str) -> pd.DataFrame:
+    """`method` ile as_of'tan sonraki `horizon` gün için öngörülen faturalar (henüz kesilmemiş satışlar)."""
     as_of = pd.Timestamp(as_of)
-    shift = pd.Timedelta(days=horizon)
-    recent = obs[obs["issue_date"] > as_of - shift].copy()
-    recent["invoice_id"] = "PRJ-" + recent["invoice_id"]
-    recent["issue_date"] += shift
-    recent["due_date"] += shift
-    recent["paid_date"] = pd.NaT
-    recent["open_amount"] = recent["amount"]
-    return recent
+    lag = SEASON_DAYS if method == "mevsimsel" else horizon
+    shift = pd.Timedelta(days=lag)
+    src = obs[(obs["issue_date"] > as_of - shift) & (obs["issue_date"] <= as_of - shift + pd.Timedelta(days=horizon))].copy()
+    src["invoice_id"] = "PRJ-" + src["invoice_id"].astype(str)
+    src["issue_date"] += shift
+    src["due_date"] += shift
+    src["paid_date"] = pd.NaT
+    src["open_amount"] = src["amount"]
+    return src
+
+
+def sales_method(obs: pd.DataFrame, as_of, horizon: int) -> str:
+    """Yeni satış yöntemi, işletmenin kendi geçmişinde zaman sırasına uygun geri testle seçilir (Tashman 2000;
+    Hyndman ve Athanasopoulos, Forecasting: Principles and Practice): "mevsimsel" (geçen yılın aynı dönemi) ile
+    "hiz" (son dönemin hızı) aynı geçmiş haftalarda 30 günlük satışı tahmin eder; mutlak log hatası küçük olan
+    seçilir. Mevsimsel yöntem için en az bir yıl + bir ay geçmiş, karşılaştırma için en az 8 ortak hafta gerekir;
+    yoksa son dönemin hızı kullanılır.
+
+    Gerekçe: gerçek bir KOBİ'de (UCI Online Retail II, mevsimsel satış) 90 günlük sapma son dönem hızıyla %37,
+    geçen yılın aynı dönemiyle %7; mevsimselliği olmayan, büyüyen sentetik şirketlerde ise tersi. İki tür işletme de
+    gerçekte vardır; tek bir genel kural ikisine birden uymaz."""
+    first = obs["issue_date"].min()
+    if first > pd.Timestamp(as_of) - pd.Timedelta(days=SEASON_DAYS + SALES_BLOCK):
+        return "hiz"
+    seasonal = sales_errors(obs, as_of, horizon, "mevsimsel")
+    if len(seasonal) < 8:
+        return "mevsimsel"
+    rate = sales_errors(obs, as_of, horizon, "hiz")[:len(seasonal)]      # aynı (en yakın) haftalar
+    from .standards import SIGNIFICANCE, diebold_mariano
+    # Mevsimsel yönteme yalnızca anlamlı biçimde daha isabetliyse geçilir (Diebold-Mariano, %5): iki yöntemin
+    # hataları yakınsa gürültüye göre karar verilmez. Haftalık 30 günlük pencereler ~5 hafta üst üste biner.
+    dm = diebold_mariano(np.abs(seasonal), np.abs(rate), overlap=int(np.ceil(SALES_BLOCK / 7)))
+    return "mevsimsel" if dm["p_better"] < SIGNIFICANCE else "hiz"
+
+
+def project_sales(obs: pd.DataFrame, as_of, horizon: int) -> pd.DataFrame:
+    """Henüz kesilmemiş faturalar (bkz. sales_method)."""
+    return _sales_shift(obs, as_of, horizon, sales_method(obs, as_of, horizon))
+
+
+SALES_BLOCK = 30                  # yeni satış belirsizliği aylık bloklarla: blok başına ayrı düzey katsayısı
+
+
+def sales_errors(obs: pd.DataFrame, as_of, horizon: int, method: str, window: int = SALES_BLOCK,
+                 step: int = 7) -> np.ndarray:
+    """Aynı yöntemin işletmenin kendi geçmişindeki satış tahmini hataları: log(gerçekleşen / tahmin), `window`
+    günlük pencerelerde.
+
+    Her hafta geriye gidilir; o gün bilinenle sonraki `window` günün satışı aynı yöntemle (`method`) tahmin edilir
+    ve gerçekleşenle karşılaştırılır. Yöntemin uygulanamadığı (geçmişi yetmeyen) tarihler alınmaz: başka bir
+    yöntemin hataları karıştırılırsa belirsizlik ve düzey bozulur. Bu dağılım simülasyonda satış düzeyinin
+    belirsizliğidir (konformal yaklaşım: varsayımdan değil, işletmenin kendi geçmiş hatalarından)."""
+    as_of = pd.Timestamp(as_of)
+    first = obs["issue_date"].min()
+    lag = SEASON_DAYS if method == "mevsimsel" else horizon
+    out = []
+    s = as_of - pd.Timedelta(days=window)
+    while s - pd.Timedelta(days=lag) >= first:
+        known = obs[obs["issue_date"] <= s]
+        src = _sales_shift(known, s, horizon, method)
+        pred = float(src.loc[src["issue_date"] <= s + pd.Timedelta(days=window), "amount"].sum())
+        actual = float(obs.loc[(obs["issue_date"] > s) & (obs["issue_date"] <= s + pd.Timedelta(days=window)), "amount"].sum())
+        if pred > 0 and actual > 0:
+            out.append(np.log(actual / pred))
+        s -= pd.Timedelta(days=step)
+    return np.asarray(out)
 
 
 def censor(obs: pd.DataFrame, t) -> pd.DataFrame:
@@ -157,8 +218,24 @@ def forecast(obs: pd.DataFrame, as_of, opening: float, outflows: pd.DataFrame, h
     # İtirazlı faturalar çözülene kadar ne tahmine ne hatırlatma listesine girer.
     open_inv = obs[is_open & ~obs["disputed"]].assign(projected=False)
     parts = [open_inv]
+    sales_level, method, errs = None, None, np.array([])
     if include_projected:
-        parts.append(project_sales(obs, as_of, horizon).assign(projected=True, disputed=False, promised_date=pd.NaT))
+        method = sales_method(obs, as_of, horizon)
+        proj = _sales_shift(obs, as_of, horizon, method)
+        proj["sales_block"] = ((proj["issue_date"] - as_of).dt.days.clip(lower=1) - 1) // SALES_BLOCK
+        parts.append(proj.assign(projected=True, disputed=False, promised_date=pd.NaT))
+        errs = sales_errors(obs, as_of, horizon, method)
+        if len(errs) < 8 and method == "mevsimsel":
+            errs = sales_errors(obs, as_of, horizon, "hiz")        # genişlik için daha uzun geçmişli yöntemin hataları
+        if len(errs) >= 8:
+            # Aylık blok başına satış düzeyi: geçmiş 30 günlük hatalardan yeniden örneklenir. Az geçmişte faturaları
+            # tek tek yeniden örnekleyen eski yönteme dönülür (gerçek KOBİ verisinde o yöntem fazla dardı).
+            n_blocks = int(np.ceil(horizon / SALES_BLOCK))
+            # Geçmişten yalnızca belirsizliğin genişliği alınır: katsayının ortalaması 1'e eşitlenir. Kısa geçmişte
+            # ortalama sapma tahmini gürültülüdür ve orta tahmini kaydırır; ortancaya göre merkezlemek ise üç bloğun
+            # toplamını yukarı iter (log-normal toplamın ortancası, ortancaların toplamından büyüktür).
+            level = np.exp(np.random.default_rng(seed + 7).choice(errs, (n_blocks, n_sims), replace=True))
+            sales_level = level / level.mean(axis=1, keepdims=True)
     target = pd.concat(parts, ignore_index=True)
     # Özellikler bugünün bilgisiyle hesaplanır; tahmin edilen faturalar geçmişe karışmaz.
     combined = pd.concat([obs[~is_open], target], ignore_index=True)
@@ -173,9 +250,9 @@ def forecast(obs: pd.DataFrame, as_of, opening: float, outflows: pd.DataFrame, h
     if calib_hook is not None:
         calib = calib_hook(calib)
     ctx = {"sim_inv": sim_inv, "Q": model.predict(feats), "aging": aging_curve(obs, as_of), "cheques": cheques,
-           "horizon": horizon, "n_sims": n_sims, "seed": seed, "calib": calib}
+           "horizon": horizon, "n_sims": n_sims, "seed": seed, "calib": calib, "sales_level": sales_level}
     sim = simulate(sim_inv, ctx["Q"], as_of, opening, outflows, horizon, n_sims, seed=seed, aging=ctx["aging"],
-                   cheques=cheques, **_sim_args(calib, sim_inv, as_of))
+                   cheques=cheques, sales_level=sales_level, **_sim_args(calib, sim_inv, as_of))
     real = ~target["projected"].to_numpy()
     gap_day = sim.breach_day if sim.breach_day is not None else horizon
     ranked = actions.prioritize(target[real], sim.pay_day[real], as_of, gap_day, actions.payment_habits(obs), horizon)
@@ -186,7 +263,8 @@ def forecast(obs: pd.DataFrame, as_of, opening: float, outflows: pd.DataFrame, h
                      "history_from": obs["issue_date"].min(), "simple_model": isinstance(model, FallbackModel),
                      "n_calibration": int(calib["fresh"]["n"] + calib["overdue"]["n"]),
                      "rho_market": calib["rho_market"], "rho_customer": calib["rho_customer"],
-                     "widen": calib.get("widen", 1.0)},
+                     "widen": calib.get("widen", 1.0), "sales_method": method, "sales_errors_n": int(len(errs)),
+                     "sales_error_spread": float(np.percentile(errs, 90) - np.percentile(errs, 10)) if len(errs) >= 8 else None},
             "disputed_total": float(obs.loc[is_open & obs["disputed"], "open_amount"].sum())}
 
 
@@ -218,7 +296,7 @@ def scenario(res: dict, collect_ids=(), collect_in_days: int = 7, delay_labels=(
                                             "amount": [-cash], "label": ["Tahsilat (senaryo)"]})], ignore_index=True)
     return simulate(inv, ctx["Q"], as_of, res["opening"], out, ctx["horizon"], ctx["n_sims"],
                     seed=ctx["seed"], **_sim_args(ctx["calib"], inv, as_of),
-                    aging=ctx["aging"], cheques=ctx["cheques"])
+                    aging=ctx["aging"], cheques=ctx["cheques"], sales_level=ctx.get("sales_level"))
 
 
 def _p10_min(paths: np.ndarray) -> float:
@@ -338,7 +416,7 @@ def weekly_table(res: dict, weeks: int = 13) -> pd.DataFrame:
         chq = 0.0
         if cheques is not None and len(cheques):
             c_off = (pd.to_datetime(cheques["date"]) - as_of).dt.days.to_numpy()
-            chq = float(cheques["amount"].to_numpy(float)[(c_off >= lo) & (c_off <= hi)].sum() * (1 - 0.034))
+            chq = float(cheques["amount"].to_numpy(float)[(c_off >= lo) & (c_off <= hi)].sum() * (1 - CHEQUE_BOUNCE))
         rows.append({"Hafta": f"{(as_of + pd.Timedelta(days=lo)):%d.%m} – {(as_of + pd.Timedelta(days=hi)):%d.%m}",
                      "Açık faturalardan beklenen (TL)": float(in_week[~projected].sum()) + chq,
                      "Yeni satışlardan beklenen (TL)": float(in_week[projected].sum()),

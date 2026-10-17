@@ -742,6 +742,17 @@ with tab_accuracy:
     st.write(f"• Tahmin aralığının genişliği, sistemin geçmiş dört çeyrekte {info['n_calibration']} faturada yaptığı "
              "ileriye dönük tahminlerin hatasından ayarlandı."
              + (" Bu sayı az; aralıklar varsayılan değerlere yakın." if info["n_calibration"] < 100 else ""))
+    if info.get("sales_method"):
+        spread = info.get("sales_error_spread")
+        st.write("• Yeni satışlar: " + ("geçen yılın aynı dönemi esas alındı (işletmenizin geçmişinde son dönemin hızından "
+                                         "anlamlı biçimde daha isabetliydi)" if info["sales_method"] == "mevsimsel"
+                                         else "son dönemin satış hızı esas alındı")
+                 + (f"; belirsizliği kendi geçmiş satış tahmini hatalarınızdan ({info['sales_errors_n']} hafta) geliyor."
+                    if spread is not None else "; geçmiş az olduğu için belirsizlik faturaların yeniden örneklenmesiyle verildi."))
+        if info["sales_method"] == "hiz" and (res["as_of"] - info["history_from"]).days < 395:
+            st.warning("Satış geçmişiniz bir yıldan kısa: mevsimsellik bilinemiyor. Yoğun sezonun hemen ardından yeni satış "
+                       "tahmini iyimser kalabilir (gerçek bir KOBİ verisinde bu durumda kötümser uç beklenenden sık aşıldı). "
+                       "Kararı kötümser çizgiye göre verin ya da 'Gelecek satışları hesaba kat' seçeneğini kapatın.")
     st.write(f"• Müşterilerin birlikte gecikme eğilimi: piyasa geneli {info['rho_market']:.2f}, aynı müşterinin faturaları "
              f"{info['rho_customer']:.2f} (0 = bağımsız, 1 = tamamen birlikte).")
     widen = info.get("widen", 1.0)
