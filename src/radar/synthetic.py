@@ -17,7 +17,7 @@ def generate(seed: int = 7, n_customers: int = 40, months: int = 24, as_of="2026
              trend: float = 0.6, shock: float = 0.0, season_amp: float = 0.0, season_peak: int = 11,
              inflation: float = 0.0, delay_scale: float = 1.0, terms_scale: float = 1.0,
              size_sigma: float = 0.6, cheque_share: float = 0.0, cheque_term: float = 75.0,
-             cheque_bounce: float = 0.034) -> pd.DataFrame:
+             cheque_bounce: float = 0.034, partial_share: float = 0.0) -> pd.DataFrame:
     """Tüm gerçeği (true_paid_date dahil) içeren fatura tablosunu üretir.
 
     Senaryo laboratuvarı boyutları (varsayılanlarla eski veri birebir üretilir):
@@ -28,9 +28,13 @@ def generate(seed: int = 7, n_customers: int = 40, months: int = 24, as_of="2026
     cheque_share: müşterilerin çekle ödeyen payı. Çekle ödeyen müşterinin faturası çek alındığında kapanır
     (true_paid_date), para çekin vadesinde gelir (true_cash_date); vade log-normal, ortancası cheque_term gün;
     çek `cheque_bounce` olasılıkla karşılıksız çıkar ve para ufuk içinde gelmez (TBB Risk Merkezi, tutar
-    bazında %2,8-3,4). cheque_share > 0 ise tabloya pay_method, true_cheque_due, true_cash_date eklenir."""
+    bazında %2,8-3,4). cheque_share > 0 ise tabloya pay_method, true_cheque_due, true_cash_date eklenir.
+    partial_share: faturalarını iki taksitte kapatan (havaleyle ödeyen) müşterilerin payı. İlk taksit tutarın
+    %30-70'i, fatura tarihiyle son ödeme arasında bir gün gelir; fatura son taksitle kapanır. partial_share > 0 ise
+    tabloya true_partial_date ve partial_frac eklenir."""
     rng = np.random.default_rng(seed)
     rng_lab = np.random.default_rng(seed + 10_000)          # yeni boyutlar ayrı akış: eski veri değişmez
+    rng_part = np.random.default_rng(seed + 30_000)         # kısmi ödeme ayrı akış: diğer senaryolar değişmez
     as_of = pd.Timestamp(as_of)
     start = as_of - pd.DateOffset(months=months)
     n_days = (as_of - start).days
@@ -90,13 +94,22 @@ def generate(seed: int = 7, n_customers: int = 40, months: int = 24, as_of="2026
             cheque = {"pay_method": np.where(paid.isna(), None, "cek" if by_cheque else "havale"),
                       "true_cheque_due": due_c, "true_cash_date": (due_c.where(~bounced, pd.NaT) if by_cheque else paid)}
 
+        partial = {}
+        if partial_share > 0:
+            # Çekle ödeyen müşteri taksit yapmaz (çek tek seferde verilir); ayrı akış, eski veri değişmez.
+            splits = rng_part.random() < partial_share and not (cheque_share > 0 and by_cheque)
+            frac = np.where(splits & paid.notna(), rng_part.uniform(0.3, 0.7, k), 0.0)
+            span = (paid - issue).days.to_numpy(dtype=float)
+            first_pay = issue + pd.to_timedelta(np.round(np.nan_to_num(span) * rng_part.uniform(0.3, 0.7, k)), unit="D")
+            partial = {"true_partial_date": pd.DatetimeIndex(first_pay).where(frac > 0, pd.NaT), "partial_frac": frac}
+
         frames.append(pd.DataFrame({
             "customer_id": f"C{i:03d}",
             "customer_name": f"{rng.choice(_NAMES)} {rng.choice(_KINDS)} {i:02d} A.Ş.",
             "vkn": f"{rng.integers(10**9, 10**10 - 1)}",
             "issue_date": issue, "due_date": due,
             "amount": amount.round(2), "true_paid_date": paid,
-        } | cheque))
+        } | cheque | partial))
     full = pd.concat(frames, ignore_index=True).sort_values("issue_date").reset_index(drop=True)
     full.insert(0, "invoice_id", [f"FTR{2025000000 + i}" for i in range(len(full))])
     return full
@@ -111,6 +124,12 @@ def observe(full: pd.DataFrame, as_of, record_lag: int = 0) -> pd.DataFrame:
     df = full[full["issue_date"] <= as_of].copy()
     df["paid_date"] = df["true_paid_date"].where(df["true_paid_date"] <= as_of - pd.Timedelta(days=record_lag))
     df["open_amount"] = np.where(df["paid_date"].isna(), df["amount"], 0.0)
+    if "true_partial_date" in df:
+        # Kayıtların son gününe kadar gelen ilk taksit açık tutarı azaltır (banka ekstresiyle eşleşen kısmi ödeme).
+        cut = as_of - pd.Timedelta(days=record_lag)
+        part = df["paid_date"].isna() & (df["true_partial_date"] <= cut)
+        df.loc[part, "open_amount"] = df.loc[part, "amount"] * (1 - df.loc[part, "partial_frac"])
+        df = df.drop(columns=["true_partial_date", "partial_frac"])
     if "true_cheque_due" in df:
         # Çek alındığında vadesi bilinir (cari hesaba "çek" açıklamasıyla ve vadesiyle işlenir); karşılıksız
         # çıkıp çıkmayacağı ve paranın gerçek geliş günü bilinmez.

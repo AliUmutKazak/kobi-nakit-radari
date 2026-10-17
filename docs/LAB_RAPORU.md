@@ -1,6 +1,24 @@
 # Senaryo Laboratuvarı
 
-Tarih: 18 Ekim 2026. Kod: `src/radar/lab.py`. Güncel sürüm 3 (14 boyut: çek, tahsilat kayıt gecikmesi ve tahmin günü dahil). Ayrıntılı tablolar: sürüm 3 [geliştirme](lab/gelistirme_v3.md), [geliştirme, kesim düzeltmesi kapalı](lab/gelistirme_v3_kesim_duzeltmesi_kapali.md), [sınav](lab/sinav_v3.md); sürüm 2 [geliştirme](lab/gelistirme_v2.md), [geliştirme, çek düzeltmesi kapalı](lab/gelistirme_v2_cek_duzeltmesi_kapali.md), [sınav](lab/sinav_v2.md); sürüm 1 [geliştirme](lab/gelistirme_v1.md), [sınav](lab/sinav_v1.md). Sınav koşuları kaydı: [lab/sinav_kaydi.csv](lab/sinav_kaydi.csv) (tohum 0: sürüm 1; tohum 1: sürüm 2; tohum 2: sürüm 3).
+Tarih: 18 Ekim 2026. Kod: `src/radar/lab.py`. Güncel sürüm 4 (16 boyut: çek, tahsilat kayıt gecikmesi, tahmin günü, kısmi ödeme ve eksik vade dahil). Ayrıntılı tablolar: sürüm 4 [geliştirme](lab/gelistirme_v4.md), [sınav](lab/sinav_v4.md); sürüm 3 [geliştirme](lab/gelistirme_v3.md), [geliştirme, kesim düzeltmesi kapalı](lab/gelistirme_v3_kesim_duzeltmesi_kapali.md), [sınav](lab/sinav_v3.md); sürüm 2 [geliştirme](lab/gelistirme_v2.md), [geliştirme, çek düzeltmesi kapalı](lab/gelistirme_v2_cek_duzeltmesi_kapali.md), [sınav](lab/sinav_v2.md); sürüm 1 [geliştirme](lab/gelistirme_v1.md), [sınav](lab/sinav_v1.md). Sınav koşuları kaydı: [lab/sinav_kaydi.csv](lab/sinav_kaydi.csv) (tohum 0: sürüm 1; tohum 1: sürüm 2; tohum 2: sürüm 3; tohum 3: sürüm 4).
+
+## Sürüm 4: kısmi ödemeler ve eksik vade (18 Ekim 2026)
+
+Aynı 120 geliştirme işletmesi üç koşulda eşleştirilerek koşuldu: temel, müşterilerin %40'ı faturalarını iki taksitte kapatıyor, faturaların %30'unda vade girilmemiş. Vadesi girilmemiş faturalara panel, TTK m.1530/4-a'daki gibi 30 gün vade verir.
+
+| Koşul | Orta tahmin sapması, temele göre fark (aylık ciro) | Alt aşım | Üst aşım | Aralık skoru farkı |
+|---|---|---|---|---|
+| Temel | 0 | %7,5 | %12,5 | 0 |
+| Kısmi ödeme (%40 müşteri) | −0,13 ± 0,02 | %5,8 | %16,7 | +0,25 ± 0,13 |
+| Eksik vade (%30 fatura) | +0,002 ± 0,006 | %6,7 | %11,7 | +0,05 ± 0,05 |
+
+- **Eksik vade** tahmini bozmuyor: model gecikmeyi aynı varsayılan vadeye göre öğreniyor; tutarlı bir kaydırma olarak kalıyor.
+- **Kısmi ödeme** tahmini kötümser yapıyor. Panel kısmen ödenmiş açık faturada kalan tutarı doğru simüle ediyor. Ama henüz hiç ödenmemiş faturalarda ilk taksidin erken geleceğini bilmiyor, çünkü model ödemenin tamamını faturanın kapandığı günde öğreniyor. Hata güvenli yönde: kasa olduğundan boş görünüyor ve gereksiz alarm riski doğuyor.
+- **Düzeltme planı:** Geçmiş taksit tarihlerinin saklanması gerekiyor. Banka ekstresi yüklendiğinde kısmi tahsilatlar olay olarak zaten çıkıyor (`reconcile.collection_events`); cari hesap yolunda ise yalnızca son ödeme günü tutuluyor. Taksit alışkanlığının (pay, ilk taksit oranı ve zamanı) müşteri bazında öğrenilmesi sonraki sürüme planlandı.
+
+**Sınav (sürüm 4, tohum 3, 240 işletme, bir kez koşuldu):** alt aşım %6, üst %12 (Basel yeşil, Kupiec alt p = 0,043, üst p = 0,24), Spiegelhalter p = 0,23. Benjamini-Hochberg düzeltmesinden sonra zayıf bölge yok. Kısmi ödeme ve eksik vadenin saklı (geliştirme aralığı dışı) rejimleri de yeşil. Geliştirme kümesinde (son kod): alt %5, üst %12.
+
+**Süreklilik gösteren bulgu.** Sürüm 3 ve 4'ün dört koşusunda da (geliştirme ve sınav) bant kötümser tarafa hafif kaymış: alt aşım %5–6, üst aşım %10–12. Basel/BDDK ölçütü açısından sorun değil, Kupiec "az aşım"ı verimsizlik olarak işaretliyor. Nedeni tasarımda: kötümser bant hiç daraltılmıyor. Ön kayıtlı düzeltme pilota bağlı. Pilot kayıtları biriktikçe çevrimiçi kantil izleme kötümser uçta da, işletmenin kendi gerçekleşmelerine göre ve alt sınırla birlikte daraltabilecek. Sınav verisiyle ayar yapılmadı.
 
 ## Sürüm 3: geç işlenen tahsilatlar, tahmin günü ve nominal büyüme (18 Ekim 2026)
 
@@ -99,6 +117,8 @@ Sistem dört katmandan oluşur:
 | Karşılıksız çek oranı (sürüm 2) | %2,8–3,4 | %3,4–7 | TBB Risk Merkezi 2026; saklı aralık kriz varsayımı |
 | Tahsilat kayıt gecikmesi (sürüm 3) | 0–14 gün | 14–31 gün | VUK m.219: genel sınır 10 gün, fişe dayanan kayıtta esas deftere 45 gün; aralığın kendisi varsayım |
 | Tahmin günü (sürüm 3) | 2026'nın herhangi bir günü | | tasarım: ayın başı, ortası, sonu |
+| Kısmi ödeme yapan müşteri payı (sürüm 4) | %0–40 | %40–70 | varsayım |
+| Vadesi girilmemiş fatura payı (sürüm 4) | %0–30 | %30–60 | varsayım; panel 30 gün verir (TTK m.1530/4-a) |
 
 Örnekleme Latin hiperküp yöntemiyle yapılır; her boyut kendi aralığında eşit kaplanır.
 
@@ -150,7 +170,7 @@ Büyük örneklemde iki bölge de yeşil. Sınavdaki sarı, 17–20 işletmelik 
 
 ## Kapsamadıkları (sonraki sürüm)
 
-- Kısmi ödemeler, eksik vade ve mükerrer fatura laboratuvarda yok; bunlar uygulamada ayrı testlerle sınanıyor. Veri kalitesinden tahsilat kayıt gecikmesi sürüm 3'te eklendi.
+- Mükerrer fatura laboratuvarda yok. Aynı fatura numarası yüklemede tekilleştirilir; farklı numarayla iki kez girilmiş fatura ayırt edilemez. Kısmi ödeme ve eksik vade sürüm 4'te, tahsilat kayıt gecikmesi sürüm 3'te eklendi.
 - Çek ve senet sürüm 2'de eklendi. Ciro edilen ya da iskontoya verilen çekler ve keşideci bazlı risk laboratuvarda yok. Karşılıksızlık oranı ülke geneli (TBB) olarak alınıyor.
 - Müşteri sayısı aralıkları ve geçmiş uzunluğu varsayımdır. Fatura düzeyinde açık bir Türk KOBİ verisi bulunamadı; pilot verisi geldikçe bu aralıklar gerçek dağılıma çekilecek.
 

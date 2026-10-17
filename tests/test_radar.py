@@ -1283,3 +1283,18 @@ def test_sector_table_is_optional_for_distribution(monkeypatch, tmp_path):
     from radar import benchmark
     monkeypatch.setattr(benchmark, "TABLE", tmp_path / "yok.csv")
     assert not benchmark.available() and benchmark.compare(70, "C", "kucuk") is None
+
+
+def test_partial_payments_and_missing_due_scenarios():
+    from radar.validation import run_case
+    full = generate(seed=3, n_customers=30, partial_share=0.6)
+    assert full["partial_frac"].between(0, 0.7).all() and (full["partial_frac"] > 0).any()
+    # Kısmi ödemeler diğer senaryo çekilişlerini değiştirmez (eşleştirilmiş deneyler için).
+    base = generate(seed=3, n_customers=30, cheque_share=0.4)
+    pd.testing.assert_frame_equal(base, generate(seed=3, n_customers=30, cheque_share=0.4, partial_share=0.6)
+                                  .drop(columns=["true_partial_date", "partial_frac"]))
+    obs = observe(full, AS_OF)
+    part = (obs["open_amount"] > 0) & (obs["open_amount"] < obs["amount"])
+    assert part.any() and "partial_frac" not in obs
+    r = run_case(5, 30, 0.6, 0.1, gen={"partial_share": 0.5, "missing_due": 0.3}, n_sims=200)[0]
+    assert np.isfinite(r["err_p50_months"])

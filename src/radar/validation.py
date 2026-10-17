@@ -45,8 +45,13 @@ def run_case(seed: int, customers: int, trend: float, shock: float, as_of="2026-
     end = as_of + pd.Timedelta(days=horizon)
     gen = dict(gen or {})
     record_lag = int(gen.pop("record_lag", 0))
+    missing_due = float(gen.pop("missing_due", 0.0))
     full = generate(seed=seed, n_customers=customers, as_of=end, trend=trend, shock=shock, **gen)
     obs = observe(full, as_of, record_lag)
+    if missing_due:
+        # Veri kalitesi: vadesi girilmemiş faturalar; panel bunlara varsayılan vadeyi (30 gün, TTK m.1530/4-a) verir.
+        miss = np.random.default_rng(seed + 20_000).random(len(obs)) < missing_due
+        obs.loc[miss, "due_date"] = obs.loc[miss, "issue_date"] + pd.Timedelta(days=30)
     _, outflows = cash_plan(obs, as_of, horizon)
     kw = dict(forecast_kwargs or {})
     mode = kw.pop("cutoff", "auto")
@@ -58,9 +63,14 @@ def run_case(seed: int, customers: int, trend: float, shock: float, as_of="2026-
     # Gerçekleşen yol: tahmin tarihinden sonra kesilenler dahil tüm faturaların paranın gerçekten geldiği günler
     # (çekle ödenende çek vadesi; karşılıksız çek hiç gelmez).
     cash = full["true_cash_date"] if "true_cash_date" in full else full["true_paid_date"]
+    rest = full["amount"] * (1 - full["partial_frac"]) if "partial_frac" in full else full["amount"]
     paid = full[(cash > as_of) & (cash <= end)]
     flow = np.zeros(horizon + 1)
-    np.add.at(flow, (cash[paid.index] - as_of).dt.days.to_numpy(), paid["amount"].to_numpy())
+    np.add.at(flow, (cash[paid.index] - as_of).dt.days.to_numpy(), rest[paid.index].to_numpy())
+    if "true_partial_date" in full:                              # ilk taksitler
+        first = full[(full["true_partial_date"] > as_of) & (full["true_partial_date"] <= end)]
+        np.add.at(flow, (first["true_partial_date"] - as_of).dt.days.to_numpy(),
+                  (first["amount"] * first["partial_frac"]).to_numpy())
     np.add.at(flow, (outflows["date"] - as_of).dt.days.to_numpy(), -outflows["amount"].to_numpy())
     truth = np.cumsum(flow)
 

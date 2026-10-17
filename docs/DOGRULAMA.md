@@ -2,6 +2,10 @@
 
 Tarih: 14 Ekim 2026. Yeniden üretmek için: `python run_validation.py 24` (yaklaşık 3 dakika).
 
+## Senaryo laboratuvarı, sürüm 4: kısmi ödeme ve eksik vade (18 Ekim 2026)
+
+Eşleştirilmiş 120 işletmede, faturaların %30'unda vadenin girilmemiş olması tahmini bozmadı (fark +0,002 ± 0,006). Müşterilerin %40'ının taksitle ödemesi ise tahmini kötümser yaptı (−0,13 ± 0,02 aylık ciro). Hata güvenli yönde; taksit alışkanlığının öğrenilmesi sonraki sürüme planlandı. Sınavda (240 işletme) alt aşım %6, üst %12 çıktı (Basel yeşil, Spiegelhalter p = 0,23); zayıf bölge yok. Ayrıntı: [LAB_RAPORU.md](LAB_RAPORU.md).
+
 ## Senaryo laboratuvarı, sürüm 3: geç işlenen tahsilatlar (18 Ekim 2026)
 
 Tahsilat kayıtları bugünden geride kaldığında ödenmiş faturalar açık görünür ve para iki kez sayılır. Kayıtlar yasal süre içinde olsa da günü gününe olmayabilir (VUK m.219) ya da dosya önceden alınmış olabilir. Aynı 120 işletmenin eşleştirilmiş ölçümünde 7–14 günlük gecikme orta tahmini +0,13 aylık ciro iyimser yaptı ve kötümser uç aşımını %4,2'den %8,3'e çıkardı. Tahmin artık tahsilatların işlendiği son güne göre kuruluyor; bu gün kullanıcı girmezse kayıtlardan tahmin ediliyor. Böylece sapma −0,03 ± 0,02'ye, aşım %4,2'ye döndü. Laboratuvarda tahmin günü artık yılın her günü. Satış tahmini nominal büyümeyle (James–Stein büzmeli) ölçekleniyor. Sınavda (240 işletme) alt aşım %6, üst %12 çıktı (Basel yeşil, Spiegelhalter p = 0,90). Kötümser uç gereğinden geniş (Kupiec alt p = 0,025): bu verimsizlik, tehlike değil. Ayrıntı: [LAB_RAPORU.md](LAB_RAPORU.md).
