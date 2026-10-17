@@ -1105,3 +1105,22 @@ def test_audit_log_secure_delete_destroy_and_panel_password(tmp_path, monkeypatc
     assert "uzun-parola-9" not in access.password_file().read_text(encoding="utf-8")
     access.remove("uzun-parola-9")
     assert not access.enabled()
+
+
+def test_panel_password_gate(tmp_path, monkeypatch):
+    from streamlit.testing.v1 import AppTest
+
+    from radar import access
+
+    root = Path(__file__).parents[1]
+    monkeypatch.chdir(root)
+    monkeypatch.setenv("RADAR_DB", str(tmp_path / "panel.db"))
+    access.set_password("dogru-parola-1")
+    at = AppTest.from_file(str(root / "app.py"), default_timeout=300).run()
+    assert len(at.metric) == 0 and at.text_input[0].label == "Panel parolası"
+    at.text_input[0].set_value("yanlis-parola").run()
+    at.button[0].click().run()
+    assert any("Parola yanlış" in e.value for e in at.error) and len(at.metric) == 0
+    at.text_input[0].set_value("dogru-parola-1").run()
+    at.button[0].click().run()
+    assert not at.exception and len(at.metric) == 5                       # demo şirket açıldı
