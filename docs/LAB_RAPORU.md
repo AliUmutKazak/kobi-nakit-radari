@@ -1,6 +1,42 @@
 # Senaryo Laboratuvarı
 
-Tarih: 17 Ekim 2026. Kod: `src/radar/lab.py`. Güncel sürüm 2 (12 boyut, çek dahil). Ayrıntılı tablolar: sürüm 2 [geliştirme](lab/gelistirme_v2.md), [geliştirme, çek düzeltmesi kapalı](lab/gelistirme_v2_cek_duzeltmesi_kapali.md), [sınav](lab/sinav_v2.md); sürüm 1 [geliştirme](lab/gelistirme_v1.md), [sınav](lab/sinav_v1.md). Sınav koşuları kaydı: [lab/sinav_kaydi.csv](lab/sinav_kaydi.csv) (tohum 0: sürüm 1; tohum 1: sürüm 2).
+Tarih: 18 Ekim 2026. Kod: `src/radar/lab.py`. Güncel sürüm 3 (14 boyut: çek, tahsilat kayıt gecikmesi ve tahmin günü dahil). Ayrıntılı tablolar: sürüm 3 [geliştirme](lab/gelistirme_v3.md), [geliştirme, kesim düzeltmesi kapalı](lab/gelistirme_v3_kesim_duzeltmesi_kapali.md), [sınav](lab/sinav_v3.md); sürüm 2 [geliştirme](lab/gelistirme_v2.md), [geliştirme, çek düzeltmesi kapalı](lab/gelistirme_v2_cek_duzeltmesi_kapali.md), [sınav](lab/sinav_v2.md); sürüm 1 [geliştirme](lab/gelistirme_v1.md), [sınav](lab/sinav_v1.md). Sınav koşuları kaydı: [lab/sinav_kaydi.csv](lab/sinav_kaydi.csv) (tohum 0: sürüm 1; tohum 1: sürüm 2; tohum 2: sürüm 3).
+
+## Sürüm 3: geç işlenen tahsilatlar, tahmin günü ve nominal büyüme (18 Ekim 2026)
+
+**Laboratuvarın bulduğu kusur.** Türkiye'de birçok KOBİ'nin muhasebesini mali müşavir tutar; tahsilatlar deftere haftalar sonra, çoğu zaman ay sonunda toplu işlenir. E-faturalar ise zamanında düşer. Bu durumda gerçekte ödenmiş faturalar açık görünür, para hem bugünkü banka bakiyesinde hem "gelecek tahsilat"ta sayılır. Panelin eski uyarısı yalnızca verideki en son hareketin tarihine bakıyordu. Faturalar güncel olduğu için bu gecikmeyi göremiyordu.
+
+**Ölçülen etki.** Tek bir senaryo tipinde (40 müşteri, tahmin ayın 1'inde) 7 günlük kayıt gecikmesi kötümser uç aşımını %7'den %43'e, 30 günlük gecikme %77'ye çıkardı. Laboratuvarın geniş senaryo uzayında etki daha küçük çıktı, çünkü model gecikmenin bir kısmını kendi kalibrasyonunda "müşteriler yavaşladı" diye emiyor. Aynı 120 işletmenin gecikmesiz ve 7–14 gün gecikmeli hâlleri eşleştirilerek ölçüldü:
+
+| | Orta tahmin sapması (gecikmesiz hâle göre fark, aylık ciro) | Alt aşım | Aralık skoru |
+|---|---|---|---|
+| Gecikme yok | 0 | %4,2 | 1,94 |
+| Gecikme var, düzeltme yok | +0,13 ± 0,02 (iyimser) | %8,3 | 2,03 |
+| Gecikme var, kesim günü kayıtlardan tahmin edildi | −0,03 ± 0,02 | %4,2 | 1,95 |
+| Gecikme var, kullanıcı gerçek tarihi girdi | −0,03 ± 0,02 | %4,2 | 1,90 |
+
+**Çözüm.** Tahmin "tahsilatların işlendiği son gün"e göre kurulur: model, kalibrasyon ve gecikme eğrileri o güne göre hesaplanır. Simülasyonda o günden bugüne kadar ödenmiş çıkan faturaların parası bugünkü kasanın içinde sayılır, ikinci kez eklenmez (`pipeline.payments_cutoff`, `simulate(lag=...)`). Kullanıcı tarihi girebilir; girmezse tarih kayıtlardan tahmin edilir. Son tahsilattan bu yana geçen günlerde hiç tahsilat görülmeme olasılığı, işletmenin son 90 günlük tahsilat sıklığına göre %5'in altındaysa kayıtlar orada kesilmiş sayılır. Gecikme olmayan işletmede bu kural sonucu değiştirmedi (fark −0,002). Panel kesimi sarı bir uyarıyla bildirir.
+
+**Laboratuvar tasarımındaki bir eksik giderildi.** Sürüm 1 ve 2'de bütün tahminler 1 Temmuz'da yapılıyordu. Sürüm 3'te tahmin günü yılın herhangi bir günü. Farklı işletmeleri ayın farklı günlerine göre karşılaştıran ilk bakış, ayın gününe bağlı bir sapma gösterdi. Aynı işletmeler ayın 3'ünde, 9'unda, 16'sında ve 24'ünde tahmin edilince bu desen kayboldu (sapma −0,20 ile −0,29 arasında, standart hata ~0,07).
+
+**Denenip reddedilen: ödeme gününe oturtma.** Panel müşterinin "ayın 15'i / ay sonu" ödeme alışkanlığını zaten tanıyor (hatırlatma tarihi için). Simülasyonda ödemeyi en yakın ödeme gününe oturtmak 160 işletmede eşleştirilmiş olarak sınandı. Aralık skoru farkı +0,03 ± 0,03 çıktı, yani iyileşme yok; bant biraz daha kötümser oldu. Kapalı.
+
+**Eklenen: satış tahmininde nominal büyüme.** Yeni satış tahmini geçmişin fiyatlarıyla yapılıyordu: "geçen yılın aynı dönemi" bir yıl, "son dönemin hızı" 90 gün öncesinin fiyatıyla. Yüksek enflasyonda bu, yeni satışları düşük gösterir. Laboratuvarda iyimser uç aşımı enflasyonla artıyordu: %0–17'de %7, %33–50'de %15. Tahminler artık işletmenin yıllık büyümesiyle, kaydırılan süre kadar ölçekleniyor (`pipeline.sales_growth`). Büyüme, son 26 haftanın satışının geçen yılın aynı 26 haftasına oranı. Oran pozitif kısımlı James–Stein kestiricisiyle gürültüsü oranında 1'e büzülür. Sonuçlar:
+- Gerçek KOBİ verisinde (Online Retail II, düşük enflasyon) sonuçlar birebir aynı kaldı. Büzmeden uygulamak orada gürültü ekliyordu (90 günde %7,6'dan %9,0'a).
+- Sentetik işletmelerde enflasyon yokken çarpan 1,00; %30'da 1,14–1,33; %50'de 1,36–1,56.
+- Laboratuvardaki etkisi küçük ve anlamsız (aralık skoru −0,011 ± 0,019). Yönü her enflasyon diliminde doğru.
+- Kötümser kaymanın ana nedeni enflasyon değil.
+
+**Sınav (sürüm 3, tohum 2, 240 işletme, bir kez koşuldu):**
+
+| Kesit | İşletme | Alt aşım | Üst aşım | Basel | Kupiec alt / üst p | Spiegelhalter p | Model − basit yöntem |
+|---|---|---|---|---|---|---|---|
+| Geliştirme (son kod) | 240 | %6 | %10 | yeşil | 0,025 / 1,00 | 0,57 | −1,44 ± 0,11 |
+| **Sınav** | **240** | **%6** | **%12** | **yeşil** | **0,025 / 0,45** | **0,90** | **−1,42 ± 0,11** |
+
+- Riskli uç Basel yeşil, olasılıklar kalibre. Model her kesitte basit yöntemlerden iyi.
+- Saklı rejimde tek sarı kesit aşırı şok oldu (13 işletme, alt %31). Geliştirme tarafında 120 yeni işletmeyle incelendi: yeşil, alt aşım %5,8.
+- **Açık kalan: kötümser uç gereğinden geniş.** Alt aşım %6; Kupiec iki yönlüdür ve "az aşım"ı da reddeder (p = 0,025). Bu bir tehlike değil, verimsizlik: gereksiz alarm riski. Basel/BDDK trafik ışığı yalnızca fazla aşımı cezalandırır ve yeşildir. Nedeni tasarımda: konformal genişletme ve çevrimiçi izleme kötümser bandı hiç daraltmaz (küçük işletmeyi korumak için ihtiyat ilkesi). Pilot verisi biriktikçe çevrimiçi izlemenin kötümser uçta da daraltabilmesi, ön kayıtlı kalibrasyon güncellemesinin konusu olacak.
 
 ## Sürüm 2: çekle ödeyen müşteriler (17 Ekim 2026)
 
@@ -61,6 +97,8 @@ Sistem dört katmandan oluşur:
 | Çekle ödeyen müşteri payı (sürüm 2) | %0–60 | %60–90 | varsayım (kurumsal istatistik yok) |
 | Çek vadesi ortancası (sürüm 2) | 30–120 gün | 120–180 gün | varsayım (kurumsal istatistik yok) |
 | Karşılıksız çek oranı (sürüm 2) | %2,8–3,4 | %3,4–7 | TBB Risk Merkezi 2026; saklı aralık kriz varsayımı |
+| Tahsilat kayıt gecikmesi (sürüm 3) | 0–14 gün | 14–31 gün | varsayım (muhasebenin tahsilatı geç işlemesi) |
+| Tahmin günü (sürüm 3) | 2026'nın herhangi bir günü | | tasarım: ayın başı, ortası, sonu |
 
 Örnekleme Latin hiperküp yöntemiyle yapılır; her boyut kendi aralığında eşit kaplanır.
 
@@ -112,7 +150,7 @@ Büyük örneklemde iki bölge de yeşil. Sınavdaki sarı, 17–20 işletmelik 
 
 ## Kapsamadıkları (sonraki sürüm)
 
-- Kısmi ödemeler ve veri kalitesi sorunları (eksik vade, mükerrer fatura) laboratuvarda yok. Bunlar uygulamada ayrı testlerle sınanıyor.
+- Kısmi ödemeler, eksik vade ve mükerrer fatura laboratuvarda yok; bunlar uygulamada ayrı testlerle sınanıyor. Veri kalitesinden tahsilat kayıt gecikmesi sürüm 3'te eklendi.
 - Çek ve senet sürüm 2'de eklendi. Ciro edilen ya da iskontoya verilen çekler ve keşideci bazlı risk laboratuvarda yok. Karşılıksızlık oranı ülke geneli (TBB) olarak alınıyor.
 - Müşteri sayısı aralıkları ve geçmiş uzunluğu varsayımdır. Fatura düzeyinde açık bir Türk KOBİ verisi bulunamadı; pilot verisi geldikçe bu aralıklar gerçek dağılıma çekilecek.
 

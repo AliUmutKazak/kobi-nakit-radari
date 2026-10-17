@@ -182,9 +182,14 @@ def run_own(path: str, rev: int, as_of: str, include_projected: bool):
         w0 = (w0, w0) if np.isscalar(w0) else w0
         return calib | {"widen": (w0[0] * online["lo"], w0[1] * online["hi"]), "online": online}
 
+    # Tahsilatlar kayda geç işleniyorsa (muhasebe) tahmin, kayıtların son gününe göre kurulur.
+    through = store.get("payments_through", "")
+    through = (min(pd.Timestamp(through), pd.Timestamp(as_of)) if through
+               else pipeline.payments_cutoff(obs.reset_index(drop=True), as_of))
     res = pipeline.forecast(obs.reset_index(drop=True), as_of, float(store.get("opening", 0)),
                             outflows if outflows is not None else pd.DataFrame({"date": [], "amount": []}),
-                            include_projected=include_projected, cheques=cheques, calib_hook=hook)
+                            include_projected=include_projected, cheques=cheques, calib_hook=hook,
+                            payments_through=through)
     # Verideki son hareket: bundan sonraki ödemeler bilinmez, ödenmemiş görünür.
     dates = [obs["issue_date"].max(), obs["paid_date"].max()] + ([payments["date"].max()] if payments is not None else [])
     last = max(d for d in dates if pd.notna(d))
@@ -331,6 +336,13 @@ with st.sidebar:
                                   help="Genellikle bugün. Geçmiş bir tarih seçerseniz o güne kadarki veriyle tahmin yapılır.")
             opening = st.number_input("Kasa ve bankadaki toplam para (TL)", 0.0, value=float(store.get("opening", 0)),
                                       step=10_000.0, help="Her kullanımda güncelleyin; tahmin bu tutardan başlar.")
+            saved_through = store.get("payments_through", "")
+            through = st.date_input("Tahsilatlar hangi tarihe kadar işlendi? (isteğe bağlı)", format="DD.MM.YYYY",
+                                    value=pd.Timestamp(saved_through).date() if saved_through else None,
+                                    help="Muhasebe tahsilatları geç işliyorsa (ör. ay sonunda toplu) son işlenen günü girin. "
+                                         "Boş bırakılırsa kayıtlardan tahmin edilir. O günden sonra gelmiş olabilecek "
+                                         "ödemeler kasa bakiyenizin içinde sayılır, ikinci kez tahsilat olarak eklenmez.")
+            store.set("payments_through", f"{pd.Timestamp(through):%Y-%m-%d}" if through else "")
             sector_options = [("", "Seçilmedi")] + benchmark.sectors()
             codes = [c for c, _ in sector_options]
             saved_sector = store.get("sector", "")
@@ -549,6 +561,12 @@ if stale is not None and (pd.Timestamp(res["as_of"]) - stale).days > 7:
              f"{(pd.Timestamp(res['as_of']) - stale).days} gün önce. Bu arada gelen ödemeler bilinmediği için ödenmemiş "
              f"sayılıyor; vadesi geçmiş alacak ve risk olduğundan yüksek görünür. Güncel dosyaları yükleyin ya da "
              f"tahmin tarihini {stale:%d.%m.%Y} yapın.")
+lag_days = res["info"].get("payments_lag", 0)
+if lag_days:
+    st.warning(f"Tahsilat kayıtları {res['info']['payments_through']:%d.%m.%Y} tarihinde bitiyor ({lag_days} gün önce). "
+               "O günden sonra gelmiş olabilecek ödemeler, girdiğiniz kasa bakiyesinin içinde sayıldı; açık görünen "
+               "faturaların bir kısmı aslında ödenmiş olabilir. Kasa bakiyesini bugünkü banka bakiyesiyle girin. "
+               "Tarih yanlışsa sol menüden \"Tahsilatlar hangi tarihe kadar işlendi?\" alanını düzeltin.")
 if own and store.get("pilot_on", "0") == "1" and pilot.record_due(store.pilot_records(), res["as_of"],
                                                                   res.get("last_activity")) is None:
     with st.spinner("Bu haftanın pilot kaydı alınıyor; yarım dakika kadar sürer..."):

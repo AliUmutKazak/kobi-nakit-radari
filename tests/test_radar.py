@@ -1237,3 +1237,29 @@ def test_cheque_payers_cash_arrives_at_cheque_maturity():
     habits = pipeline.cheque_habits(observe(full, AS_OF), AS_OF)
     assert 0.1 < habits["overall"] < 0.95 and 50 < habits["median_term"] < 110
     assert pipeline.cheque_habits(observe(generate(seed=5, n_customers=20), AS_OF), AS_OF) is None
+
+
+def test_late_recorded_payments_are_not_counted_twice():
+    from radar.simulate import snap_to_payday
+    from radar.synthetic import cash_plan
+    full = generate(seed=6, n_customers=40, as_of=AS_OF)
+    # Tahsilatlar 12 gün geç işleniyor: kural son tahsilat gününü kesim sayar; günceldeyse bugünü.
+    lagged = observe(full, AS_OF, record_lag=12)
+    assert pipeline.payments_cutoff(lagged, AS_OF) <= pd.Timestamp(AS_OF) - pd.Timedelta(days=12)
+    assert pipeline.payments_cutoff(observe(full, AS_OF), AS_OF) == pd.Timestamp(AS_OF)
+    _, out = cash_plan(lagged, AS_OF)
+    naive = pipeline.forecast(lagged, AS_OF, 0.0, out, n_sims=300)
+    fixed = pipeline.forecast(lagged, AS_OF, 0.0, out, n_sims=300, payments_through=pipeline.payments_cutoff(lagged, AS_OF))
+    # Arada ödenmiş olabilecek faturalar gelecek tahsilata eklenmez: orta tahmin daha düşük, gecikme bilgisi panelde.
+    assert fixed["sim"].p50[-1] < naive["sim"].p50[-1] and fixed["info"]["payments_lag"] >= 12
+    # Ödeme günü: ay sonu ödeyen müşteri ayın 1'inden sonra çekilen ödemeyi ay sonunda yapar; geçmişe gidilmez.
+    assert list(snap_to_payday(np.array([-3, 5, 20]), 31, "2026-07-01", -6)) == [-1, -1, 30]
+    assert list(snap_to_payday(np.array([0, 40]), 15, "2026-07-01", 1)) == [14, 45]
+
+
+def test_sales_growth_is_shrunk_and_follows_inflation():
+    flat = [pipeline.sales_growth(observe(generate(seed=s, n_customers=40), AS_OF), AS_OF) for s in range(3)]
+    hot = [pipeline.sales_growth(observe(generate(seed=s, n_customers=40, inflation=0.5), AS_OF), AS_OF) for s in range(3)]
+    assert all(abs(g - 1) < 0.2 for g in flat) and all(1.2 < g < 1.9 for g in hot) and min(hot) > max(flat)
+    short = observe(generate(seed=1, n_customers=20, months=12), AS_OF)
+    assert pipeline.sales_growth(short, AS_OF) == 1.0                 # bir buçuk yıldan kısa geçmiş: büyüme yok

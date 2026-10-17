@@ -22,7 +22,7 @@ import numpy as np
 import pandas as pd
 from joblib import Parallel, delayed
 
-from .pipeline import forecast
+from .pipeline import forecast, payments_cutoff
 from .synthetic import cash_plan, cheque_portfolio, generate, observe
 
 REGIMES = {
@@ -37,14 +37,22 @@ def run_case(seed: int, customers: int, trend: float, shock: float, as_of="2026-
              horizon: int = 90, n_sims: int = 1000, calib_hook=None, gen: dict | None = None,
              forecast_kwargs: dict | None = None) -> list[dict]:
     """gen: senaryo laboratuvarının ek üretici ayarları (synthetic.generate; bkz. lab.py).
-    forecast_kwargs: pipeline.forecast'a ek ayarlar (deneylerde bir düzeltmeyi kapatıp açmak için)."""
+    forecast_kwargs: pipeline.forecast'a ek ayarlar (deneylerde bir düzeltmeyi kapatıp açmak için).
+    Tahsilat kayıt gecikmesi (gen["record_lag"]) varsa kesim günü forecast_kwargs["cutoff"] ile seçilir:
+    "auto" (varsayılan; ürünün kendi tahmini, pipeline.payments_cutoff), "true" (kullanıcı gerçek tarihi girer),
+    "none" (düzeltme yok)."""
     as_of = pd.Timestamp(as_of)
     end = as_of + pd.Timedelta(days=horizon)
-    full = generate(seed=seed, n_customers=customers, as_of=end, trend=trend, shock=shock, **(gen or {}))
-    obs = observe(full, as_of)
+    gen = dict(gen or {})
+    record_lag = int(gen.pop("record_lag", 0))
+    full = generate(seed=seed, n_customers=customers, as_of=end, trend=trend, shock=shock, **gen)
+    obs = observe(full, as_of, record_lag)
     _, outflows = cash_plan(obs, as_of, horizon)
+    kw = dict(forecast_kwargs or {})
+    mode = kw.pop("cutoff", "auto")
+    through = {"auto": payments_cutoff(obs, as_of), "true": as_of - pd.Timedelta(days=record_lag), "none": None}[mode]
     res = forecast(obs, as_of, 0.0, outflows, horizon, n_sims, seed=seed, calib_hook=calib_hook,
-                   cheques=cheque_portfolio(obs, as_of), **(forecast_kwargs or {}))
+                   cheques=cheque_portfolio(obs, as_of), payments_through=through, **kw)
     sim = res["sim"]
 
     # Gerçekleşen yol: tahmin tarihinden sonra kesilenler dahil tüm faturaların paranın gerçekten geldiği günler

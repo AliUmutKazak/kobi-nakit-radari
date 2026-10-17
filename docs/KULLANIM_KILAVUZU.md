@@ -38,6 +38,10 @@ Sol menüde **"Kendi verim"**i seçin. Ayarlar dört bölümde toplanmıştır.
 
 **1. Temel bilgiler.** Tahmin tarihi (genellikle bugün) ve kasa + bankadaki toplam paranız. Kasa tutarını her kullanımda güncelleyin.
 
+**Tahsilatlar hangi tarihe kadar işlendi?** Muhasebeniz tahsilatları geç işliyorsa (ör. mali müşavir ay sonunda toplu işliyor), son işlenen günü bu alana girin. O günden sonra gelmiş olabilecek ödemeler kasa bakiyenizin içinde sayılır, ikinci kez "gelecek tahsilat" olarak eklenmez. Alanı boş bırakırsanız tarih kayıtlardan tahmin edilir: son tahsilattan bu yana geçen süre işletmenin olağan tahsilat sıklığına göre olağan dışı uzunsa kayıtlar orada kesilmiş sayılır ve panel sarı bir uyarı gösterir. Bu durumda kasa tutarını bugünkü banka bakiyesiyle girmeniz önemlidir.
+
+**Çekle ödeyen müşteriler.** Cari hesap ekstresi yüklerseniz, çekle kapanan faturalar ("çek", "müşteri çeki", "senet" açıklamalı alacak satırları) tanınır. Panel her müşterinin çekle ödeme payını ve çek vadesini sizin kayıtlarınızdan öğrenir. Bu müşterilerin açık faturaları ve yeni satışları için para, fatura kapandığı gün değil çek vadesinde sayılır.
+
 **Dosyalarınız güncel olsun.** Dosyalardaki en son hareket tahmin tarihinden bir haftadan eskiyse panel kırmızı bir uyarı verir: aradaki günlerde gelen ödemeleri bilemediği için onları ödenmemiş sayar ve riski olduğundan yüksek gösterir. Ya güncel dosya yükleyin ya da tahmin tarihini dosyalarınızın tarihine çekin.
 
 **2. Dosyalar: satışlarınız (zorunlu).** Aşağıdakilerden **birini** yükleyin:

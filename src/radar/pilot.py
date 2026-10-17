@@ -15,7 +15,7 @@ from . import actions
 from .anonymize import invoice_aliases, pseudonym
 from .open_data import delay_study
 from .synthetic import observe
-from .pipeline import forecast, gap_summary, naive_collections, weekly_table
+from .pipeline import forecast, gap_summary, naive_collections, payments_cutoff, weekly_table
 from .reconcile import collection_events
 from .standards import SIGNIFICANCE, diebold_mariano, interval_report, passes as interval_passes
 
@@ -75,7 +75,7 @@ def build(obs: pd.DataFrame, as_of, opening: float = 0.0, outflows: pd.DataFrame
     as_of = pd.Timestamp(as_of)
     if res is None:
         flows = outflows if outflows is not None else pd.DataFrame({"date": [], "amount": []})
-        res = forecast(obs, as_of, opening, flows, cheques=cheques)
+        res = forecast(obs, as_of, opening, flows, cheques=cheques, payments_through=payments_cutoff(obs, as_of))
     conc = actions.concentration(obs)
     last = max(obs["issue_date"].max(), obs["paid_date"].max() if obs["paid_date"].notna().any() else obs["issue_date"].max())
     quality = {

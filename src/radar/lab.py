@@ -43,7 +43,7 @@ from .standards import SIGNIFICANCE, basel_zone, benjamini_hochberg, kupiec_pof,
 from .synthetic import generate, observe
 from .validation import OPENINGS, run_case
 
-AS_OF = pd.Timestamp("2026-07-01")
+AS_OF = pd.Timestamp("2026-01-01")        # tahmin günü bu tarihten itibaren yılın rastgele bir günü (as_of_day)
 HORIZON = 90
 SEED_BASE = {"gelistirme": 100_000, "sinav": 500_000}
 CUSTOMERS = {"mikro": (5, 15), "kucuk": (15, 50), "orta": (50, 120)}     # varsayım: vadeli satış yapılan müşteri sayısı
@@ -60,6 +60,8 @@ RANGES = {
     "cheque_share": ((0.0, 0.60), (0.60, 0.90), "varsayım: çekle ödeyen müşteri payı (kurumsal istatistik yok)"),
     "cheque_term": ((30, 120), (120, 180), "varsayım: çek vadesi ortancası, gün (kurumsal istatistik yok)"),
     "cheque_bounce": ((0.028, 0.034), (0.034, 0.07), "TBB Risk Merkezi 2026: tutar bazında %2,8-3,4; saklı: kriz"),
+    "record_lag": ((0, 14), (14, 31), "varsayım: tahsilatların deftere işlenme gecikmesi, gün (muhasebe)"),
+    "as_of_day": ((0, 364), (0, 364), "tahmin günü: 2026 içinde yılın günü (ayın başı, ortası, sonu)"),
 }
 DSO_LIMITS = (15.0, 180.0)        # üreticinin ulaşabildiği aralık; dışı kırpılır ve raporlanır
 LOG = Path(__file__).resolve().parents[2] / "docs" / "lab" / "sinav_kaydi.csv"
@@ -87,11 +89,15 @@ def sample(split: str, n: int, seed: int = 0, focus: dict | None = None) -> pd.D
         # Hedef tahsil süresi: sektörün iyi ve kötü çeyrek sınırları arasında log ölçekte eşit dağılım.
         dso = float(np.exp(np.log(sec["gun_iyi"]) + rng.random() * (np.log(sec["gun_kotu"]) - np.log(sec["gun_iyi"]))))
         row |= {"sektor": sec["kod"], "dso_sektor": dso, "dso_hedef": float(np.clip(dso, *DSO_LIMITS))}
-        held = rng.choice(list(RANGES)) if split == "sinav" and i % 2 == 1 else None
+        held = rng.choice([k for k in RANGES if k != "as_of_day"]) if split == "sinav" and i % 2 == 1 else None
         for j, (name, (dev, out, _)) in enumerate(RANGES.items()):
             lo, hi = (focus or {}).get(name, out if name == held else dev)
             row[name] = lo + u[i, 3 + j] * (hi - lo)
         row["history"] = int(round(row["history"]))
+        row["record_lag"] = int(round(row["record_lag"]))
+        row["as_of_day"] = int(row["as_of_day"])
+        row["as_of"] = AS_OF + pd.Timedelta(days=row["as_of_day"])
+        row["ayin_gunu"] = int(row["as_of"].day)               # ay başı tahminlerinde ay sonu ödemeleri yakın
         row["saklı_boyut"] = held or ""
         row["season_peak"] = int(rng.integers(1, 13))
         rows.append(row)
@@ -103,7 +109,7 @@ def _gen(row, delay_scale: float = 1.0) -> dict:
             "season_peak": int(row["season_peak"]), "inflation": float(row["inflation"]),
             "size_sigma": float(row["size_sigma"]), "delay_scale": delay_scale, "terms_scale": min(1.0, delay_scale),
             "cheque_share": float(row["cheque_share"]), "cheque_term": float(row["cheque_term"]),
-            "cheque_bounce": float(row["cheque_bounce"])}
+            "cheque_bounce": float(row["cheque_bounce"]), "record_lag": int(row["record_lag"])}
 
 
 def dso(obs: pd.DataFrame, as_of, doubtful_days: int = 180) -> float:
@@ -120,9 +126,12 @@ def fit_delay_scale(row, iters: int = 8) -> tuple[float, float]:
     de aynı oranda kısalır (peşine yakın satış yapan sektörler). Aynı tohumda tahsil süresi ölçekle tekdüze
     artar. Dönen: (ölçek, ulaşılan tahsil süresi, gün)."""
     def measure(scale):
-        full = generate(seed=int(row["seed"]), n_customers=int(row["customers"]), as_of=AS_OF,
-                        trend=float(row["trend"]), shock=float(row["shock"]), **_gen(row, scale))
-        return dso(observe(full, AS_OF), AS_OF)
+        gen = _gen(row, scale)
+        gen.pop("record_lag")
+        as_of = pd.Timestamp(row["as_of"])
+        full = generate(seed=int(row["seed"]), n_customers=int(row["customers"]), as_of=as_of,
+                        trend=float(row["trend"]), shock=float(row["shock"]), **gen)
+        return dso(observe(full, as_of), as_of)
     lo, hi = np.log(0.2), np.log(10.0)
     for _ in range(iters):
         mid = (lo + hi) / 2
@@ -137,7 +146,7 @@ def fit_delay_scale(row, iters: int = 8) -> tuple[float, float]:
 def run_one(row: dict, n_sims: int = 1000, forecast_kwargs: dict | None = None) -> list[dict]:
     scale, achieved = fit_delay_scale(row)
     out = run_case(int(row["seed"]), int(row["customers"]), float(row["trend"]), float(row["shock"]),
-                   as_of=AS_OF, horizon=HORIZON, n_sims=n_sims, gen=_gen(row, scale), forecast_kwargs=forecast_kwargs)
+                   as_of=pd.Timestamp(row["as_of"]), horizon=HORIZON, n_sims=n_sims, gen=_gen(row, scale), forecast_kwargs=forecast_kwargs)
     return [r | {k: row[k] for k in row if k not in r} | {"delay_scale": scale, "dso": achieved} for r in out]
 
 
@@ -180,12 +189,12 @@ def robustness_map(df: pd.DataFrame) -> dict[str, pd.DataFrame]:
     cases = df[df["opening_months"] == OPENINGS[0]]
     maps = {"genel": bin_report(cases, df, pd.Series("tümü", index=cases.index)),
             "olcek": bin_report(cases, df, cases["olcek"])}
-    for name in list(RANGES) + ["dso", "customers"]:
+    for name in [k for k in RANGES if k != "as_of_day"] + ["ayin_gunu", "dso", "customers"]:
         inside = cases["saklı_boyut"].ne(name) if "saklı_boyut" in cases else pd.Series(True, index=cases.index)
         labels = pd.Series("4) saklı (geliştirme aralığı dışı)", index=cases.index, dtype=object)
         x = cases.loc[inside, name]
         edges = np.unique(np.quantile(x, [0, 1 / 3, 2 / 3, 1]))
-        fmt = ((lambda v: f"{v:.0f}") if name in ("history", "dso", "customers", "cheque_term")
+        fmt = ((lambda v: f"{v:.0f}") if name in ("history", "dso", "customers", "cheque_term", "record_lag", "ayin_gunu")
                else (lambda v: f"{v:.3f}") if name == "cheque_bounce" else (lambda v: f"{v:.2f}"))
         idx = np.clip(np.searchsorted(edges, x, side="right") - 1, 0, len(edges) - 2)
         labels.loc[inside] = [f"{i + 1}) {fmt(edges[i])}–{fmt(edges[i + 1])}" for i in idx]

@@ -2,6 +2,10 @@
 
 Tarih: 14 Ekim 2026. Yeniden üretmek için: `python run_validation.py 24` (yaklaşık 3 dakika).
 
+## Senaryo laboratuvarı, sürüm 3: geç işlenen tahsilatlar (18 Ekim 2026)
+
+Muhasebe tahsilatları geç işlediğinde ödenmiş faturalar açık görünür ve para iki kez sayılır. Aynı 120 işletmenin eşleştirilmiş ölçümünde 7–14 günlük gecikme orta tahmini +0,13 aylık ciro iyimser yaptı ve kötümser uç aşımını %4,2'den %8,3'e çıkardı. Tahmin artık tahsilatların işlendiği son güne göre kuruluyor; bu gün kullanıcı girmezse kayıtlardan tahmin ediliyor. Böylece sapma −0,03 ± 0,02'ye, aşım %4,2'ye döndü. Laboratuvarda tahmin günü artık yılın her günü. Satış tahmini nominal büyümeyle (James–Stein büzmeli) ölçekleniyor. Sınavda (240 işletme) alt aşım %6, üst %12 çıktı (Basel yeşil, Spiegelhalter p = 0,90). Kötümser uç gereğinden geniş (Kupiec alt p = 0,025): bu verimsizlik, tehlike değil. Ayrıntı: [LAB_RAPORU.md](LAB_RAPORU.md).
+
 ## Senaryo laboratuvarı, sürüm 2: çek (17 Ekim 2026)
 
 Laboratuvar, çekle ödeyen müşterisi olan işletmelerde kasanın olduğundan erken dolu göründüğünü ortaya çıkardı. Cari hesapta fatura çek alınınca kapanır, para ise vadede gelir. Aynı 240 işletmede düzeltmeden önce alt aşım %40'tı (Basel kırmızı, orta tahmin +0,56 aylık ciro iyimser). Çekle ödeme payı ve çek vadesi her işletmenin kendi cari hesabından öğrenilince alt aşım %10'a indi (Basel yeşil, sapma −0,06). Yeni tohumlarla sınavda alt aşım %8, üst aşım %6 çıktı (Basel yeşil); iyimser uç ve olasılık kalibrasyonu ise reddedildi (Kupiec üst p = 0,043, Spiegelhalter p = 0,011). Ayrıntı: [LAB_RAPORU.md](LAB_RAPORU.md).

@@ -1,6 +1,8 @@
 """Uçtan uca akış: veri -> model -> simülasyon -> öncelikli tahsilat listesi, ve geri testler."""
 from __future__ import annotations
 
+import os
+
 import numpy as np
 import pandas as pd
 
@@ -62,11 +64,69 @@ def _cheque_args(habits: dict | None, inv: pd.DataFrame, n_sims: int, seed: int)
     return {"cheque_p": p, "cheque_terms": terms}
 
 
+def payments_cutoff(obs: pd.DataFrame, as_of, window_days: int = 90, alpha: float = 0.05):
+    """Tahsilatların kayda hangi güne kadar işlendiği, kayıtlardan tahmin edilir.
+
+    Faturalar (e-fatura) genelde zamanında kayıtlıdır, tahsilatlar ise muhasebede haftalar sonra işlenebilir.
+    Bu durumda gerçekte ödenmiş faturalar açık görünür ve para hem bugünkü kasada hem gelecek tahsilatta
+    sayılır. Laboratuvarda 7 günlük gecikme kötümser uç aşımını %7'den %43'e çıkardı (LAB_RAPORU.md).
+
+    Kural: son tahsilattan bugüne geçen boşluk, işletmenin son 90 günlük tahsilat sıklığında (Poisson) %5'ten
+    az olasılıkla görülecek kadar uzunsa tahsilat kayıtları son tahsilat gününde kesilmiş sayılır; değilse
+    kayıtlar günceldir. Kullanıcı gerçek tarihi biliyorsa (ör. "muhasebe 30 Eylül'e kadar işledi") o esas alınır."""
+    as_of = pd.Timestamp(as_of)
+    paid = obs.loc[obs["paid_date"].notna() & (obs["paid_date"] <= as_of), "paid_date"]
+    if not len(paid):
+        return as_of
+    last = paid.max()
+    days = paid[paid > last - pd.Timedelta(days=window_days)].dt.normalize().nunique()
+    rate = days / window_days                                  # tahsilat görülen gün oranı
+    gap = (as_of - last).days
+    if rate <= 0 or rate >= 1:
+        return as_of if gap <= 1 else last
+    # Gün başına "en az bir tahsilat" olasılığı rate; gap gün hiç tahsilat görülmeme olasılığı (1 - rate)^gap.
+    return last if (1 - rate) ** gap < alpha else as_of
+
+
 SEASON_DAYS = 364                 # 52 hafta: geçen yılın aynı dönemi, haftanın günü korunur
+GROWTH_DAYS = 182                 # yıllık büyüme: son 26 haftanın satışı / geçen yılın aynı 26 haftası
+GROWTH_CLIP = (0.5, 2.0)
+SALES_GROWTH = os.environ.get("RADAR_SALES_GROWTH", "1") == "1"      # "0": yalnızca karşılaştırma deneyleri için
+
+
+def sales_growth(obs: pd.DataFrame, as_of) -> float:
+    """İşletmenin yıllık nominal satış büyümesi: son 26 haftanın satışının geçen yılın aynı 26 haftasına oranı.
+
+    "Geçen yılın aynı dönemi" tahmini geçen yılın fiyatlarıyla yapılır; yüksek enflasyonda (TÜİK TÜFE 2021-2025
+    yıllık %20-85) bu, yeni satışları sistematik olarak düşük gösterir. Mevsimsel naif tahmini yıllık değişim
+    oranıyla ölçeklemek yerleşik bir yöntemdir (Hyndman ve Athanasopoulos, Forecasting: Principles and Practice,
+    mevsimsel naif ve sürüklenme yöntemleri). Oran mevsimsellikten etkilenmez (iki pencere yılın aynı haftaları).
+
+    Oran gürültülüdür: log oranın standart hatası (se) iki penceredeki haftalık satışların değişkenliğinden (delta
+    yöntemi) hesaplanır ve oran pozitif kısımlı James-Stein kestiricisiyle 1'e doğru büzülür (James ve Stein 1961;
+    Efron ve Morris 1973): log g × max(0, 1 − se² / (log g)²). Belirgin büyüme (ör. yüksek enflasyon) büyük ölçüde
+    uygulanır, gürültü düzeyindeki oran uygulanmaz. Enflasyonun düşük olduğu gerçek bir KOBİ verisinde (UCI Online
+    Retail II) oranı büzmeden uygulamak yalnızca gürültü ekledi. Geçmiş yetmezse 1; aşırı değerler 0,5-2'ye kırpılır."""
+    as_of = pd.Timestamp(as_of)
+    if obs["issue_date"].min() > as_of - pd.Timedelta(days=SEASON_DAYS + GROWTH_DAYS):
+        return 1.0
+    weeks = []
+    for end in (as_of, as_of - pd.Timedelta(days=SEASON_DAYS)):
+        part = obs[(obs["issue_date"] > end - pd.Timedelta(days=GROWTH_DAYS)) & (obs["issue_date"] <= end)]
+        k = ((end - part["issue_date"]).dt.days // 7).clip(upper=GROWTH_DAYS // 7 - 1)
+        weeks.append(part.groupby(k)["amount"].sum().reindex(range(GROWTH_DAYS // 7), fill_value=0.0).to_numpy())
+    now, before = (w.sum() for w in weeks)
+    if now <= 0 or before <= 0:
+        return 1.0
+    log_g = np.log(now / before)
+    se2 = sum(w.var(ddof=1) / len(w) / w.mean() ** 2 for w in weeks)
+    shrunk = log_g * max(0.0, 1.0 - se2 / log_g ** 2) if log_g else 0.0
+    return float(np.clip(np.exp(shrunk), *GROWTH_CLIP))
 
 
 def _sales_shift(obs: pd.DataFrame, as_of, horizon: int, method: str) -> pd.DataFrame:
-    """`method` ile as_of'tan sonraki `horizon` gün için öngörülen faturalar (henüz kesilmemiş satışlar)."""
+    """`method` ile as_of'tan sonraki `horizon` gün için öngörülen faturalar (henüz kesilmemiş satışlar).
+    Tutarlar, kaydırılan süre kadar işletmenin yıllık büyümesiyle ölçeklenir (sales_growth)."""
     as_of = pd.Timestamp(as_of)
     lag = SEASON_DAYS if method == "mevsimsel" else horizon
     shift = pd.Timedelta(days=lag)
@@ -75,6 +135,9 @@ def _sales_shift(obs: pd.DataFrame, as_of, horizon: int, method: str) -> pd.Data
     src["issue_date"] += shift
     src["due_date"] += shift
     src["paid_date"] = pd.NaT
+    if SALES_GROWTH:
+        # Kaydırılan dönem kadar büyüme: mevsimselde bir yıllık, son dönem hızında ufuk kadar (g ** (ufuk / 364)).
+        src["amount"] = src["amount"] * sales_growth(obs, as_of) ** (lag / SEASON_DAYS)
     src["open_amount"] = src["amount"]
     return src
 
@@ -244,13 +307,19 @@ def aggregate_widen(stored, final, as_of, calib, horizons=(14, 30, 60, 90), leve
 def forecast(obs: pd.DataFrame, as_of, opening: float, outflows: pd.DataFrame, horizon: int = 90,
              n_sims: int = 2000, include_projected: bool = True, seed: int = 0,
              cheques: pd.DataFrame | None = None, calib_hook=None, cheque_aware: bool = True,
-             cheque_by_customer: bool = False) -> dict:
+             cheque_by_customer: bool = False, payments_through=None, payday_snap: bool = False) -> dict:
     """calib_hook: kalibrasyon sözlüğünü değiştiren isteğe bağlı fonksiyon (deneyler ve pilot sırasındaki
     çevrimiçi kantil izleme için; bkz. pilot.online_adjustment).
-    cheque_aware: çekle ödeyen müşterilerde paranın çek vadesinde gelmesi (cheque_habits; yalnızca deneylerde kapatılır)."""
+    cheque_aware: çekle ödeyen müşterilerde paranın çek vadesinde gelmesi (cheque_habits; yalnızca deneylerde kapatılır).
+    payments_through: tahsilatların kayda işlendiği son gün (bkz. payments_cutoff). Daha eskiyse model, kalibrasyon
+    ve gecikme eğrileri o güne göre kurulur; arada gelmiş olabilecek paralar bugünkü kasanın içinde sayılır.
+    payday_snap: ödemeyi müşterinin ödeme gününe oturtma (simulate.snap_to_payday). Laboratuvarda denendi, aralık
+    skorunu iyileştirmedi (LAB_RAPORU.md); kapalıdır, seçenek deneyin tekrarlanabilmesi için duruyor."""
     as_of = pd.Timestamp(as_of)
+    ref =min(pd.Timestamp(payments_through), as_of) if payments_through is not None else as_of
+    lag = int((as_of - ref).days)
     feats_issue = build_features(obs)
-    X, y = training_frame(obs, as_of, feats=feats_issue)
+    X, y = training_frame(obs, ref, feats=feats_issue)
     model = fit_model(X, y)
 
     obs = obs.copy()
@@ -281,23 +350,26 @@ def forecast(obs: pd.DataFrame, as_of, opening: float, outflows: pd.DataFrame, h
     target = pd.concat(parts, ignore_index=True)
     # Özellikler bugünün bilgisiyle hesaplanır; tahmin edilen faturalar geçmişe karışmaz.
     combined = pd.concat([obs[~is_open], target], ignore_index=True)
-    feats = build_features(combined, ref=as_of).iloc[-len(target):].reset_index(drop=True)
-    target["p_default"] = target["customer_id"].map(default_rates(obs, as_of)).to_numpy()
+    feats = build_features(combined, ref=ref).iloc[-len(target):].reset_index(drop=True)
+    target["p_default"] = target["customer_id"].map(default_rates(obs, ref)).to_numpy()
 
     # Ödeme sözü verilmiş faturada söz tarihi yeni vade sayılır; müşterinin olağan
     # gecikme alışkanlığı bu tarihe göre uygulanır (varsayım: söz de vade kadar tutulur).
     promised = target["promised_date"] > as_of
     sim_inv = target.assign(due_date=target["promised_date"].where(promised, target["due_date"]))
-    calib = calibrate(obs, as_of, feats=feats_issue)
+    calib = calibrate(obs, ref, feats=feats_issue)
     if calib_hook is not None:
         calib = calib_hook(calib)
-    habits = cheque_habits(obs, as_of) if cheque_aware else None
-    ctx = {"sim_inv": sim_inv, "Q": model.predict(feats), "aging": aging_curve(obs, as_of), "cheques": cheques,
+    habits = cheque_habits(obs, ref) if cheque_aware else None
+    ctx = {"sim_inv": sim_inv, "Q": model.predict(feats), "aging": aging_curve(obs, ref), "cheques": cheques,
            "horizon": horizon, "n_sims": n_sims, "seed": seed, "calib": calib, "sales_level": sales_level,
            "cheque_args": _cheque_args(habits, sim_inv, n_sims, seed)
-           | ({"cheque_by_customer": cheque_by_customer} if habits else {})}
+           | ({"cheque_by_customer": cheque_by_customer} if habits else {}) | ({"lag": lag} if lag else {})
+           | ({"payday": sim_inv["customer_id"].map(actions.payment_habits(obs[obs["paid_date"] <= ref])["payday"])
+                         .fillna(0).astype(int).to_numpy()} if payday_snap else {}),
+           "payments_through": ref, "lag": lag}
     sim = simulate(sim_inv, ctx["Q"], as_of, opening, outflows, horizon, n_sims, seed=seed, aging=ctx["aging"],
-                   cheques=cheques, sales_level=sales_level, **_sim_args(calib, sim_inv, as_of), **ctx["cheque_args"])
+                   cheques=cheques, sales_level=sales_level, **_sim_args(calib, sim_inv, ref), **ctx["cheque_args"])
     real = ~target["projected"].to_numpy()
     gap_day = sim.breach_day if sim.breach_day is not None else horizon
     ranked = actions.prioritize(target[real], sim.pay_day[real], as_of, gap_day, actions.payment_habits(obs), horizon)
@@ -311,7 +383,8 @@ def forecast(obs: pd.DataFrame, as_of, opening: float, outflows: pd.DataFrame, h
                      "widen": calib.get("widen", 1.0), "sales_method": method, "sales_errors_n": int(len(errs)),
                      "sales_error_spread": float(np.percentile(errs, 90) - np.percentile(errs, 10)) if len(errs) >= 8 else None,
                      "cheque_share": habits["overall"] if habits else None, "cheque_n": habits["n"] if habits else 0,
-                     "cheque_median_term": habits["median_term"] if habits else None},
+                     "cheque_median_term": habits["median_term"] if habits else None,
+                     "payments_through": ref, "payments_lag": lag},
             "disputed_total": float(obs.loc[is_open & obs["disputed"], "open_amount"].sum())}
 
 
@@ -342,7 +415,7 @@ def scenario(res: dict, collect_ids=(), collect_in_days: int = 7, delay_labels=(
         out = pd.concat([out, pd.DataFrame({"date": [as_of + pd.Timedelta(days=collect_in_days)],
                                             "amount": [-cash], "label": ["Tahsilat (senaryo)"]})], ignore_index=True)
     return simulate(inv, ctx["Q"], as_of, res["opening"], out, ctx["horizon"], ctx["n_sims"],
-                    seed=ctx["seed"], **_sim_args(ctx["calib"], inv, as_of),
+                    seed=ctx["seed"], **_sim_args(ctx["calib"], inv, ctx.get("payments_through", as_of)),
                     aging=ctx["aging"], cheques=ctx["cheques"], sales_level=ctx.get("sales_level"),
                     **ctx.get("cheque_args", {}))
 

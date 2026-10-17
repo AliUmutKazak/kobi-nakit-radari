@@ -194,6 +194,30 @@ def aging_curve(inv: pd.DataFrame, as_of, max_days: int = 720) -> np.ndarray:
     return np.cumprod(1 - events / np.maximum(at_risk, 1))
 
 
+def snap_to_payday(day: np.ndarray, habit: int, as_of, earliest: int) -> np.ndarray:
+    """Gün ofsetlerini (as_of'a göre) müşterinin en yakın ödeme gününe taşır; `earliest`ten önceye gitmez.
+
+    En yakın güne yuvarlamak ortalama gecikmeyi korur (model gecikmeyi zaten ödeme günlerine oturmuş
+    geçmişten öğrenir; "bir sonraki ödeme günü"ne itmek her ödemeyi ortalama yarım dönem geciktirirdi) ve
+    ödemeleri takvimde doğru yere toplar: ay sonu ödeyen müşterinin parası ayın 1'inden önce gelir ya da gelmez."""
+    base = np.datetime64(pd.Timestamp(as_of).date(), "D")
+    dates = base + np.asarray(day, dtype="int64").astype("timedelta64[D]")
+    month = dates.astype("datetime64[M]")
+    one = np.timedelta64(1, "M")
+    if habit >= 31:
+        nxt = (month + one).astype("datetime64[D]") - np.timedelta64(1, "D")
+        prev = month.astype("datetime64[D]") - np.timedelta64(1, "D")
+        prev = np.where(nxt == dates, dates, prev)
+    else:
+        off = np.timedelta64(habit - 1, "D")
+        this = month.astype("datetime64[D]") + off
+        nxt = np.where(this >= dates, this, (month + one).astype("datetime64[D]") + off)
+        prev = np.where(this <= dates, this, (month - one).astype("datetime64[D]") + off)
+    pick = np.where((dates - prev) <= (nxt - dates), prev, nxt)
+    out = (pick - base).astype(int)
+    return np.where(out < earliest, (nxt - base).astype(int), out)
+
+
 def simulate(inv: pd.DataFrame, Q: np.ndarray, as_of, opening: float, outflows: pd.DataFrame,
              horizon: int = 90, n_sims: int = 2000, rho_market: float = 0.15,
              rho_customer: float = 0.35, seed: int = 0, aging: np.ndarray | None = None,
@@ -201,8 +225,15 @@ def simulate(inv: pd.DataFrame, Q: np.ndarray, as_of, opening: float, outflows: 
              z_shift: float = 0.0, z_scale: float = 1.0, widen: float = 1.0,
              recal: np.ndarray | None = None, sales_level: np.ndarray | None = None,
              cheque_p: np.ndarray | None = None, cheque_terms: np.ndarray | None = None,
-             cheque_by_customer: bool = False) -> SimResult:
+             cheque_by_customer: bool = False, lag: int = 0, payday: np.ndarray | None = None) -> SimResult:
     """inv sütunları: customer_id, issue_date, due_date, open_amount, p_default, projected.
+
+    payday: fatura başına müşterinin ödeme günü alışkanlığı (0 = yok, 1-28 = ayın günü, 31 = ay sonu; bkz.
+    features.payday_habit). Verilirse simüle edilen ödeme günü en yakın ödeme gününe oturtulur (snap_to_payday).
+
+    lag: tahsilat kayıtları `as_of`'tan bu kadar gün geride (ör. muhasebe tahsilatları geç işliyor). Faturaların
+    açık olduğu yalnızca kayıtların son günü için bilinir; o günden sonra ödenmiş olabilirler. Arada (as_of'tan
+    önce) gelen paralar bugünkü kasa bakiyesinin içindedir: gelecek tahsilata ikinci kez eklenmez.
 
     cheque_p / cheque_terms: fatura kapandığında ödemenin çekle yapılma olasılığı ve senaryo başına çek vadesi
     (gün; bkz. pipeline.cheque_habits). Çekle kapanan faturanın parası vadede gelir ve çek portföydeki çekler
@@ -227,7 +258,7 @@ def simulate(inv: pd.DataFrame, Q: np.ndarray, as_of, opening: float, outflows: 
     u_default = ndtr(-(common + idio * rng.standard_normal((n, n_sims))))
 
     due_off = (inv["due_date"] - as_of).dt.days.to_numpy()
-    earliest = np.maximum((inv["issue_date"] - as_of).dt.days.to_numpy(), 0) + 1
+    earliest = np.maximum((inv["issue_date"] - as_of).dt.days.to_numpy(), -lag) + 1
     amount = inv["open_amount"].to_numpy(float)
     p_def = inv["p_default"].to_numpy(float)
     projected = inv["projected"].to_numpy(bool)
@@ -247,11 +278,11 @@ def simulate(inv: pd.DataFrame, Q: np.ndarray, as_of, opening: float, outflows: 
     collections = np.zeros(n_sims)
     sims = np.arange(n_sims)
     for i in range(n):
-        d0 = -due_off[i]
+        d0 = -due_off[i] - lag                            # kayıtların son günündeki vade aşımı
         if aging is not None and d0 > Q[i, 4]:
             # Kalan ömür: S(d0)'dan itibaren koşullu eğri; eğrinin bittiği yer "tahsil edilemedi".
             ui = np.interp(u_delay[i], RECAL_GRID, recal[i]) if recal is not None else u_delay[i]
-            target = (aging[d0] if d0 < len(aging) else 0.0) * (1 - ui)
+            target = (aging[d0] if 0 <= d0 < len(aging) else float(d0 < 0)) * (1 - ui)
             delay = np.searchsorted(-aging, -target)
             day = np.maximum(due_off[i] + delay, earliest[i]).astype(np.int64)
             ok = (delay < len(aging)) & (day <= horizon)
@@ -264,10 +295,14 @@ def simulate(inv: pd.DataFrame, Q: np.ndarray, as_of, opening: float, outflows: 
             # ortalama yarım gün gecikme ekliyor ve kısa ufukta tahsilatı sistematik düşük gösteriyordu.
             day = np.maximum(np.floor(due_off[i] + delay + 0.5), earliest[i]).astype(np.int64)
             ok = (u_default[i] >= p_post) & (day <= horizon)
-        closed = ok
+        if payday is not None and payday[i]:
+            day = snap_to_payday(day, int(payday[i]), as_of, earliest[i])
+            ok = ok & (day <= horizon)
+        closed = ok & (day >= 1)                          # day < 1: kayıtların son günüyle bugün arasında ödendi
         if cheque_p is not None and cheque_p[i] > 0:
             day = np.where(by_cheque[i], day + cheque_terms[i], day)
             ok = ok & ~bounced[i] & (day <= horizon)
+        ok = ok & (day >= 1)
         pay_day[i, ok] = day[ok]
         if projected[i]:
             # Gelecek satışların kendisi de belirsizdir. `sales_level` verilmişse (işletmenin geçmiş satış tahmini
