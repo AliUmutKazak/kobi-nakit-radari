@@ -952,6 +952,12 @@ def test_formal_draft_follows_lawyer_remarks():
     assert "%43" not in d["body"] and "2.020" not in d["body"] and "TCMB tarafından ilan edilen" in d["body"]
     assert "ihtarname" not in d["subject"].lower() and "TTK m. 1530 bilgilendirmesi" in d["subject"]
     assert "KEP veya Noter" in actions.FORMAL_NOTICE_WARNING
+    assert "asgari giderim tutarı" in d["body"] and "tazminat" not in d["body"]          # TTK m.1530/7 ifadesi
+    # Ticari işletme olduğu anlaşılmayan müşteride (TCKN, şirket unvanı yok) TTK m.1530'a atıf yapılmaz.
+    person = row | {"customer_name": "Ayşe Yılmaz", "vkn": "12345678901"}
+    p = actions.draft_message(person, "Örnek Ticaret A.Ş.")
+    assert "1530" not in p["body"] + p["subject"] and "faiz" not in p["body"] and "6502" in p["note"]
+    assert actions.is_business({"vkn": "1234567890", "customer_name": "Ayşe Yılmaz"})
 
 
 def test_partial_payments_and_closing_cash_are_scored_from_events():
@@ -1263,3 +1269,17 @@ def test_sales_growth_is_shrunk_and_follows_inflation():
     assert all(abs(g - 1) < 0.2 for g in flat) and all(1.2 < g < 1.9 for g in hot) and min(hot) > max(flat)
     short = observe(generate(seed=1, n_customers=20, months=12), AS_OF)
     assert pipeline.sales_growth(short, AS_OF) == 1.0                 # bir buçuk yıldan kısa geçmiş: büyüme yok
+
+
+def test_sender_identity_follows_e_message_regulation():
+    from radar import actions
+    assert actions.sender_identity_problem("Örnek Ticaret A.Ş. (MERSİS 0123456789000015)") is None
+    assert actions.sender_identity_problem("Ahmet Demir, VKN 1234567890") is None
+    assert "MERSİS" in actions.sender_identity_problem("Örnek Ticaret A.Ş.")
+    assert actions.sender_identity_problem("") and actions.sender_identity_problem("MERSİS 0123456789000015")
+
+
+def test_sector_table_is_optional_for_distribution(monkeypatch, tmp_path):
+    from radar import benchmark
+    monkeypatch.setattr(benchmark, "TABLE", tmp_path / "yok.csv")
+    assert not benchmark.available() and benchmark.compare(70, "C", "kucuk") is None

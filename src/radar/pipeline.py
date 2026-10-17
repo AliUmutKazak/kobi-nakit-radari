@@ -67,7 +67,8 @@ def _cheque_args(habits: dict | None, inv: pd.DataFrame, n_sims: int, seed: int)
 def payments_cutoff(obs: pd.DataFrame, as_of, window_days: int = 90, alpha: float = 0.05):
     """Tahsilatların kayda hangi güne kadar işlendiği, kayıtlardan tahmin edilir.
 
-    Faturalar (e-fatura) genelde zamanında kayıtlıdır, tahsilatlar ise muhasebede haftalar sonra işlenebilir.
+    Faturalar (e-fatura) genelde zamanında kayıtlıdır; tahsilat kayıtları ise yasal süre içinde olsa da günü gününe
+    olmayabilir (VUK m.219: muameleler deftere 10 günden fazla geciktirilmeden, muhasebe fişi ve bordroya dayanan kayıtlarda esas deftere en geç 45 günde işlenir), ya da panele yüklenen dosya muhasebe programından birkaç gün önce alınmış olabilir.
     Bu durumda gerçekte ödenmiş faturalar açık görünür ve para hem bugünkü kasada hem gelecek tahsilatta
     sayılır. Laboratuvarda 7 günlük gecikme kötümser uç aşımını %7'den %43'e çıkardı (LAB_RAPORU.md).
 

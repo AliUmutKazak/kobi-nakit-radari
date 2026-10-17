@@ -182,7 +182,7 @@ def run_own(path: str, rev: int, as_of: str, include_projected: bool):
         w0 = (w0, w0) if np.isscalar(w0) else w0
         return calib | {"widen": (w0[0] * online["lo"], w0[1] * online["hi"]), "online": online}
 
-    # Tahsilatlar kayda geç işleniyorsa (muhasebe) tahmin, kayıtların son gününe göre kurulur.
+    # Tahsilat kayıtları bugünden geride kalıyorsa tahmin, kayıtların son gününe göre kurulur.
     through = store.get("payments_through", "")
     through = (min(pd.Timestamp(through), pd.Timestamp(as_of)) if through
                else pipeline.payments_cutoff(obs.reset_index(drop=True), as_of))
@@ -313,7 +313,7 @@ with st.sidebar:
                                        "katar. Kapatırsanız yalnızca bugün açık olan faturalar sayılır.")
     if source == "Demo şirket":
         seed = st.number_input("Demo şirket no", 1, 99, 7, help="Farklı bir uydurma şirket görmek için değiştirin.")
-        seller = st.text_input("Mesajlardaki imza (ticaret unvanı ve MERSİS no)", "Örnek Ticaret A.Ş.")
+        seller = st.text_input("Mesajlardaki imza (ticaret unvanı ve MERSİS no)", "Örnek Ticaret A.Ş. (MERSİS 0000000000000000)")
     else:
         names = list(BUSINESSES)
         chosen = st.selectbox("İşletme", names, index=names.index(st.session_state["active_business"]),
@@ -339,23 +339,27 @@ with st.sidebar:
             saved_through = store.get("payments_through", "")
             through = st.date_input("Tahsilatlar hangi tarihe kadar işlendi? (isteğe bağlı)", format="DD.MM.YYYY",
                                     value=pd.Timestamp(saved_through).date() if saved_through else None,
-                                    help="Muhasebe tahsilatları geç işliyorsa (ör. ay sonunda toplu) son işlenen günü girin. "
+                                    help="Yüklediğiniz dosyada tahsilatlar bugüne kadar işlenmemişse (ör. muhasebe programından "
+                                         "birkaç gün önce alındıysa ya da kayıtlar yasal süre içinde ama günü gününe işlenmiyorsa) "
+                                         "son işlenen günü girin. "
                                          "Boş bırakılırsa kayıtlardan tahmin edilir. O günden sonra gelmiş olabilecek "
                                          "ödemeler kasa bakiyenizin içinde sayılır, ikinci kez tahsilat olarak eklenmez.")
             store.set("payments_through", f"{pd.Timestamp(through):%Y-%m-%d}" if through else "")
-            sector_options = [("", "Seçilmedi")] + benchmark.sectors()
-            codes = [c for c, _ in sector_options]
-            saved_sector = store.get("sector", "")
-            sector = st.selectbox("Sektör (karşılaştırma için, isteğe bağlı)", codes,
-                                  index=codes.index(saved_sector) if saved_sector in codes else 0,
-                                  format_func=dict(sector_options).get,
-                                  help="Tahsil sürenizi Türkiye'de aynı sektör ve ölçekteki firmalarla karşılaştırmak için "
-                                       f"({benchmark.SOURCE}). Tahmini etkilemez.")
-            sizes = list(benchmark.SIZES)
-            size = st.selectbox("Ölçek", sizes, index=sizes.index(store.get("size", "kucuk")) if store.get("size", "kucuk") in sizes else 1,
-                                format_func=benchmark.SIZES.get, help="TÜİK/TCMB ölçek sınıfı (çalışan sayısı ve ciroya göre).")
-            store.set("sector", sector)
-            store.set("size", size)
+            # TCMB tablosu yalnızca kullanım izni olan pakette bulunur (bkz. benchmark.py); yoksa alan gösterilmez.
+            if benchmark.available():
+                sector_options = [("", "Seçilmedi")] + benchmark.sectors()
+                codes = [c for c, _ in sector_options]
+                saved_sector = store.get("sector", "")
+                sector = st.selectbox("Sektör (karşılaştırma için, isteğe bağlı)", codes,
+                                      index=codes.index(saved_sector) if saved_sector in codes else 0,
+                                      format_func=dict(sector_options).get,
+                                      help="Tahsil sürenizi Türkiye'de aynı sektör ve ölçekteki firmalarla karşılaştırmak için "
+                                           f"({benchmark.SOURCE}). Tahmini etkilemez.")
+                sizes = list(benchmark.SIZES)
+                size = st.selectbox("Ölçek", sizes, index=sizes.index(store.get("size", "kucuk")) if store.get("size", "kucuk") in sizes else 1,
+                                    format_func=benchmark.SIZES.get, help="TÜİK/TCMB ölçek sınıfı (çalışan sayısı ve ciroya göre).")
+                store.set("sector", sector)
+                store.set("size", size)
         with st.expander("2. Dosyalar", expanded=not has_data):
             st.caption("Yüklediğiniz dosya, aynı türdeki eski dosyanın yerine geçer. Her şey yalnızca bu bilgisayarda saklanır.")
             invoice_upload = st.file_uploader("Satışlar: fatura listesi, cari hesap ekstresi ya da e-Fatura XML (zorunlu)",
@@ -373,7 +377,10 @@ with st.sidebar:
             fixed["rent_day"] = st.number_input("Kira günü", 1, 31, int(store.get("fixed_rent_day", 1)))
         with st.expander("4. Mesaj ayarları"):
             seller = st.text_input("İmza: ticaret unvanı ve MERSİS no", store.get("seller", ""),
-                                   help="Ticari iletilerde gönderenin kimliği açıkça yazılmalıdır.")
+                                   placeholder="Örnek Ticaret A.Ş. (MERSİS 0123456789000015)",
+                                   help="Ticari İletişim ve Ticari Elektronik İletiler Hakkında Yönetmelik m.8: tacirler "
+                                        "ticaret unvanı ve MERSİS numarasını, esnaflar ad soyad ile T.C. kimlik ya da "
+                                        "vergi kimlik numarasını yazmalıdır.")
             iban = st.text_input("Tahsilat IBAN'ı", store.get("iban", ""), placeholder="TR00 0000 0000 0000 0000 0000 00",
                                  help="Girerseniz taslaklara 'açıklamaya fatura numarasını yazın' talimatıyla eklenir.")
             bank = st.text_input("Banka adı", store.get("bank", ""))
@@ -987,6 +994,9 @@ with tab_collect:
         pick = st.selectbox("Fatura", todo["invoice_id"], format_func=lambda i: f"{i} · {by_id.at[i, 'customer_name']}")
         draft = actions.draft_message(by_id.loc[pick], seller, *((iban, bank) if own else ("", "")))
         body = st.text_area("Taslak (düzenleyebilirsiniz)", draft["body"], height=140, key=f"draft_{pick}")
+        identity = actions.sender_identity_problem(seller)
+        if identity:
+            st.error(identity + " Kimlik tamamlanana kadar gönderme düğmeleri kapalıdır.")
         st.warning(actions.FORMAL_NOTICE_WARNING)
         if draft["note"]:
             st.info(draft["note"])
@@ -1001,13 +1011,13 @@ with tab_collect:
             phones = res["obs"].set_index("invoice_id")["phone"] if "phone" in res["obs"] else {}
             phone = ingest.normalize_phone(st.text_input("Müşterinin cep telefonu (WhatsApp)", phones.get(pick, ""),
                                                          key=f"tel_{pick}", placeholder="05XX XXX XX XX"))
-            if phone:
+            if phone and not identity:
                 st.link_button("WhatsApp'ta taslağı aç", actions.whatsapp_link(phone, body))
                 st.caption("WhatsApp kendi hesabınızda, mesaj yazılmış hâlde açılır; gönderdikten sonra aşağıdan kayda geçirin.")
             if mail.ready:
                 emails = res["obs"].set_index("invoice_id")["email"] if "email" in res["obs"] else {}
                 to = st.text_input("Alıcı e-posta adresi", emails.get(pick, ""), key=f"to_{pick}")
-                if st.button("E-posta ile gönder", disabled=not mailer.is_address(to)):
+                if st.button("E-posta ile gönder", disabled=not mailer.is_address(to) or bool(identity)):
                     try:
                         mailer.send(mail, to, draft["subject"], body)
                     except mailer.MailError as err:

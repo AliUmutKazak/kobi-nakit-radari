@@ -4,7 +4,7 @@ Tarih: 18 Ekim 2026. Kod: `src/radar/lab.py`. Güncel sürüm 3 (14 boyut: çek,
 
 ## Sürüm 3: geç işlenen tahsilatlar, tahmin günü ve nominal büyüme (18 Ekim 2026)
 
-**Laboratuvarın bulduğu kusur.** Türkiye'de birçok KOBİ'nin muhasebesini mali müşavir tutar; tahsilatlar deftere haftalar sonra, çoğu zaman ay sonunda toplu işlenir. E-faturalar ise zamanında düşer. Bu durumda gerçekte ödenmiş faturalar açık görünür, para hem bugünkü banka bakiyesinde hem "gelecek tahsilat"ta sayılır. Panelin eski uyarısı yalnızca verideki en son hareketin tarihine bakıyordu. Faturalar güncel olduğu için bu gecikmeyi göremiyordu.
+**Laboratuvarın bulduğu kusur.** Panele yüklenen tahsilat kayıtları bugünden geride kalabilir. Bunun iki meşru nedeni var. Birincisi, kayıtlar yasal süre içinde ama günü gününe işlenmeyebilir (VUK m.219: muameleler deftere 10 günden fazla geciktirilmeden, muhasebe fişi ve bordroya dayanan kayıtlarda esas deftere en geç 45 günde işlenir). İkincisi, dosya muhasebe programından birkaç gün önce alınmış olabilir. E-faturalar ise zamanında düşer. Bu durumda gerçekte ödenmiş faturalar açık görünür, para hem bugünkü banka bakiyesinde hem "gelecek tahsilat"ta sayılır. Panelin eski uyarısı yalnızca verideki en son hareketin tarihine bakıyordu. Faturalar güncel olduğu için bu gecikmeyi göremiyordu.
 
 **Ölçülen etki.** Tek bir senaryo tipinde (40 müşteri, tahmin ayın 1'inde) 7 günlük kayıt gecikmesi kötümser uç aşımını %7'den %43'e, 30 günlük gecikme %77'ye çıkardı. Laboratuvarın geniş senaryo uzayında etki daha küçük çıktı, çünkü model gecikmenin bir kısmını kendi kalibrasyonunda "müşteriler yavaşladı" diye emiyor. Aynı 120 işletmenin gecikmesiz ve 7–14 gün gecikmeli hâlleri eşleştirilerek ölçüldü:
 
@@ -97,7 +97,7 @@ Sistem dört katmandan oluşur:
 | Çekle ödeyen müşteri payı (sürüm 2) | %0–60 | %60–90 | varsayım (kurumsal istatistik yok) |
 | Çek vadesi ortancası (sürüm 2) | 30–120 gün | 120–180 gün | varsayım (kurumsal istatistik yok) |
 | Karşılıksız çek oranı (sürüm 2) | %2,8–3,4 | %3,4–7 | TBB Risk Merkezi 2026; saklı aralık kriz varsayımı |
-| Tahsilat kayıt gecikmesi (sürüm 3) | 0–14 gün | 14–31 gün | varsayım (muhasebenin tahsilatı geç işlemesi) |
+| Tahsilat kayıt gecikmesi (sürüm 3) | 0–14 gün | 14–31 gün | VUK m.219: genel sınır 10 gün, fişe dayanan kayıtta esas deftere 45 gün; aralığın kendisi varsayım |
 | Tahmin günü (sürüm 3) | 2026'nın herhangi bir günü | | tasarım: ayın başı, ortası, sonu |
 
 Örnekleme Latin hiperküp yöntemiyle yapılır; her boyut kendi aralığında eşit kaplanır.

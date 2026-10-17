@@ -32,7 +32,7 @@ EMBED_URL = f"https://www.python.org/ftp/python/{PY}/python-{PY}-embed-amd64.zip
 DEV_ONLY = {"pytest"}
 COPY = ["app.py", "src", ".streamlit", "ornekler", "requirements.txt", "docs/KULLANIM_KILAVUZU.md",
         "docs/pilot/PILOT_PROTOKOLU.md",
-        "docs/pilot/mali_musavir_pilot_foyu.docx", "docs/LISANSLAR.md", "docs/LAB_RAPORU.md", "docs/kvkk/VERI_ENVANTERI_VE_IMHA.md"]
+        "docs/pilot/mali_musavir_pilot_foyu.docx", "docs/LISANSLAR.md", "docs/LAB_RAPORU.md", "docs/hukuk/MEVZUAT_KONTROLU.md", "docs/kvkk/VERI_ENVANTERI_VE_IMHA.md"]
 
 START_BAT = r'''@echo off
 chcp 65001 >nul
@@ -128,7 +128,10 @@ def main() -> None:
         src = ROOT / item
         dst = app_dir / (Path(item).name if item.startswith("docs/") else item)
         if src.is_dir():
-            shutil.copytree(src, dst, ignore=shutil.ignore_patterns("__pycache__", "*.pyc"))
+            # TCMB verisinin ticari kullanımı TCMB'nin yazılı iznine tabidir (Kullanım Şartları); izin belgelenmeden
+            # sektör tablosu pakete konmaz. İzin alındıysa: python tools/paketle.py --tcmb-izni
+            skip = () if "--tcmb-izni" in sys.argv else ("sektor_alacak_*.csv",)
+            shutil.copytree(src, dst, ignore=shutil.ignore_patterns("__pycache__", "*.pyc", *skip))
         else:
             shutil.copy2(src, dst)
     (app_dir / "KOBI_Radar.bat").write_bytes(START_BAT.replace("\n", "\r\n").encode("utf-8"))

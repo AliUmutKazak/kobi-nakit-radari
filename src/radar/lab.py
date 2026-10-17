@@ -60,7 +60,7 @@ RANGES = {
     "cheque_share": ((0.0, 0.60), (0.60, 0.90), "varsayım: çekle ödeyen müşteri payı (kurumsal istatistik yok)"),
     "cheque_term": ((30, 120), (120, 180), "varsayım: çek vadesi ortancası, gün (kurumsal istatistik yok)"),
     "cheque_bounce": ((0.028, 0.034), (0.034, 0.07), "TBB Risk Merkezi 2026: tutar bazında %2,8-3,4; saklı: kriz"),
-    "record_lag": ((0, 14), (14, 31), "varsayım: tahsilatların deftere işlenme gecikmesi, gün (muhasebe)"),
+    "record_lag": ((0, 14), (14, 31), "VUK m.219: kayıt en geç 10 gün, fişe dayanan kayıtta 45 gün; aralık varsayım"),
     "as_of_day": ((0, 364), (0, 364), "tahmin günü: 2026 içinde yılın günü (ayın başı, ortası, sonu)"),
 }
 DSO_LIMITS = (15.0, 180.0)        # üreticinin ulaşabildiği aralık; dışı kırpılır ve raporlanır

@@ -105,7 +105,7 @@ def generate(seed: int = 7, n_customers: int = 40, months: int = 24, as_of="2026
 def observe(full: pd.DataFrame, as_of, record_lag: int = 0) -> pd.DataFrame:
     """`as_of` tarihinde görülebilen veri: gelecekteki faturalar ve ödemeler gizlenir.
 
-    record_lag: tahsilatlar deftere bu kadar gün geç işlenir (ör. muhasebe ay sonunda toplu işler); son
+    record_lag: tahsilat kayıtları bu kadar gün geride (kayıt günü gününe değil ya da dosya önceden alınmış); son
     `record_lag` günde gelen ödemeler kayıtta yoktur, faturaları açık görünür. Faturalar zamanında kayıtlıdır."""
     as_of = pd.Timestamp(as_of)
     df = full[full["issue_date"] <= as_of].copy()

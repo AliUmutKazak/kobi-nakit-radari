@@ -445,8 +445,8 @@ def load_cheques(file):
     notes = []
     if gone.any():
         notes.append(f"{int(gone.sum())} çek/senet ({out.loc[gone, 'amount'].sum():,.0f} TL) cirolanmış, iskontoya verilmiş "
-                     "ya da sonuçlanmış olduğu için tahmine katılmadı. Ciro edilen çek karşılıksız çıkarsa "
-                     "tedarikçiye karşı sorumluluğunuz sürer.")
+                     "ya da sonuçlanmış olduğu için tahmine katılmadı. Ciro edilen çek karşılıksız çıkarsa, aksi şart "
+                     "edilmedikçe tedarikçiye karşı sorumluluğunuz sürer (TTK m.818 yollamasıyla m.685 ve 724).")
     return out[~gone].drop(columns="status").reset_index(drop=True), notes
 
 

@@ -9,6 +9,10 @@ süreli) çeyrektir. Tablo: data/sektor_alacak_2025.csv (2025 yılı değerleri)
 
 Karşılaştırma bilgi amaçlıdır: TCMB oranı yıllık ortalama ticari alacağa dayanır, paneldeki tahsil süresi
 bugünkü açık alacağın son 90 günün satışına oranıdır; tanımlar yakındır ama aynı değildir.
+
+Kullanım koşulu (TCMB internet sitesi Kullanım Şartları, 18.10.2026'da okundu): sitedeki bilgiler kaynak
+gösterilerek yayımlanabilir; ticari amaçlarla kullanımı TCMB'nin yazılı iznine tabidir. Bu yüzden tablo dağıtılan
+pakete varsayılan olarak konmaz (tools/paketle.py --tcmb-izni). Tablo yoksa panel sektör karşılaştırmasını göstermez.
 """
 from __future__ import annotations
 
@@ -21,9 +25,16 @@ SIZES = {"mikro": "Mikro", "kucuk": "Küçük", "orta": "Orta", "buyuk": "Büyü
 SOURCE = "TCMB–TÜİK Sektör Bilançoları, 2025"
 
 
+TABLE = Path(__file__).parent / "data" / "sektor_alacak_2025.csv"
+
+
+def available() -> bool:
+    return TABLE.exists()
+
+
 @lru_cache(maxsize=1)
 def table() -> pd.DataFrame:
-    return pd.read_csv(Path(__file__).parent / "data" / "sektor_alacak_2025.csv", dtype={"kod": str}, encoding="utf-8")
+    return pd.read_csv(TABLE, dtype={"kod": str}, encoding="utf-8")
 
 
 def sectors() -> list[tuple[str, str]]:
@@ -45,7 +56,7 @@ def lookup(code: str, size: str) -> dict | None:
 
 def compare(dso_days: float, code: str, size: str) -> str | None:
     """İşletmenin tahsil süresinin sektördeki yeri, tek cümle."""
-    b = lookup(code, size)
+    b = lookup(code, size) if available() else None
     if b is None or dso_days != dso_days:
         return None
     if dso_days <= b["iyi_ceyrek_gun"]:

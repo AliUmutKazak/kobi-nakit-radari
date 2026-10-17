@@ -5,13 +5,16 @@ bildirim tonundaki taslaklar ayrıca hukukçu kontrolü notu taşır.
 """
 from __future__ import annotations
 
+import re
+
 import numpy as np
 import pandas as pd
 
 from .features import MONTH_END, next_payday, payday_habit
 
-# TTK m.1530/7 uyarınca TCMB'nin 01.01.2026'dan itibaren ilan ettiği değerler (her yıl güncellenir).
-# Kaynak: tcmb.gov.tr > İstatistikler > Piyasa Verileri > TTK Md. 1530
+# TTK m.1530/7 uyarınca TCMB'nin her yıl ocak ayında ilan ettiği değerler. 2026: yıllık %43,00 ve 2.020,00 TL,
+# 1.1.2026'dan geçerli (TCMB Tebliği, Resmî Gazete 02.01.2026, sayı 33125; metinden doğrulandı 18.10.2026).
+# Avukat şerhi gereği mesaj metinlerine yazılmaz; her ocakta güncellenmelidir.
 LATE_INTEREST_RATE = 0.43
 MIN_RECOVERY_COST_TL = 2020
 # Aynı fatura için yeni hatırlatma önermeden önce beklenen süre.
@@ -171,9 +174,41 @@ def payment_line(invoice_id: str, iban: str = "", bank: str = "") -> str:
     return f" Ödemeyi {where} hesabımıza, açıklamaya {invoice_id} yazarak yapabilirsiniz."
 
 
+def sender_identity_problem(seller: str) -> str | None:
+    """Gönderen kimliği eksikse açıklaması, tamamsa None.
+
+    Ticari İletişim ve Ticari Elektronik İletiler Hakkında Yönetmelik m.8/2-3: iletinin başlığında ya da içeriğinde
+    tacirler için ticaret unvanı ve MERSİS numarası, esnaflar için adı soyadı ile T.C. kimlik ya da vergi kimlik
+    numarası yer alır. Borç hatırlatma ve tahsilat iletileri önceden onay gerektirmez (m.6/2), ama kimlik kuralı
+    ticari elektronik iletilerin tümüne uygulanır. Rakamlar 16 hane (MERSİS) ya da 10/11 hane (VKN/TCKN) olmalıdır."""
+    text = str(seller or "")
+    numbers = [re.sub(r"\D", "", n) for n in re.findall(r"\d[\d .-]{8,}\d", text)]
+    letters = re.sub(r"[^A-Za-zÇĞİÖŞÜçğıöşü]", "", re.sub(r"(?i)mersis|vkn|tckn|t\.c\.", "", text))
+    if len(letters) < 3:
+        return "Mesaj imzasında ticaret unvanı ya da ad soyad yok."
+    if any(len(n) == 16 for n in numbers) or any(len(n) in (10, 11) for n in numbers):
+        return None
+    return ("Mesaj imzasında MERSİS numarası (tacirler) ya da T.C. kimlik / vergi kimlik numarası (esnaf) yok. Ticari "
+            "İletişim ve Ticari Elektronik İletiler Hakkında Yönetmelik m.8 gereği ileti bu bilgiyi içermelidir. "
+            "Sol menüde \"4. Mesaj ayarları > İmza\" alanını tamamlayın.")
+
+
 # Avukat şerhi (15.10.2026): her mesaj taslağının yanında sabit olarak gösterilir.
 FORMAL_NOTICE_WARNING = ("Bu ileti TTK m. 18/3 kapsamında resmi ihtarname yerine geçmez; dava/icra öncesi KEP veya "
                          "Noter kullanılmalıdır.")
+
+
+_COMPANY = re.compile(r"(\bA\.\s?Ş\b|\bAŞ\b|\bANON[İI]M\b|\bLTD\b|\bL[İI]M[İI]TED\b|\bŞT[İI]\b|\bSTI\b|\bKOLL\b"
+                      r"|\bKOMAND[İI]T\b|\bKOOP\b|\bKOOPERAT[İI]F\b)", re.I)
+
+
+def is_business(row) -> bool:
+    """Müşterinin ticari işletme olduğu kayıttan anlaşılıyor mu: 10 haneli VKN ya da unvanda şirket türü.
+
+    TTK m.1530 yalnızca ticari işletmeler arasındaki mal ve hizmet tedarikinde uygulanır. 11 haneli TCKN'li
+    müşteri şahıs işletmesi (tacir) de tüketici de olabilir; bu kayıttan ayırt edilemez."""
+    vkn = str(row.get("vkn") or "").strip()
+    return (len(vkn) == 10 and vkn.isdigit()) or bool(_COMPANY.search(str(row.get("customer_name") or "")))
 
 
 def draft_message(row, seller: str, iban: str = "", bank: str = "") -> dict | None:
@@ -198,17 +233,28 @@ def draft_message(row, seller: str, iban: str = "", bank: str = "") -> dict | No
                 f"Ödeme yapıldıysa dekontu, eksik bir belge (irsaliye, sipariş onayı) varsa bilgisini "
                 f"paylaşabilir misiniz? Kayıtlarımızı birlikte kontrol edelim.{pay} {seller}")
         note = None
-    else:
+    elif is_business(row):
         body = (f"Sayın yetkili, aramızdaki mal/hizmet tedariki kapsamında düzenlenen {ref} {due} tarihli vadesi "
                 f"dolmuş olup {int(row['days_overdue'])} gündür kayıtlarımızda açık görünmektedir. "
                 f"Türk Ticaret Kanunu m.1530 uyarınca ticari işletmeler arasındaki mal ve hizmet tedariklerinde ödeme "
                 f"süresinin aşılmasıyla ihtara gerek olmaksızın temerrüt hükümleri doğmaktadır. TCMB tarafından ilan "
-                f"edilen ticari temerrüt faizi ve asgari giderim tazminatı ile kısmi ödemelerde kalan bakiye dahil tüm "
-                f"yasal ve sözleşmesel haklarımız saklıdır. Bakiyenin ödenmesini "
+                f"edilen temerrüt faizi ve alacağın tahsili masrafları için asgari giderim tutarı ile kısmi ödemelerde "
+                f"kalan bakiye dahil tüm yasal ve sözleşmesel haklarımız saklıdır. Bakiyenin ödenmesini "
                 f"ya da ödeme yapıldıysa dekontun paylaşılmasını rica ederiz.{pay} {seller}")
         # Avukat şerhi (15.10.2026): metinde sabit oran ve tutar yazılmaz, "TCMB tarafından ilan edilen" denir.
+        # Terim TTK m.1530/7'deki ifadeye çekildi ("asgari giderim tutarı", 18.10.2026).
         note = ("Göndermeden önce teslimin (irsaliye) belgelendiğini ve sözleşme koşullarını kontrol edin.")
+    else:
+        body = (f"Sayın ilgili, {ref} {due} tarihinde vadesini doldurmuş olup {int(row['days_overdue'])} gündür "
+                f"kayıtlarımızda açık görünmektedir. Bakiyenin ödenmesini ya da ödeme yapıldıysa dekontun "
+                f"paylaşılmasını rica ederiz. Yasal ve sözleşmesel haklarımız saklıdır.{pay} {seller}")
+        note = ("Müşterinin ticari işletme olduğu kayıttan anlaşılamadı (10 haneli VKN ya da şirket unvanı yok). TTK m.1530 "
+                "yalnızca ticari işletmeler arasındaki mal ve hizmet tedariklerinde uygulanır; müşteri tüketiciyse 6502 "
+                "sayılı Tüketicinin Korunması Hakkında Kanun geçerlidir. Bu yüzden taslakta kanun maddesine ve temerrüt "
+                "faizine atıf yapılmadı. Göndermeden önce teslimin belgelendiğini kontrol edin; gerekirse hukukçunuza danışın.")
     return {"invoice_id": row["invoice_id"], "customer_name": row["customer_name"], "stage": row["stage"],
             "subject": (f"Vade hatırlatma ve TTK m. 1530 bilgilendirmesi: {row['invoice_id']}"
-                        if row["stage"] == "resmi" else f"{row['invoice_id']} numaralı fatura hakkında"), "body": body,
+                        if row["stage"] == "resmi" and is_business(row) else
+                        f"Vadesi geçmiş fatura hakkında: {row['invoice_id']}" if row["stage"] == "resmi"
+                        else f"{row['invoice_id']} numaralı fatura hakkında"), "body": body,
             "requires_approval": True, "note": note}
