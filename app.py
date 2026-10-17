@@ -773,6 +773,10 @@ with tab_accuracy:
                        "Kararı kötümser çizgiye göre verin ya da 'Gelecek satışları hesaba kat' seçeneğini kapatın.")
     st.write(f"• Müşterilerin birlikte gecikme eğilimi: piyasa geneli {info['rho_market']:.2f}, aynı müşterinin faturaları "
              f"{info['rho_customer']:.2f} (0 = bağımsız, 1 = tamamen birlikte).")
+    if info.get("cheque_share"):
+        st.write(f"• Son bir yılda faturaların %{info['cheque_share'] * 100:.0f}'i çekle kapandı (ortanca çek vadesi "
+                 f"{info['cheque_median_term']:.0f} gün). Bu müşterilerin açık faturaları ve yeni satışları için para, "
+                 "fatura kapandığı gün değil çek vadesinde ve karşılıksız çıkma olasılığıyla kasaya sayıldı.")
     widen = info.get("widen", 1.0)
     w_lo, w_hi = (widen, widen) if np.isscalar(widen) else widen
     if (w_lo, w_hi) != (1.0, 1.0):

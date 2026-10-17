@@ -199,8 +199,13 @@ def simulate(inv: pd.DataFrame, Q: np.ndarray, as_of, opening: float, outflows: 
              rho_customer: float = 0.35, seed: int = 0, aging: np.ndarray | None = None,
              cheques: pd.DataFrame | None = None, cheque_bounce: float = CHEQUE_BOUNCE,
              z_shift: float = 0.0, z_scale: float = 1.0, widen: float = 1.0,
-             recal: np.ndarray | None = None, sales_level: np.ndarray | None = None) -> SimResult:
+             recal: np.ndarray | None = None, sales_level: np.ndarray | None = None,
+             cheque_p: np.ndarray | None = None, cheque_terms: np.ndarray | None = None) -> SimResult:
     """inv sütunları: customer_id, issue_date, due_date, open_amount, p_default, projected.
+
+    cheque_p / cheque_terms: fatura kapandığında ödemenin çekle yapılma olasılığı ve senaryo başına çek vadesi
+    (gün; bkz. pipeline.cheque_habits). Çekle kapanan faturanın parası vadede gelir ve çek portföydeki çekler
+    gibi karşılıksız çıkabilir. pay_day paranın kasaya girdiği gündür; collections kapanan faturalardır.
 
     cheques (date, amount): portföydeki çek/senetler vade gününde kasaya girer; her biri
     `cheque_bounce` olasılıkla karşılıksız çıkar (varsayılan: TBB Risk Merkezi Ağustos 2026
@@ -226,6 +231,12 @@ def simulate(inv: pd.DataFrame, Q: np.ndarray, as_of, opening: float, outflows: 
     p_def = inv["p_default"].to_numpy(float)
     projected = inv["projected"].to_numpy(bool)
 
+    if cheque_p is not None:
+        # Ayrı rastgele akış: çek ayarı olmadan sonuçlar eskisiyle birebir aynı kalır.
+        rng_c = np.random.default_rng(seed + 31)
+        by_cheque = rng_c.random((n, n_sims)) < np.asarray(cheque_p, float)[:, None]
+        zc = np.sqrt(rho_market) * zm + np.sqrt(1 - rho_market) * rng_c.standard_normal((n, n_sims))
+        bounced = by_cheque & (ndtr(zc) > 1 - cheque_bounce)
     pay_day = np.full((n, n_sims), horizon + 1, dtype=np.int32)
     inflow = np.zeros((n_sims, horizon + 1))
     collections = np.zeros(n_sims)
@@ -248,6 +259,10 @@ def simulate(inv: pd.DataFrame, Q: np.ndarray, as_of, opening: float, outflows: 
             # ortalama yarım gün gecikme ekliyor ve kısa ufukta tahsilatı sistematik düşük gösteriyordu.
             day = np.maximum(np.floor(due_off[i] + delay + 0.5), earliest[i]).astype(np.int64)
             ok = (u_default[i] >= p_post) & (day <= horizon)
+        closed = ok
+        if cheque_p is not None and cheque_p[i] > 0:
+            day = np.where(by_cheque[i], day + cheque_terms[i], day)
+            ok = ok & ~bounced[i] & (day <= horizon)
         pay_day[i, ok] = day[ok]
         if projected[i]:
             # Gelecek satışların kendisi de belirsizdir. `sales_level` verilmişse (işletmenin geçmiş satış tahmini
@@ -261,7 +276,7 @@ def simulate(inv: pd.DataFrame, Q: np.ndarray, as_of, opening: float, outflows: 
             np.add.at(inflow, (sims[ok], day[ok]), amount[i] * weight[ok])
         else:
             np.add.at(inflow, (sims[ok], day[ok]), amount[i])
-            collections += ok * amount[i]
+            collections += closed * amount[i]
 
     if cheques is not None and len(cheques):
         c_off = (pd.to_datetime(cheques["date"]) - as_of).dt.days.to_numpy()

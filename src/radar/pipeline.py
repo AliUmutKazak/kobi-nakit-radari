@@ -22,6 +22,46 @@ def default_rates(obs: pd.DataFrame, as_of, prior_n: float = 20.0) -> pd.Series:
     return rate.reindex(obs["customer_id"].unique()).fillna(g)
 
 
+def cheque_habits(obs: pd.DataFrame, as_of, prior_n: float = 10.0, window_days: int = 365,
+                  min_terms: int = 5) -> dict | None:
+    """Müşterilerin çekle ödeme alışkanlığı, işletmenin kendi cari hesabından öğrenilir.
+
+    Cari hesapta çek alındığında fatura kapanır, para çekin vadesinde gelir. Bu fark hesaba katılmazsa
+    çekle ödeyen müşterilerin açık faturaları ve yeni satışları kasaya vadeden önce girmiş görünür (iyimser
+    hata). Türkiye'de çekle tahsilatın payını ve çek vadesini veren kurumsal bir istatistik yoktur (TCMB ve
+    TBB karşılıksızlık oranını yayımlar); bu yüzden iki değer de işletmenin son bir yıllık ödemelerinden alınır:
+    - pay: müşteri bazında çekle kapanan fatura oranı, işletme ortalamasına büzülmüş (prior_n fatura),
+    - vade: müşterinin kendi çek vadeleri (en az `min_terms` çek varsa), yoksa işletmenin tüm çek vadeleri.
+    Çek bilgisi (cheque_due) yoksa ya da hiç çek yoksa None döner ve tahmin eskisi gibidir."""
+    if "cheque_due" not in obs:
+        return None
+    as_of = pd.Timestamp(as_of)
+    paid = obs[obs["paid_date"].notna() & (obs["paid_date"] <= as_of)
+               & (obs["paid_date"] > as_of - pd.Timedelta(days=window_days))]
+    is_chq = paid["cheque_due"].notna()
+    if not is_chq.any():
+        return None
+    overall = float(is_chq.mean())
+    by = is_chq.groupby(paid["customer_id"]).agg(["sum", "count"])
+    share = (by["sum"] + prior_n * overall) / (by["count"] + prior_n)
+    terms = (paid.loc[is_chq, "cheque_due"] - paid.loc[is_chq, "paid_date"]).dt.days.clip(lower=0)
+    pools = {c: t.to_numpy() for c, t in terms.groupby(paid.loc[is_chq, "customer_id"]) if len(t) >= min_terms}
+    return {"share": share, "overall": overall, "pools": pools, "terms": terms.to_numpy(),
+            "n": int(is_chq.sum()), "median_term": float(np.median(terms))}
+
+
+def _cheque_args(habits: dict | None, inv: pd.DataFrame, n_sims: int, seed: int) -> dict:
+    if habits is None:
+        return {}
+    rng = np.random.default_rng(seed + 13)
+    cust = inv["customer_id"].to_numpy()
+    p = pd.Series(cust).map(habits["share"]).fillna(habits["overall"]).to_numpy(float)
+    terms = np.empty((len(inv), n_sims), dtype=np.int64)
+    for i, c in enumerate(cust):
+        terms[i] = rng.choice(habits["pools"].get(c, habits["terms"]), n_sims)
+    return {"cheque_p": p, "cheque_terms": terms}
+
+
 SEASON_DAYS = 364                 # 52 hafta: geçen yılın aynı dönemi, haftanın günü korunur
 
 
@@ -203,9 +243,10 @@ def aggregate_widen(stored, final, as_of, calib, horizons=(14, 30, 60, 90), leve
 
 def forecast(obs: pd.DataFrame, as_of, opening: float, outflows: pd.DataFrame, horizon: int = 90,
              n_sims: int = 2000, include_projected: bool = True, seed: int = 0,
-             cheques: pd.DataFrame | None = None, calib_hook=None) -> dict:
+             cheques: pd.DataFrame | None = None, calib_hook=None, cheque_aware: bool = True) -> dict:
     """calib_hook: kalibrasyon sözlüğünü değiştiren isteğe bağlı fonksiyon (deneyler ve pilot sırasındaki
-    çevrimiçi kantil izleme için; bkz. pilot.online_adjustment)."""
+    çevrimiçi kantil izleme için; bkz. pilot.online_adjustment).
+    cheque_aware: çekle ödeyen müşterilerde paranın çek vadesinde gelmesi (cheque_habits; yalnızca deneylerde kapatılır)."""
     as_of = pd.Timestamp(as_of)
     feats_issue = build_features(obs)
     X, y = training_frame(obs, as_of, feats=feats_issue)
@@ -249,10 +290,12 @@ def forecast(obs: pd.DataFrame, as_of, opening: float, outflows: pd.DataFrame, h
     calib = calibrate(obs, as_of, feats=feats_issue)
     if calib_hook is not None:
         calib = calib_hook(calib)
+    habits = cheque_habits(obs, as_of) if cheque_aware else None
     ctx = {"sim_inv": sim_inv, "Q": model.predict(feats), "aging": aging_curve(obs, as_of), "cheques": cheques,
-           "horizon": horizon, "n_sims": n_sims, "seed": seed, "calib": calib, "sales_level": sales_level}
+           "horizon": horizon, "n_sims": n_sims, "seed": seed, "calib": calib, "sales_level": sales_level,
+           "cheque_args": _cheque_args(habits, sim_inv, n_sims, seed)}
     sim = simulate(sim_inv, ctx["Q"], as_of, opening, outflows, horizon, n_sims, seed=seed, aging=ctx["aging"],
-                   cheques=cheques, sales_level=sales_level, **_sim_args(calib, sim_inv, as_of))
+                   cheques=cheques, sales_level=sales_level, **_sim_args(calib, sim_inv, as_of), **ctx["cheque_args"])
     real = ~target["projected"].to_numpy()
     gap_day = sim.breach_day if sim.breach_day is not None else horizon
     ranked = actions.prioritize(target[real], sim.pay_day[real], as_of, gap_day, actions.payment_habits(obs), horizon)
@@ -264,7 +307,9 @@ def forecast(obs: pd.DataFrame, as_of, opening: float, outflows: pd.DataFrame, h
                      "n_calibration": int(calib["fresh"]["n"] + calib["overdue"]["n"]),
                      "rho_market": calib["rho_market"], "rho_customer": calib["rho_customer"],
                      "widen": calib.get("widen", 1.0), "sales_method": method, "sales_errors_n": int(len(errs)),
-                     "sales_error_spread": float(np.percentile(errs, 90) - np.percentile(errs, 10)) if len(errs) >= 8 else None},
+                     "sales_error_spread": float(np.percentile(errs, 90) - np.percentile(errs, 10)) if len(errs) >= 8 else None,
+                     "cheque_share": habits["overall"] if habits else None, "cheque_n": habits["n"] if habits else 0,
+                     "cheque_median_term": habits["median_term"] if habits else None},
             "disputed_total": float(obs.loc[is_open & obs["disputed"], "open_amount"].sum())}
 
 
@@ -296,7 +341,8 @@ def scenario(res: dict, collect_ids=(), collect_in_days: int = 7, delay_labels=(
                                             "amount": [-cash], "label": ["Tahsilat (senaryo)"]})], ignore_index=True)
     return simulate(inv, ctx["Q"], as_of, res["opening"], out, ctx["horizon"], ctx["n_sims"],
                     seed=ctx["seed"], **_sim_args(ctx["calib"], inv, as_of),
-                    aging=ctx["aging"], cheques=ctx["cheques"], sales_level=ctx.get("sales_level"))
+                    aging=ctx["aging"], cheques=ctx["cheques"], sales_level=ctx.get("sales_level"),
+                    **ctx.get("cheque_args", {}))
 
 
 def _p10_min(paths: np.ndarray) -> float:

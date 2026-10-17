@@ -16,14 +16,19 @@ _KINDS = ["Yapı", "Tekstil", "Gıda", "Lojistik", "Makine", "Plastik", "Kimya",
 def generate(seed: int = 7, n_customers: int = 40, months: int = 24, as_of="2026-10-01",
              trend: float = 0.6, shock: float = 0.0, season_amp: float = 0.0, season_peak: int = 11,
              inflation: float = 0.0, delay_scale: float = 1.0, terms_scale: float = 1.0,
-             size_sigma: float = 0.6) -> pd.DataFrame:
+             size_sigma: float = 0.6, cheque_share: float = 0.0, cheque_term: float = 75.0,
+             cheque_bounce: float = 0.034) -> pd.DataFrame:
     """Tüm gerçeği (true_paid_date dahil) içeren fatura tablosunu üretir.
 
     Senaryo laboratuvarı boyutları (varsayılanlarla eski veri birebir üretilir):
     season_amp / season_peak: satış sayısında yıllık mevsimsellik, 1 + A cos(2π(ay − tepe)/12) (gerçek bir KOBİ'de
     A = 0,30, tepe kasım; UCI Online Retail II). inflation: fatura tutarlarının yıllık nominal artışı.
     delay_scale / terms_scale: gecikmeleri ve vadeleri ölçekler (tahsil süresini sektör dağılımına oturtmak için). size_sigma: müşteri
-    büyüklüğünün log-normal yayılımı (büyük = cironun birkaç müşteride toplanması)."""
+    büyüklüğünün log-normal yayılımı (büyük = cironun birkaç müşteride toplanması).
+    cheque_share: müşterilerin çekle ödeyen payı. Çekle ödeyen müşterinin faturası çek alındığında kapanır
+    (true_paid_date), para çekin vadesinde gelir (true_cash_date); vade log-normal, ortancası cheque_term gün;
+    çek `cheque_bounce` olasılıkla karşılıksız çıkar ve para ufuk içinde gelmez (TBB Risk Merkezi, tutar
+    bazında %2,8-3,4). cheque_share > 0 ise tabloya pay_method, true_cheque_due, true_cash_date eklenir."""
     rng = np.random.default_rng(seed)
     rng_lab = np.random.default_rng(seed + 10_000)          # yeni boyutlar ayrı akış: eski veri değişmez
     as_of = pd.Timestamp(as_of)
@@ -76,6 +81,14 @@ def generate(seed: int = 7, n_customers: int = 40, months: int = 24, as_of="2026
             nxt = (paid.to_period("M") + 1).to_timestamp()
             paid = pd.DatetimeIndex(np.where(paid.day <= 15, first, nxt)) + pd.Timedelta(days=14)
         paid = paid.where(rng.random(k) >= p_default, pd.NaT)  # hiç ödenmeyenler
+        cheque = {}
+        if cheque_share > 0:
+            by_cheque = rng_lab.random() < cheque_share
+            term = np.round(rng_lab.lognormal(np.log(cheque_term), 0.35, k)) if by_cheque else np.zeros(k)
+            due_c = (paid + pd.to_timedelta(term, unit="D")) if by_cheque else pd.DatetimeIndex([pd.NaT] * k)
+            bounced = rng_lab.random(k) < cheque_bounce
+            cheque = {"pay_method": np.where(paid.isna(), None, "cek" if by_cheque else "havale"),
+                      "true_cheque_due": due_c, "true_cash_date": (due_c.where(~bounced, pd.NaT) if by_cheque else paid)}
 
         frames.append(pd.DataFrame({
             "customer_id": f"C{i:03d}",
@@ -83,7 +96,7 @@ def generate(seed: int = 7, n_customers: int = 40, months: int = 24, as_of="2026
             "vkn": f"{rng.integers(10**9, 10**10 - 1)}",
             "issue_date": issue, "due_date": due,
             "amount": amount.round(2), "true_paid_date": paid,
-        }))
+        } | cheque))
     full = pd.concat(frames, ignore_index=True).sort_values("issue_date").reset_index(drop=True)
     full.insert(0, "invoice_id", [f"FTR{2025000000 + i}" for i in range(len(full))])
     return full
@@ -95,7 +108,21 @@ def observe(full: pd.DataFrame, as_of) -> pd.DataFrame:
     df = full[full["issue_date"] <= as_of].copy()
     df["paid_date"] = df["true_paid_date"].where(df["true_paid_date"] <= as_of)
     df["open_amount"] = np.where(df["paid_date"].isna(), df["amount"], 0.0)
+    if "true_cheque_due" in df:
+        # Çek alındığında vadesi bilinir (cari hesaba "çek" açıklamasıyla ve vadesiyle işlenir); karşılıksız
+        # çıkıp çıkmayacağı ve paranın gerçek geliş günü bilinmez.
+        df["cheque_due"] = df["true_cheque_due"].where(df["paid_date"].notna())
+        df = df.drop(columns=["true_cheque_due", "true_cash_date", "pay_method"])
     return df.drop(columns="true_paid_date").reset_index(drop=True)
+
+
+def cheque_portfolio(obs: pd.DataFrame, as_of) -> pd.DataFrame | None:
+    """`as_of` günü elde olan, vadesi gelmemiş çekler (date = vade): panelin çek/senet portföyü girdisi."""
+    if "cheque_due" not in obs:
+        return None
+    hit = obs["cheque_due"] > pd.Timestamp(as_of)
+    return pd.DataFrame({"date": obs.loc[hit, "cheque_due"], "amount": obs.loc[hit, "amount"],
+                         "label": obs.loc[hit, "customer_name"]}).reset_index(drop=True)
 
 
 def cash_plan(obs: pd.DataFrame, as_of, horizon: int = 90, opening_months: float = 0.45):

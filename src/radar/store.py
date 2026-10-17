@@ -15,7 +15,7 @@ from pathlib import Path
 
 import pandas as pd
 
-TABLES = {"invoices": ["issue_date", "due_date", "paid_date", "promised_date"],
+TABLES = {"invoices": ["issue_date", "due_date", "paid_date", "promised_date", "cheque_due"],
           "payments": ["date"], "outflows": ["date"], "cheques": ["date"], "payables": ["date"]}
 EVENT_KINDS = ("dispute", "promise", "message", "writeoff")
 

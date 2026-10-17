@@ -242,6 +242,8 @@ def _finish_invoices(df: pd.DataFrame, default_terms: int, notes: list[str],
     df["phone"] = df["phone"].map(normalize_phone) if "phone" in df else ""
     cols = ["invoice_id", "customer_id", "customer_name", "vkn", "issue_date", "due_date", "amount", "paid_date",
             "open_amount", "disputed", "promised_date", "currency", "fx_rate", "email", "phone"]
+    if "cheque_due" in df and df["cheque_due"].notna().any():
+        cols.append("cheque_due")                 # çekle kapanan faturalarda çek vadesi (cari hesap ekstresinden)
     return df[cols].sort_values("issue_date").reset_index(drop=True)
 
 
@@ -387,21 +389,27 @@ def load_ledger(file, default_terms: int = 30, fallback_customer: str | None = N
                 number = str(r.invoice_id).strip() if "invoice_id" in df and pd.notna(r.invoice_id) else ""
                 item = {"invoice_id": number or f"CARI-{_key(name)[:20]}-{r.issue_date:%Y%m%d}-{r.Index}",
                         "customer_name": name, "vkn": getattr(r, "vkn", None), "issue_date": r.issue_date,
-                        "due_date": r.due_date, "amount": r.debit, "open_amount": r.debit, "paid_date": pd.NaT}
+                        "due_date": r.due_date, "amount": r.debit, "open_amount": r.debit, "paid_date": pd.NaT,
+                        "cheque_due": pd.NaT}
                 invoices.append(item)
                 queue.append(item)
             if r.credit > 0:
                 remaining = r.credit
+                text = _key(r.description)
+                is_cheque = (bool(re.search(r"\b(cek|senet|bono)\b", text)) and pd.notna(r.due_date)
+                             and r.due_date > r.issue_date)
                 while remaining > 0.005 and queue:
                     take = min(remaining, queue[0]["open_amount"])
                     queue[0]["open_amount"] -= take
                     remaining -= take
                     if queue[0]["open_amount"] <= 0.005:
                         queue[0]["open_amount"], queue[0]["paid_date"] = 0.0, r.issue_date
+                        if is_cheque:
+                            # Fatura çekle kapandı; para çek vadesinde gelir (pipeline.cheque_habits bunu öğrenir).
+                            queue[0]["cheque_due"] = r.due_date
                         queue.pop(0)
                 advance += remaining
-                text = _key(r.description)
-                if re.search(r"\b(cek|senet|bono)\b", text) and pd.notna(r.due_date) and r.due_date > r.issue_date:
+                if is_cheque:
                     cheques.append({"date": r.due_date, "amount": r.credit, "label": name})
     if advance > 0.005:
         notes.append(f"Alacak satırlarından {advance:,.2f} TL karşılık gelen açık kalem bulunmadan kaldı (avans ya da "

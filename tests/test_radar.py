@@ -1215,3 +1215,16 @@ def test_scenario_lab_generator_split_and_source_anchors(tmp_path, monkeypatch):
     assert (tmp_path / "sinav_kaydi.csv").exists() and df["seed"].nunique() == 2
     text = lab.report(df)
     assert "Zayıf bölgeler" in text and "Gerçekçilik denetimi" in text
+
+
+def test_cheque_payers_cash_arrives_at_cheque_maturity():
+    from radar.validation import run_case
+    # Müşterilerin yarısı 90 gün vadeli çekle öder: düzeltme yoksa kasa olduğundan dolu görünür.
+    off = run_case(5, 40, 0.6, 0.1, gen={"cheque_share": 0.5, "cheque_term": 90},
+                   forecast_kwargs={"cheque_aware": False}, n_sims=300)[0]
+    on = run_case(5, 40, 0.6, 0.1, gen={"cheque_share": 0.5, "cheque_term": 90}, n_sims=300)[0]
+    assert off["err_p50_months"] > 0.8 and abs(on["err_p50_months"]) < 0.4
+    full = generate(seed=5, n_customers=20, cheque_share=0.5)
+    habits = pipeline.cheque_habits(observe(full, AS_OF), AS_OF)
+    assert 0.1 < habits["overall"] < 0.95 and 50 < habits["median_term"] < 110
+    assert pipeline.cheque_habits(observe(generate(seed=5, n_customers=20), AS_OF), AS_OF) is None
