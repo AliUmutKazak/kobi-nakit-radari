@@ -19,7 +19,7 @@ from .pipeline import forecast, gap_summary, naive_collections, payments_cutoff,
 from .reconcile import collection_events
 from .standards import SIGNIFICANCE, diebold_mariano, interval_report, passes as interval_passes
 
-VERSION = "2026.10.17"            # tahmin kaydına yazılır: hangi kod sürümüyle üretildiği
+VERSION = "2026.10.18"            # tahmin kaydına yazılır: hangi kod sürümüyle üretildiği
 MIN_HISTORY_DAYS = 365            # protokol 2. bölüm: en az 12 aylık fatura geçmişi; altında geri test yapılmaz
 MIN_MATCH_RATE = 0.80             # banka tahsilatlarının bu oranın altında eşleştiği kayıt uyarılıdır, B1'e girmez
 ALPHA = 0.2                       # P10–P90 aralığı: %80 merkezi aralık
