@@ -2,6 +2,12 @@
 
 Tarih: 14 Ekim 2026. Yeniden üretmek için: `python run_validation.py 24` (yaklaşık 3 dakika).
 
+## Türkiye verisi: sektör karşılaştırması ve çek riski (17 Ekim 2026)
+
+- **Sektöre göre tahsil süresi:** TCMB–TÜİK Sektör Bilançoları 2023-2025 (vergi idaresine verilen bilanço ve gelir tablolarından, yaklaşık 1 milyon girişim), ölçek kırılımlı standart oranlar tablosu, Alacak Devir Hızı çeyreklikleri (2025). 308 sektör × ölçek satırı `src/radar/data/sektor_alacak_2025.csv`'ye çıkarıldı (kaynak dosya "Dosya 2", SHA-256 b0e935635f4e1fdddf93ff3b3e875b885ae95cc05fec1427a895a9f65150daa4). Örnek ortanca tahsil süreleri (365 / devir hızı): imalat küçük ölçek 74 gün (50.579 firma; çeyrekler 41–135), toptan ticaret küçük 69 gün, tekstil küçük 80 gün, gıda imalatı küçük 45 gün. Panel, işletmenin sektörü ve ölçeği seçilirse tahsil süresini bu dağılıma yerleştirir. Tahmine girmez; tanımlar yakındır ama aynı değildir (TCMB: yıllık ortalama ticari alacak; panel: bugünkü açık alacak / son 90 günün satışı).
+- **Karşılıksız çek oranı:** TBB Risk Merkezi aylık çek raporlarına göre 2026'da tutar bazında %2,8–3,4 (Haziran 2026 %3,2; sistemde Ağustos 2026 değeri %3,4 kullanılır, `simulate.CHEQUE_BOUNCE`).
+- **Fatura ve ödeme düzeyinde açık Türk KOBİ verisi bulunamadı;** bu düzeyde doğrulama pilotla yapılacak.
+
 ## Gerçek bir KOBİ'nin satış verisiyle yeni satış tahmini (17 Ekim 2026)
 
 **Veri.** UCI Online Retail II (Chen 2012, doi:10.24432/C5CG6D, CC BY 4.0): İngiltere'de kayıtlı, mağazası olmayan küçük bir hediyelik eşya şirketinin 01.12.2009–09.12.2011 arasındaki bütün satışları (1.067.371 satır, 53.628 fatura; müşterilerin çoğu toptancı). Ödeme tarihi yoktur; bu yüzden yalnızca tahminin "yeni satışlar" parçası sınanabilir. Dosya: `data/acik/online_retail/online_retail_II.xlsx`, SHA-256 bcbe73b35f5b7babf197fb0cb983a11f5d9ff929078d4aa53d171b1f2df2e980. İptal faturaları (C ile başlayan) eksi tutarla toplama katılır. Fatura ve ödeme tarihini birlikte içeren açık bir KOBİ verisi bulunamadı (bulunan aday, zaten kullanılan Payment Date verisinin kopyasıydı).

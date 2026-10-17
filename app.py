@@ -13,7 +13,7 @@ import pandas as pd  # noqa: E402
 import plotly.graph_objects as go  # noqa: E402
 import streamlit as st  # noqa: E402
 
-from radar import access, actions, anonymize, ingest, mailer, pilot, pipeline, standards  # noqa: E402
+from radar import access, actions, anonymize, benchmark, ingest, mailer, pilot, pipeline, standards  # noqa: E402
 from radar.reconcile import collection_events, reconcile, sender_key  # noqa: E402
 from radar.store import Store, create_business, encrypt_backup, list_businesses  # noqa: E402
 
@@ -331,6 +331,19 @@ with st.sidebar:
                                   help="Genellikle bugün. Geçmiş bir tarih seçerseniz o güne kadarki veriyle tahmin yapılır.")
             opening = st.number_input("Kasa ve bankadaki toplam para (TL)", 0.0, value=float(store.get("opening", 0)),
                                       step=10_000.0, help="Her kullanımda güncelleyin; tahmin bu tutardan başlar.")
+            sector_options = [("", "Seçilmedi")] + benchmark.sectors()
+            codes = [c for c, _ in sector_options]
+            saved_sector = store.get("sector", "")
+            sector = st.selectbox("Sektör (karşılaştırma için, isteğe bağlı)", codes,
+                                  index=codes.index(saved_sector) if saved_sector in codes else 0,
+                                  format_func=dict(sector_options).get,
+                                  help="Tahsil sürenizi Türkiye'de aynı sektör ve ölçekteki firmalarla karşılaştırmak için "
+                                       f"({benchmark.SOURCE}). Tahmini etkilemez.")
+            sizes = list(benchmark.SIZES)
+            size = st.selectbox("Ölçek", sizes, index=sizes.index(store.get("size", "kucuk")) if store.get("size", "kucuk") in sizes else 1,
+                                format_func=benchmark.SIZES.get, help="TÜİK/TCMB ölçek sınıfı (çalışan sayısı ve ciroya göre).")
+            store.set("sector", sector)
+            store.set("size", size)
         with st.expander("2. Dosyalar", expanded=not has_data):
             st.caption("Yüklediğiniz dosya, aynı türdeki eski dosyanın yerine geçer. Her şey yalnızca bu bilgisayarda saklanır.")
             invoice_upload = st.file_uploader("Satışlar: fatura listesi, cari hesap ekstresi ya da e-Fatura XML (zorunlu)",
@@ -573,6 +586,11 @@ c[4].metric("Eksiye düşme riski", f"%{sim.prob_any_breach * 100:.0f}",
             help="Önümüzdeki 90 gün içinde kasanın en az bir gün eksiye düşme olasılığı. Bağımsız doğrulamada bu "
                  "olasılıklar ortaya doğru sıkışık çıktı (Spiegelhalter testi): yüksek riskte gerçek risk gösterilenden "
                  "yüksek, düşük riskte düşük. Karar için kötümser çizgiyi esas alın.")
+if own and store.get("sector"):
+    line = benchmark.compare(m["dso"], store.get("sector"), store.get("size", "kucuk"))
+    if line:
+        st.info(line + " Tanımlar yakın ama aynı değil: TCMB oranı yıllık ortalama alacağa, buradaki süre bugünkü "
+                "açık alacağa dayanır.")
 if sim.prob_any_breach >= 0.5:
     st.error(f"Eksiye düşme riski yüksek (%{sim.prob_any_breach * 100:.0f}). Bağımsız doğrulamada %80 gösterilen "
              "durumlarda gerçekleşme %92 oldu: yüksek riskte gerçek risk gösterilenden daha yüksek olabilir. "

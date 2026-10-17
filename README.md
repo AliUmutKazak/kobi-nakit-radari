@@ -41,6 +41,8 @@ C:\Users\HP\.venvs\kobi-radar\Scripts\python run_validation.py 48
 | `src/radar/pipeline.py` | Uçtan uca akış, geri testler ve basit kıyas yöntemleri (vade, müşteri medyanı, tahsilat oranı) |
 | `src/radar/open_data.py` | Herkese açık gerçek veri setleriyle doğrulama |
 | `src/radar/anonymize.py` | Pilot için takma adlandırılmış veri paketi (HMAC-SHA256; anahtar işletmede kalır) |
+| `src/radar/benchmark.py` | Türkiye'de sektör ve ölçeğe göre tahsil süresi (TCMB–TÜİK Sektör Bilançoları 2025) |
+| `src/radar/standards.py` | Basel/BDDK, Kupiec (kesin), Diebold-Mariano, Spiegelhalter, CORP |
 | `src/radar/pilot.py` | Tek sayfalık pilot raporu, ileriye dönük kayıt ve ufku dolan kayıtların puanlanması (`python -m radar.pilot`) |
 | `app.py` | Streamlit paneli |
 

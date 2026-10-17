@@ -660,6 +660,7 @@ def test_dashboard_renders_demo_and_own_data_without_errors(tmp_path, monkeypatc
     store.save("payments", ingest.load_payments(root / "ornekler" / "ekstre.csv")[0])
     store.save("outflows", ingest.load_schedule(root / "ornekler" / "giderler.csv"))
     store.set("pilot_on", 1)                                              # pilot kayıtları bölümü de çizilsin
+    store.set("sector", "46")                                             # TCMB sektör karşılaştırması da çizilsin
     store.add_pilot_record("2026-09-01", pd.DataFrame({
         "horizon": [14, 30], "until": ["2026-09-15", "2026-10-01"], "p10": [1e5, 2e5], "p50": [2e5, 4e5],
         "p90": [3e5, 6e5], "naive_due": [5e5, 7e5], "naive_median": [4e5, 6e5], "naive_rate": [2e5, 4e5]}))
@@ -672,6 +673,7 @@ def test_dashboard_renders_demo_and_own_data_without_errors(tmp_path, monkeypatc
     assert not at.exception, [e.value for e in at.exception]
     assert len(at.dataframe) >= 1 and len(at.text_area) == 1
     assert not any("en son hareket" in e.value for e in at.error)
+    assert any("Ortalama tahsil süreniz" in i.value for i in at.info)
     next(b for b in at.button if b.label == "Geri testi çalıştır").click().run()
     assert not at.exception, [e.value for e in at.exception]
     assert any("Basel Komitesi trafik ışığı" in m.value for m in at.markdown)
@@ -1167,3 +1169,13 @@ def test_sales_method_is_chosen_by_own_history_and_level_is_unbiased():
     res = pipeline.demo(seed=7, as_of=AS_OF, n_sims=400)
     lvl = res["ctx"]["sales_level"]
     assert lvl is not None and np.allclose(lvl.mean(axis=1), 1.0) and res["info"]["sales_errors_n"] >= 8
+
+
+def test_sector_benchmark_from_tcmb_tables():
+    from radar import benchmark
+
+    b = benchmark.lookup("C", "kucuk")                                       # İmalat, küçük ölçek, 2025
+    assert b["firma"] > 10000 and b["iyi_ceyrek_gun"] < b["medyan_gun"] < b["kotu_ceyrek_gun"]
+    assert len(benchmark.sectors()) > 50 and benchmark.lookup("ZZ", "kucuk") is None
+    assert "en iyi çeyrekte" in benchmark.compare(10, "C", "kucuk")
+    assert "en kötü çeyrekte" in benchmark.compare(400, "C", "kucuk") and benchmark.compare(float("nan"), "C", "kucuk") is None

@@ -79,6 +79,8 @@ Biçimi görmek için panelin ilk ekranında örnek dosyaları indirebilirsiniz.
 - Kaydırma çubuklarıyla "şu kadar fatura tahsil edilirse" ya da "şu gideri şu kadar ertelersem" senaryolarını deneyebilirsiniz.
 - **13 haftalık plan:** her hafta için açık faturalardan ve yeni satışlardan beklenen tahsilat, bilinen çıkışlar ve hafta sonu kasası. Bilinen kalemler ile tahmine dayananlar ayrı sütunlardadır.
 
+**Sektör karşılaştırması.** "1. Temel bilgiler" bölümünde sektörünüzü ve ölçeğinizi seçerseniz panel, ortalama tahsil sürenizi Türkiye'de aynı sektör ve ölçekteki firmalarla karşılaştırır (TCMB–TÜİK Sektör Bilançoları, 2025): ortanca, en iyi ve en kötü çeyrek. Tahmini etkilemez.
+
 **Veri kalitesi ve kapsam.** Üst satırın altındaki bu bölüm verideki son hareketi, banka tahsilatlarının faturalarla eşleşme oranını, geçmişin uzunluğunu ve hangi yöntemin kullanıldığını gösterir. Yüklemediğiniz kaynaklar (ör. ödenecek faturalar) "kapsam dışı" diye yazılır: kasa grafiği onları içermez.
 
 **Nakit takvimi** ("Kasa tahmini" sekmesi): her gider, borç ve çek tarihiyle ve ne kadar kesin olduğuyla (kesin borç faturası, dosyadan planlı, elle girilen varsayım, olasılıklı çek). **Büyük müşteri geç öderse:** bir ya da birkaç müşteriyi seçip "X gün daha geç öderse" kasanızın ne olacağını görürsünüz. **Kur değişirse:** dövizli açık alacağınız varsa, TL'nin dövizlere karşı değişimini kendiniz girip kasaya etkisini görürsünüz (kur tahmini yapılmaz; dövizli borçlar kapsam dışıdır).
