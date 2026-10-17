@@ -19,7 +19,7 @@ Soru: Kupiec ve Spiegelhalter testlerinde görülen sapmalar için güncel bilim
 | | IBM 14 | IBM 30 | PD 14 | PD 30 |
 |---|---|---|---|---|
 | İyimser uç aşımı (önce → sonra) | 2 → 2 | 1 → 1 | 1 → 1 | **5 → 4** |
-| Kupiec iyimser uç p (önce → sonra) | 0,75 → 0,75 | 0,59 → 0,59 | 0,59 → 0,59 | **0,019 → 0,086** (geçer) |
+| Kupiec iyimser uç p, kesin (önce → sonra) | 1,00 → 1,00 | 0,73 → 0,73 | 0,73 → 0,73 | **0,017 → 0,25** (geçer) |
 | Basel (kötümser uç) | yeşil | yeşil | yeşil | yeşil |
 
 Sonuç, adım büyüklüğünden bağımsız (0,1 / 0,2 / 0,4 aynı). Yöntem işletmenin kendi kayıtlarıyla çalıştığı için pilotun ilk haftalarında etkisizdir; kayıt biriktikçe devreye girer.
@@ -39,16 +39,16 @@ Kabul ölçütleri projede belirlenmez; şu kaynaklardan alınır (kod: `src/rad
 
 **Gerçek açık veri (16 tahmin tarihi, açık faturalardan tahsilat):**
 
-| Veri, ufuk | Sapma (model / en iyi basit) | Diebold-Mariano | Kötümser uç aşımı | Basel | İyimser uç aşımı | Kupiec merkezi p | Kupiec iyimser uç p |
+| Veri, ufuk | Sapma (model / en iyi basit) | Diebold-Mariano | Kötümser uç aşımı | Basel | İyimser uç aşımı | Kupiec merkezi p (kesin) | Kupiec iyimser uç p (kesin) |
 |---|---|---|---|---|---|---|---|
-| IBM 14 gün | %6,98 / %10,57 | eşdeğer (p = 0,06 modelin lehine) | 0 / 16 | yeşil | 2 / 16 | 0,43 | 0,75 |
-| IBM 30 gün | %2,96 / %3,65 | eşdeğer | 1 / 16 | yeşil | 1 / 16 | 0,43 | 0,59 |
-| Payment Date 14 gün | %3,73 / %4,72 | eşdeğer | 0 / 16 | yeşil | 1 / 16 | 0,12 | 0,59 |
-| Payment Date 30 gün | %1,40 / %1,18 | eşdeğer | 1 / 16 | yeşil | **5 / 16** | 0,11 | **0,019** |
+| IBM 14 gün | %6,98 / %10,57 | eşdeğer (p = 0,06 modelin lehine) | 0 / 16 | yeşil | 2 / 16 | 0,55 | 1,00 |
+| IBM 30 gün | %2,96 / %3,65 | eşdeğer | 1 / 16 | yeşil | 1 / 16 | 0,55 | 0,73 |
+| Payment Date 14 gün | %3,73 / %4,72 | eşdeğer | 0 / 16 | yeşil | 1 / 16 | 0,22 | 0,73 |
+| Payment Date 30 gün | %1,40 / %1,18 | eşdeğer | 1 / 16 | yeşil | **5 / 16** | 0,11 | **0,017** |
 
 Riskli uç dört durumun dördünde Basel yeşil bölgede; merkezi aralık Kupiec testinden dördünde geçiyor; isabet dördünde de basit yöntemlerle istatistiksel olarak eşdeğer (üçünde sayısal olarak daha iyi). Tek kusur: Payment Date 30 günde iyimser uç fazla dar, tahsilat 16 tarihin 5'inde iyimser tahmini aştı (para beklenenden hızlı geldi; kasa açısından güvenli yön).
 
-**Sentetik çalışma (192 tahmin, dönem sonu kasa ve eksiye düşme olasılığı):** Basel yeşil (192'de 20 aşım, beklenen 19); Kupiec kötümser uç p = 0,85 (geçer), iyimser uç p = 0,001 ve merkezi p = 0,03 (iyimser uç fazla geniş: %4 aşım, beklenen %10); Spiegelhalter p < 0,001: eksiye düşme olasılıkları ortaya sıkışık (tahmin %6 → gerçekleşen %0; %20 → %13; %80 → %92; %97 → %99). Kırılım: sıkışma bütün senaryolarda var; iyimser ucun fazla genişliği özellikle ortak şokun olmadığı senaryolarda (aşım %1) belirgin.
+**Sentetik çalışma (192 tahmin, dönem sonu kasa ve eksiye düşme olasılığı):** Basel yeşil (192'de 20 aşım, beklenen 19); Kupiec (kesin) kötümser uç p = 0,90 (geçer), iyimser uç p = 0,001 ve merkezi p = 0,04 (iyimser uç fazla geniş: %4 aşım, beklenen %10); Spiegelhalter p < 0,001: eksiye düşme olasılıkları ortaya sıkışık (tahmin %6 → gerçekleşen %0; %20 → %13; %80 → %92; %97 → %99). Kırılım: sıkışma bütün senaryolarda var; iyimser ucun fazla genişliği özellikle ortak şokun olmadığı senaryolarda (aşım %1) belirgin.
 
 **Denenip reddedilenler (aynı testlerle):**
 
