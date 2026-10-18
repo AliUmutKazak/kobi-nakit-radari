@@ -16,7 +16,8 @@ from pathlib import Path
 import pandas as pd
 
 TABLES = {"invoices": ["issue_date", "due_date", "paid_date", "promised_date", "cheque_due"],
-          "payments": ["date"], "outflows": ["date"], "cheques": ["date"], "payables": ["date"]}
+          "payments": ["date"], "outflows": ["date"], "cheques": ["date"], "payables": ["date"],
+          "ledger_events": ["date"]}           # cari hesap ekstresindeki tahsilat dağıtımları (taksitler kendi tarihiyle)
 EVENT_KINDS = ("dispute", "promise", "message", "writeoff")
 
 

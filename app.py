@@ -105,13 +105,14 @@ def save_upload(store: Store, name: str, uploads, parse) -> None:
 def parse_invoices(uploads, terms, rates):
     frames, notes = [], []
     xml = [_open(u) for u in uploads if u.name.lower().endswith(".xml")]
-    ledger_cheques = []
+    ledger_cheques, ledger_events = [], []
     for u in uploads:
         if not u.name.lower().endswith(".xml") and ingest.is_ledger(_open(u)):
-            df, n, chq = ingest.load_ledger(_open(u), terms, fallback_customer=Path(u.name).stem)
+            df, n, chq, ev = ingest.load_ledger(_open(u), terms, fallback_customer=Path(u.name).stem, with_events=True)
             frames.append(df)
             notes += n
             ledger_cheques.append(chq)
+            ledger_events.append(ev)
         elif not u.name.lower().endswith(".xml"):
             df, n = ingest.load_invoices(_open(u), terms, json.loads(store.get("map_invoices", "{}")), rates)
             frames.append(df)
@@ -126,6 +127,9 @@ def parse_invoices(uploads, terms, rates):
     found = [c for c in ledger_cheques if len(c)]
     if found and store.load("cheques") is None:
         store.save("cheques", pd.concat(found, ignore_index=True))
+    # Cari hesaptaki tahsilat dağıtımları; satış dosyası cari ekstre değilse eski olaylar geçersizdir.
+    store.save("ledger_events", pd.concat(ledger_events, ignore_index=True) if ledger_events
+               else pd.DataFrame(columns=["date", "invoice_id", "amount"]))
     return pd.concat(frames, ignore_index=True).drop_duplicates("invoice_id"), notes
 
 
@@ -175,7 +179,12 @@ def run_own(path: str, rev: int, as_of: str, include_projected: bool):
     if cheques is not None:
         notes.append(f"Çek/senet portföyü: {len(cheques)} adet, {tl(cheques['amount'].sum())}.")
     # Pilot kayıtları biriktikçe bant iki uçta ayrı ayrı çevrimiçi ayarlanır (pilot.online_adjustment).
-    online = pilot.online_adjustment(store.pilot_records(), obs, collection_events(obs, allocations))
+    # Tahsilat olayları: banka eşleştirmesi varsa onun dağıtımları, yoksa cari hesap ekstresindeki dağıtımlar.
+    if allocations is None:
+        ledger = store.load("ledger_events")
+        allocations = ledger[ledger["date"] <= pd.Timestamp(as_of)] if ledger is not None and len(ledger) else None
+    events = collection_events(obs, allocations)
+    online = pilot.online_adjustment(store.pilot_records(), obs, events)
 
     def hook(calib):
         w0 = calib.get("widen", 1.0)
@@ -189,7 +198,7 @@ def run_own(path: str, rev: int, as_of: str, include_projected: bool):
     res = pipeline.forecast(obs.reset_index(drop=True), as_of, float(store.get("opening", 0)),
                             outflows if outflows is not None else pd.DataFrame({"date": [], "amount": []}),
                             include_projected=include_projected, cheques=cheques, calib_hook=hook,
-                            payments_through=through)
+                            payments_through=through, events=events)
     # Verideki son hareket: bundan sonraki ödemeler bilinmez, ödenmemiş görünür.
     dates = [obs["issue_date"].max(), obs["paid_date"].max()] + ([payments["date"].max()] if payments is not None else [])
     last = max(d for d in dates if pd.notna(d))
@@ -201,7 +210,7 @@ def run_own(path: str, rev: int, as_of: str, include_projected: bool):
     return {k: res[k] for k in KEEP} | {"notes": notes, "has_outflows": outflows is not None,
                                         "unmatched": unmatched if payments is not None else None, "last_activity": last,
                                         "n_payments": len(payments) if payments is not None else None,
-                                        "events": collection_events(obs, allocations), "match_rate": match_rate,
+                                        "events": events, "match_rate": match_rate,
                                         "scope": scope, "cheques": cheques}
 
 
@@ -428,6 +437,8 @@ with st.sidebar:
                 which = st.selectbox("Son yüklemeyi geri al", undoable, format_func=names.get)
                 if st.button("Önceki dosyaya dön"):
                     store.undo(which)
+                    if which == "invoices" and store.can_undo("ledger_events"):
+                        store.undo("ledger_events")             # olaylar satış dosyasıyla birlikte geri alınır
                     store.set(f"hash_{which}", "")
                     st.rerun()
             st.write("**Şifreli yedek.** Yüklenen tablolar, ayarlar, mesaj ve pilot kayıtları tek dosyada, parolayla "
@@ -802,6 +813,10 @@ with tab_accuracy:
         st.write(f"• Son bir yılda faturaların %{info['cheque_share'] * 100:.0f}'i çekle kapandı (ortanca çek vadesi "
                  f"{info['cheque_median_term']:.0f} gün). Bu müşterilerin açık faturaları ve yeni satışları için para, "
                  "fatura kapandığı gün değil çek vadesinde ve karşılıksız çıkma olasılığıyla kasaya sayıldı.")
+    if info.get("installment_share"):
+        st.write(f"• Son bir yılda kapanan faturaların %{info['installment_share'] * 100:.0f}'i birden çok tahsilatla "
+                 "(taksitle) kapandı. Bu müşterilerin henüz ödenmemiş faturalarında ilk taksit, kendi geçmişlerindeki "
+                 "oran ve zamanlamayla kapanıştan önce kasaya sayıldı.")
     widen = info.get("widen", 1.0)
     w_lo, w_hi = (widen, widen) if np.isscalar(widen) else widen
     if (w_lo, w_hi) != (1.0, 1.0):

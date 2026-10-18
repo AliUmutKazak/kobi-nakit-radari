@@ -354,7 +354,7 @@ def is_ledger(file) -> bool:
     return _ledger_columns(_read(file).columns) is not None
 
 
-def load_ledger(file, default_terms: int = 30, fallback_customer: str | None = None):
+def load_ledger(file, default_terms: int = 30, fallback_customer: str | None = None, with_events: bool = False):
     """Cari hesap hareketlerinden fatura listesi çıkarır.
 
     Borç satırları alacak doğurur (fatura, devir); alacak satırları onu kapatır (havale, çek, iade).
@@ -381,7 +381,7 @@ def load_ledger(file, default_terms: int = 30, fallback_customer: str | None = N
     df["description"] = df["description"].fillna("") if "description" in df else ""
     df = df.dropna(subset=["issue_date"]).sort_values("issue_date", kind="stable").reset_index(drop=True)
 
-    invoices, cheques, advance = [], [], 0.0
+    invoices, cheques, events, advance = [], [], [], 0.0
     for name, rows in df.groupby("customer_name", sort=False):
         queue = []                                     # bu müşterinin açık kalemleri, eskiden yeniye
         for r in rows.itertuples():
@@ -402,6 +402,8 @@ def load_ledger(file, default_terms: int = 30, fallback_customer: str | None = N
                     take = min(remaining, queue[0]["open_amount"])
                     queue[0]["open_amount"] -= take
                     remaining -= take
+                    # Her dağıtım bir tahsilat olayıdır: taksitli ödemeler kendi tarihleriyle kalır.
+                    events.append({"date": r.issue_date, "invoice_id": queue[0]["invoice_id"], "amount": take})
                     if queue[0]["open_amount"] <= 0.005:
                         queue[0]["open_amount"], queue[0]["paid_date"] = 0.0, r.issue_date
                         if is_cheque:
@@ -421,7 +423,11 @@ def load_ledger(file, default_terms: int = 30, fallback_customer: str | None = N
     if len(cheque_frame):
         notes.append(f"Ekstredeki {len(cheque_frame)} çek/senet tahsilatı ({cheque_frame['amount'].sum():,.0f} TL) "
                      "vadesinde kasaya girecek şekilde çek listesine eklendi.")
-    return _finish_invoices(out, default_terms, notes), notes, cheque_frame
+    finished = _finish_invoices(out, default_terms, notes)
+    if with_events:
+        ev = pd.DataFrame(events, columns=["date", "invoice_id", "amount"])
+        return finished, notes, cheque_frame, ev[ev["invoice_id"].isin(finished["invoice_id"])].reset_index(drop=True)
+    return finished, notes, cheque_frame
 
 
 # Cari hesapta çek/senet tahsilatı açıklamaları (aksansız, küçük harf): "Çek tahsilatı", "Müşteri çeki",

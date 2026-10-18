@@ -2,6 +2,10 @@
 
 Tarih: 14 Ekim 2026. Yeniden üretmek için: `python run_validation.py 24` (yaklaşık 3 dakika).
 
+## Senaryo laboratuvarı, sürüm 5: taksit alışkanlığı (18 Ekim 2026)
+
+Taksit alışkanlığı artık işletmenin kendi tahsilat olaylarından öğreniliyor (banka eşleşmeleri ya da cari hesap dağıtımları). Eşleştirilmiş 120 işletmede taksit kaynaklı kötümser sapma −0,107'den +0,016'ya indi. Sınavda (240 işletme) alt aşım %5, üst %14 çıktı (Basel yeşil, Spiegelhalter p = 0,55). Süregelen kötümser kaymanın kaynağı bileşen bazında bulundu: yeni satışların tahsil zamanlaması (PIT 0,60). Açık faturalar ve yeni satış tutarı kalibre. Konformal ayarın yeni satışları da kapsaması sıradaki iş. Ayrıntı: [LAB_RAPORU.md](LAB_RAPORU.md).
+
 ## Senaryo laboratuvarı, sürüm 4: kısmi ödeme ve eksik vade (18 Ekim 2026)
 
 Eşleştirilmiş 120 işletmede, faturaların %30'unda vadenin girilmemiş olması tahmini bozmadı (fark +0,002 ± 0,006). Müşterilerin %40'ının taksitle ödemesi ise tahmini kötümser yaptı (−0,13 ± 0,02 aylık ciro). Hata güvenli yönde; taksit alışkanlığının öğrenilmesi sonraki sürüme planlandı. Sınavda (240 işletme) alt aşım %6, üst %12 çıktı (Basel yeşil, Spiegelhalter p = 0,23); zayıf bölge yok. Ayrıntı: [LAB_RAPORU.md](LAB_RAPORU.md).

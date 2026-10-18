@@ -64,6 +64,63 @@ def _cheque_args(habits: dict | None, inv: pd.DataFrame, n_sims: int, seed: int)
     return {"cheque_p": p, "cheque_terms": terms}
 
 
+def installment_habits(obs: pd.DataFrame, events: pd.DataFrame | None, as_of, prior_n: float = 10.0,
+                       window_days: int = 365, min_n: int = 5, tol: float = 0.01) -> dict | None:
+    """Müşterilerin faturalarını taksitle kapatma alışkanlığı, işletmenin kendi tahsilat olaylarından öğrenilir.
+
+    Model ödemeyi faturanın kapandığı günde öğrenir. Taksitle ödeyen müşteride ilk taksit bundan önce gelir; bu
+    hesaba katılmazsa tahmin kötümser kalır. Laboratuvarda müşterilerin %40'ı taksitle öderken orta tahmin
+    −0,13 aylık ciro sapıyordu (LAB_RAPORU.md, sürüm 4). Son bir yılda kapanan faturalardan:
+    - pay: müşteri bazında birden çok tahsilatla kapanan fatura oranı, işletme ortalamasına büzülmüş,
+    - ilk taksidin tutar oranı ve zamanı (fatura günüyle kapanış günü arasındaki yeri, 0-1): müşterinin kendi
+      örnekleri (en az `min_n`), yoksa işletmenin bütün örnekleri.
+    events: tahsilat olayları (date, invoice_id, amount; reconcile.collection_events). Yoksa ya da hiç taksit
+    yoksa None döner ve tahmin eskisi gibidir."""
+    if events is None or not len(events):
+        return None
+    as_of = pd.Timestamp(as_of)
+    closed = obs[obs["paid_date"].notna() & (obs["paid_date"] <= as_of)
+                 & (obs["paid_date"] > as_of - pd.Timedelta(days=window_days))]
+    if not len(closed):
+        return None
+    ev = events[(events["date"] <= as_of) & events["invoice_id"].isin(closed["invoice_id"])]
+    ev = ev.sort_values("date")
+    first = ev.groupby("invoice_id").agg(first_date=("date", "first"), first_amount=("amount", "first"), n=("amount", "size"))
+    inv = closed.set_index("invoice_id").join(first, how="left")
+    span = (inv["paid_date"] - inv["issue_date"]).dt.days
+    split = ((inv["n"] > 1) & (inv["first_date"] < inv["paid_date"])
+             & (inv["first_amount"] < inv["amount"] * (1 - tol)) & (span > 0)).fillna(False)
+    if not split.any():
+        return None
+    overall = float(split.mean())
+    by = split.groupby(inv["customer_id"]).agg(["sum", "count"])
+    share = (by["sum"] + prior_n * overall) / (by["count"] + prior_n)
+    sp = inv[split]
+    frac = (sp["first_amount"] / sp["amount"]).clip(0.01, 0.99).to_numpy()
+    u = ((sp["first_date"] - sp["issue_date"]).dt.days / span[split]).clip(0, 1).to_numpy()
+    pairs = np.column_stack([frac, u])
+    pools = {c: pairs[(sp["customer_id"] == c).to_numpy()] for c in sp["customer_id"].unique()
+             if (sp["customer_id"] == c).sum() >= min_n}
+    return {"share": share, "overall": overall, "pools": pools, "pairs": pairs, "n": int(split.sum()),
+            "median_frac": float(np.median(frac))}
+
+
+def _split_args(habits: dict | None, inv: pd.DataFrame, n_sims: int, seed: int) -> dict:
+    if habits is None:
+        return {}
+    rng = np.random.default_rng(seed + 17)
+    cust = inv["customer_id"].to_numpy()
+    p = pd.Series(cust).map(habits["share"]).fillna(habits["overall"]).to_numpy(float)
+    # Kısmen ödenmiş açık faturanın kalanı zaten biliniyor: yeni taksit simüle edilmez.
+    p = np.where(inv["open_amount"].to_numpy(float) < inv["amount"].to_numpy(float) * 0.99, 0.0, p)
+    frac = np.empty((len(inv), n_sims)); u = np.empty((len(inv), n_sims))
+    for i, c in enumerate(cust):
+        pool = habits["pools"].get(c, habits["pairs"])
+        pick = pool[rng.integers(0, len(pool), n_sims)]
+        frac[i], u[i] = pick[:, 0], pick[:, 1]
+    return {"split_p": p, "split_frac": frac, "split_u": u}
+
+
 def payments_cutoff(obs: pd.DataFrame, as_of, window_days: int = 90, alpha: float = 0.05):
     """Tahsilatların kayda hangi güne kadar işlendiği, kayıtlardan tahmin edilir.
 
@@ -308,12 +365,15 @@ def aggregate_widen(stored, final, as_of, calib, horizons=(14, 30, 60, 90), leve
 def forecast(obs: pd.DataFrame, as_of, opening: float, outflows: pd.DataFrame, horizon: int = 90,
              n_sims: int = 2000, include_projected: bool = True, seed: int = 0,
              cheques: pd.DataFrame | None = None, calib_hook=None, cheque_aware: bool = True,
-             cheque_by_customer: bool = False, payments_through=None, payday_snap: bool = False) -> dict:
+             cheque_by_customer: bool = False, payments_through=None, payday_snap: bool = False,
+             events: pd.DataFrame | None = None, installment_aware: bool = True) -> dict:
     """calib_hook: kalibrasyon sözlüğünü değiştiren isteğe bağlı fonksiyon (deneyler ve pilot sırasındaki
     çevrimiçi kantil izleme için; bkz. pilot.online_adjustment).
     cheque_aware: çekle ödeyen müşterilerde paranın çek vadesinde gelmesi (cheque_habits; yalnızca deneylerde kapatılır).
     payments_through: tahsilatların kayda işlendiği son gün (bkz. payments_cutoff). Daha eskiyse model, kalibrasyon
     ve gecikme eğrileri o güne göre kurulur; arada gelmiş olabilecek paralar bugünkü kasanın içinde sayılır.
+    events: tahsilat olayları (reconcile.collection_events); kısmi tahsilatlardan taksit alışkanlığı öğrenilir
+    (installment_habits; installment_aware=False yalnızca deneylerde).
     payday_snap: ödemeyi müşterinin ödeme gününe oturtma (simulate.snap_to_payday). Laboratuvarda denendi, aralık
     skorunu iyileştirmedi (LAB_RAPORU.md); kapalıdır, seçenek deneyin tekrarlanabilmesi için duruyor."""
     as_of = pd.Timestamp(as_of)
@@ -362,6 +422,7 @@ def forecast(obs: pd.DataFrame, as_of, opening: float, outflows: pd.DataFrame, h
     if calib_hook is not None:
         calib = calib_hook(calib)
     habits = cheque_habits(obs, ref) if cheque_aware else None
+    splits = installment_habits(obs, events, ref) if installment_aware else None
     ctx = {"sim_inv": sim_inv, "Q": model.predict(feats), "aging": aging_curve(obs, ref), "cheques": cheques,
            "horizon": horizon, "n_sims": n_sims, "seed": seed, "calib": calib, "sales_level": sales_level,
            "cheque_args": _cheque_args(habits, sim_inv, n_sims, seed)
@@ -369,6 +430,7 @@ def forecast(obs: pd.DataFrame, as_of, opening: float, outflows: pd.DataFrame, h
            | ({"payday": sim_inv["customer_id"].map(actions.payment_habits(obs[obs["paid_date"] <= ref])["payday"])
                          .fillna(0).astype(int).to_numpy()} if payday_snap else {}),
            "payments_through": ref, "lag": lag}
+    ctx["cheque_args"] |= _split_args(splits, sim_inv, n_sims, seed)        # simülasyona giden ek ayarlar
     sim = simulate(sim_inv, ctx["Q"], as_of, opening, outflows, horizon, n_sims, seed=seed, aging=ctx["aging"],
                    cheques=cheques, sales_level=sales_level, **_sim_args(calib, sim_inv, ref), **ctx["cheque_args"])
     real = ~target["projected"].to_numpy()
@@ -385,7 +447,8 @@ def forecast(obs: pd.DataFrame, as_of, opening: float, outflows: pd.DataFrame, h
                      "sales_error_spread": float(np.percentile(errs, 90) - np.percentile(errs, 10)) if len(errs) >= 8 else None,
                      "cheque_share": habits["overall"] if habits else None, "cheque_n": habits["n"] if habits else 0,
                      "cheque_median_term": habits["median_term"] if habits else None,
-                     "payments_through": ref, "payments_lag": lag},
+                     "payments_through": ref, "payments_lag": lag,
+                     "installment_share": splits["overall"] if splits else None, "installment_n": splits["n"] if splits else 0},
             "disputed_total": float(obs.loc[is_open & obs["disputed"], "open_amount"].sum())}
 
 

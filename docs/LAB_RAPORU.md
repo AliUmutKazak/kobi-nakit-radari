@@ -1,6 +1,35 @@
 # Senaryo Laboratuvarı
 
-Tarih: 18 Ekim 2026. Kod: `src/radar/lab.py`. Güncel sürüm 4 (16 boyut: çek, tahsilat kayıt gecikmesi, tahmin günü, kısmi ödeme ve eksik vade dahil). Ayrıntılı tablolar: sürüm 4 [geliştirme](lab/gelistirme_v4.md), [sınav](lab/sinav_v4.md); sürüm 3 [geliştirme](lab/gelistirme_v3.md), [geliştirme, kesim düzeltmesi kapalı](lab/gelistirme_v3_kesim_duzeltmesi_kapali.md), [sınav](lab/sinav_v3.md); sürüm 2 [geliştirme](lab/gelistirme_v2.md), [geliştirme, çek düzeltmesi kapalı](lab/gelistirme_v2_cek_duzeltmesi_kapali.md), [sınav](lab/sinav_v2.md); sürüm 1 [geliştirme](lab/gelistirme_v1.md), [sınav](lab/sinav_v1.md). Sınav koşuları kaydı: [lab/sinav_kaydi.csv](lab/sinav_kaydi.csv) (tohum 0: sürüm 1; tohum 1: sürüm 2; tohum 2: sürüm 3; tohum 3: sürüm 4).
+Tarih: 18 Ekim 2026. Kod: `src/radar/lab.py`. Güncel sürüm 5 (16 boyut; taksit alışkanlığı öğreniliyor). Ayrıntılı tablolar: sürüm 5 [geliştirme](lab/gelistirme_v5.md), [sınav](lab/sinav_v5.md); sürüm 4 [geliştirme](lab/gelistirme_v4.md), [sınav](lab/sinav_v4.md); sürüm 3 [geliştirme](lab/gelistirme_v3.md), [geliştirme, kesim düzeltmesi kapalı](lab/gelistirme_v3_kesim_duzeltmesi_kapali.md), [sınav](lab/sinav_v3.md); sürüm 2 [geliştirme](lab/gelistirme_v2.md), [geliştirme, çek düzeltmesi kapalı](lab/gelistirme_v2_cek_duzeltmesi_kapali.md), [sınav](lab/sinav_v2.md); sürüm 1 [geliştirme](lab/gelistirme_v1.md), [sınav](lab/sinav_v1.md). Sınav koşuları kaydı: [lab/sinav_kaydi.csv](lab/sinav_kaydi.csv) (tohum 0: sürüm 1; tohum 1: sürüm 2; tohum 2: sürüm 3; tohum 3: sürüm 4; tohum 4: sürüm 5).
+
+## Sürüm 5: taksit alışkanlığı ve kötümser kaymanın kaynağı (18 Ekim 2026)
+
+**Eklenen: taksit alışkanlığının öğrenilmesi** (`pipeline.installment_habits`). Her müşteri için üç şey işletmenin kendi tahsilat olaylarından öğreniliyor: son bir yılda birden çok tahsilatla kapanan faturaların payı (işletme ortalamasına büzülerek), ilk taksidin tutar oranı ve ilk taksidin fatura günüyle kapanış arasındaki zamanı. Olaylar banka ekstresindeki eşleşmelerden ya da cari hesap ekstresindeki alacak dağıtımlarından geliyor. Cari hesap dağıtımları artık ayrı bir tabloda saklanıyor. Simülasyonda henüz ödenmemiş faturanın ilk taksidi kapanıştan önce kasaya giriyor.
+
+Aynı 120 işletmede, müşterilerin %40'ı taksitle öderken, eşleştirilmiş ölçüm:
+
+| | Orta tahmin sapması, temele göre | Üst aşım | Aralık skoru |
+|---|---|---|---|
+| Düzeltmesiz | −0,107 ± 0,017 | %16,7 | 2,62 |
+| Düzeltmeli | +0,016 ± 0,013 | %12,5 | 2,50 |
+
+Düzeltme sapmayı işletmelerin %93'ünde azalttı (fark +0,12 ± 0,01). Aralık skoru −0,12 ± 0,07 iyileşti. Öğrenilen taksit payı gerçeğe yakın çıktı: bir örnekte %50'ye karşı gerçek %49.
+
+**Sınav (sürüm 5, tohum 4, 240 işletme):** alt aşım %5, üst %14 (Basel yeşil, Kupiec alt p = 0,006, üst p = 0,052), Spiegelhalter p = 0,55. Zayıf bölge yok. Geliştirmede (tohum 1): alt %5, üst %11.
+
+**Kötümser kaymanın kaynağı bulundu.** Sürüm 3–5'in altı koşusunda kötümser uç %5–6, iyimser uç %10–14 aşıldı. 120 işletmede tahmin bileşenlerine ayrıldı. Her bileşen için gerçekleşenin simülasyon dağılımındaki yeri (PIT; doğru kalibrasyonda ortalama 0,50, uçlarda %10) ölçüldü:
+
+| Bileşen | Ortalama PIT | P10 altı | P90 üstü |
+|---|---|---|---|
+| Açık faturaların tahsilatı | 0,50 | %5,0 | %2,5 |
+| Yeni satışların tutarı | 0,53 | %10,8 | %11,7 |
+| **Yeni satışların tahsilatı** | **0,60** | %7,5 | **%17,5** |
+
+Açık faturalar ve yeni satış tutarı kalibre. Kayma, yeni kesilecek faturaların tahsil zamanlamasından geliyor. Bu faturalarda ufuk içinde tahsil edilen pay modelde 1,7 ± 1,1 puan düşük. Ödenenlerin medyan gecikmesi modelde 9,5 gün, gerçekte 8 gün. Bu bileşenin bandı da dar.
+
+Denenen bir açıklama reddedildi. Varsayım şuydu: kalibrasyonun açık faturalardan öğrenilip yeni faturalara uygulanması onları yavaşlatıyor. Yeni faturalarda kalibrasyon kapatılınca PIT 0,60'tan 0,65'e çıktı; yani kalibrasyon onları zaten hızlandırıyor.
+
+**Sıradaki adım.** Konformal toplam ayarı şu an yalnızca açık faturaların tahsilatına dayanıyor. Yeni satış tahsilatını da kapsayacak biçimde genişletilecek: işletmenin geçmiş tarihlerinde yeni satış tahmini kurulacak, simüle edilecek ve gerçekleşen tahsilatla karşılaştırılacak. Değişiklik önce geliştirme kümesinde denenecek, sonra yeni tohumlarla sınanacak.
 
 ## Sürüm 4: kısmi ödemeler ve eksik vade (18 Ekim 2026)
 
@@ -14,7 +43,7 @@ Aynı 120 geliştirme işletmesi üç koşulda eşleştirilerek koşuldu: temel,
 
 - **Eksik vade** tahmini bozmuyor: model gecikmeyi aynı varsayılan vadeye göre öğreniyor; tutarlı bir kaydırma olarak kalıyor.
 - **Kısmi ödeme** tahmini kötümser yapıyor. Panel kısmen ödenmiş açık faturada kalan tutarı doğru simüle ediyor. Ama henüz hiç ödenmemiş faturalarda ilk taksidin erken geleceğini bilmiyor, çünkü model ödemenin tamamını faturanın kapandığı günde öğreniyor. Hata güvenli yönde: kasa olduğundan boş görünüyor ve gereksiz alarm riski doğuyor.
-- **Düzeltme planı:** Geçmiş taksit tarihlerinin saklanması gerekiyor. Banka ekstresi yüklendiğinde kısmi tahsilatlar olay olarak zaten çıkıyor (`reconcile.collection_events`); cari hesap yolunda ise yalnızca son ödeme günü tutuluyor. Taksit alışkanlığının (pay, ilk taksit oranı ve zamanı) müşteri bazında öğrenilmesi sonraki sürüme planlandı.
+- **Düzeltme (sürüm 5'te yapıldı):** Geçmiş taksit tarihlerinin saklanması gerekiyordu. Banka ekstresi yüklendiğinde kısmi tahsilatlar olay olarak zaten çıkıyor (`reconcile.collection_events`); cari hesap yolunda ise yalnızca son ödeme günü tutuluyor. Taksit alışkanlığının (pay, ilk taksit oranı ve zamanı) müşteri bazında öğrenilmesi sonraki sürüme planlandı.
 
 **Sınav (sürüm 4, tohum 3, 240 işletme, bir kez koşuldu):** alt aşım %6, üst %12 (Basel yeşil, Kupiec alt p = 0,043, üst p = 0,24), Spiegelhalter p = 0,23. Benjamini-Hochberg düzeltmesinden sonra zayıf bölge yok. Kısmi ödeme ve eksik vadenin saklı (geliştirme aralığı dışı) rejimleri de yeşil. Geliştirme kümesinde (son kod): alt %5, üst %12.
 

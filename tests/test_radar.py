@@ -516,6 +516,10 @@ def test_ledger_import_mikro_style_with_cheque(tmp_path):
     assert list(chq["amount"]) == [200000] and chq.at[0, "date"] == pd.Timestamp("2026-12-15")
     assert any("çek" in n for n in notes)
     assert "cheque_due" not in inv          # son kapatan havale: para o gün gelmiş sayılır
+    # Her alacak dağıtımı bir tahsilat olayıdır: MKR001 çek (200.000) ve havaleyle (118.000) iki taksitte kapandı.
+    _, _, _, ev = ingest.load_ledger(p, default_terms=30, with_events=True)
+    first = ev[ev["invoice_id"] == "MKR001"].sort_values("date")
+    assert list(first["amount"]) == [200000, 118000] and ev.loc[ev["invoice_id"] == "MKR002", "amount"].sum() == 32000
 
     q = tmp_path / "cek_kapatir.csv"
     q.write_text(
@@ -1298,3 +1302,21 @@ def test_partial_payments_and_missing_due_scenarios():
     assert part.any() and "partial_frac" not in obs
     r = run_case(5, 30, 0.6, 0.1, gen={"partial_share": 0.5, "missing_due": 0.3}, n_sims=200)[0]
     assert np.isfinite(r["err_p50_months"])
+
+
+def test_installment_habits_are_learned_from_collection_events():
+    from radar.synthetic import payment_events
+    full = generate(seed=3, n_customers=40, partial_share=0.5)
+    obs, ev = observe(full, AS_OF), payment_events(full[full["issue_date"] <= AS_OF], AS_OF)
+    h = pipeline.installment_habits(obs, ev, AS_OF)
+    truth = ((full["partial_frac"] > 0) & full["true_paid_date"].notna()).mean()
+    assert abs(h["overall"] - truth) < 0.1 and 0.3 < h["median_frac"] < 0.7
+    plain = generate(seed=3, n_customers=40)
+    assert pipeline.installment_habits(observe(plain, AS_OF), payment_events(plain, AS_OF), AS_OF) is None
+    assert pipeline.installment_habits(obs, None, AS_OF) is None
+    # Taksit bilgisi verilince ilk taksitler kapanıştan önce gelir: orta tahmin yükselir.
+    from radar.synthetic import cash_plan
+    _, out = cash_plan(obs, AS_OF)
+    off = pipeline.forecast(obs, AS_OF, 0.0, out, n_sims=300)
+    on = pipeline.forecast(obs, AS_OF, 0.0, out, n_sims=300, events=ev)
+    assert on["sim"].p50[30] > off["sim"].p50[30] and on["info"]["installment_n"] > 0

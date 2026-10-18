@@ -138,6 +138,22 @@ def observe(full: pd.DataFrame, as_of, record_lag: int = 0) -> pd.DataFrame:
     return df.drop(columns="true_paid_date").reset_index(drop=True)
 
 
+def payment_events(full: pd.DataFrame, as_of, record_lag: int = 0) -> pd.DataFrame:
+    """Kayıtların son gününe kadar görülen tahsilat olayları (date, invoice_id, amount): banka ekstresiyle
+    eşleşen her ödeme ayrı olaydır (reconcile.collection_events ile aynı biçim). Taksitli faturada ilk taksit ve
+    kapanış ayrı olaylardır."""
+    cut = pd.Timestamp(as_of) - pd.Timedelta(days=record_lag)
+    frac = full["partial_frac"] if "partial_frac" in full else pd.Series(0.0, index=full.index)
+    closed = full["true_paid_date"] <= cut
+    out = [pd.DataFrame({"date": full.loc[closed, "true_paid_date"], "invoice_id": full.loc[closed, "invoice_id"],
+                         "amount": full.loc[closed, "amount"] * (1 - frac[closed])})]
+    if "true_partial_date" in full:
+        first = full["true_partial_date"] <= cut
+        out.append(pd.DataFrame({"date": full.loc[first, "true_partial_date"], "invoice_id": full.loc[first, "invoice_id"],
+                                 "amount": full.loc[first, "amount"] * frac[first]}))
+    return pd.concat(out, ignore_index=True).sort_values("date").reset_index(drop=True)
+
+
 def cheque_portfolio(obs: pd.DataFrame, as_of) -> pd.DataFrame | None:
     """`as_of` günü elde olan, vadesi gelmemiş çekler (date = vade): panelin çek/senet portföyü girdisi."""
     if "cheque_due" not in obs:

@@ -225,8 +225,14 @@ def simulate(inv: pd.DataFrame, Q: np.ndarray, as_of, opening: float, outflows: 
              z_shift: float = 0.0, z_scale: float = 1.0, widen: float = 1.0,
              recal: np.ndarray | None = None, sales_level: np.ndarray | None = None,
              cheque_p: np.ndarray | None = None, cheque_terms: np.ndarray | None = None,
-             cheque_by_customer: bool = False, lag: int = 0, payday: np.ndarray | None = None) -> SimResult:
+             cheque_by_customer: bool = False, lag: int = 0, payday: np.ndarray | None = None,
+             split_p: np.ndarray | None = None, split_frac: np.ndarray | None = None,
+             split_u: np.ndarray | None = None) -> SimResult:
     """inv sütunları: customer_id, issue_date, due_date, open_amount, p_default, projected.
+
+    split_p / split_frac / split_u: taksitle ödeme (bkz. pipeline.installment_habits). Fatura başına ilk taksitle
+    ödenme olasılığı, senaryo başına ilk taksidin tutar oranı ve zamanı (fatura günüyle kapanış günü arasındaki
+    yeri, 0-1). İlk taksit kapanıştan önce kasaya girer, kalanı kapanışta; çekle kapanan faturada taksit olmaz.
 
     payday: fatura başına müşterinin ödeme günü alışkanlığı (0 = yok, 1-28 = ayın günü, 31 = ay sonu; bkz.
     features.payday_habit). Verilirse simüle edilen ödeme günü en yakın ödeme gününe oturtulur (snap_to_payday).
@@ -273,6 +279,8 @@ def simulate(inv: pd.DataFrame, Q: np.ndarray, as_of, opening: float, outflows: 
         by_cheque = u < np.asarray(cheque_p, float)[:, None]
         zc = np.sqrt(rho_market) * zm + np.sqrt(1 - rho_market) * rng_c.standard_normal((n, n_sims))
         bounced = by_cheque & (ndtr(zc) > 1 - cheque_bounce)
+    if split_p is not None:
+        by_split = np.random.default_rng(seed + 37).random((n, n_sims)) < np.asarray(split_p, float)[:, None]
     pay_day = np.full((n, n_sims), horizon + 1, dtype=np.int32)
     inflow = np.zeros((n_sims, horizon + 1))
     collections = np.zeros(n_sims)
@@ -285,7 +293,8 @@ def simulate(inv: pd.DataFrame, Q: np.ndarray, as_of, opening: float, outflows: 
             target = (aging[d0] if 0 <= d0 < len(aging) else float(d0 < 0)) * (1 - ui)
             delay = np.searchsorted(-aging, -target)
             day = np.maximum(due_off[i] + delay, earliest[i]).astype(np.int64)
-            ok = (delay < len(aging)) & (day <= horizon)
+            will_pay = delay < len(aging)
+            ok = will_pay & (day <= horizon)
         else:
             f0 = min(cdf(Q[i], d0), 0.999)               # bugüne kadar ödenmiş olma olasılığı
             p_post = min(p_def[i] / (p_def[i] + (1 - p_def[i]) * (1 - f0)), 0.95)
@@ -294,15 +303,25 @@ def simulate(inv: pd.DataFrame, Q: np.ndarray, as_of, opening: float, outflows: 
             # En yakın güne yuvarlama: model tam gün gecikmelerden öğrenir; yukarı yuvarlamak her ödemeye
             # ortalama yarım gün gecikme ekliyor ve kısa ufukta tahsilatı sistematik düşük gösteriyordu.
             day = np.maximum(np.floor(due_off[i] + delay + 0.5), earliest[i]).astype(np.int64)
-            ok = (u_default[i] >= p_post) & (day <= horizon)
+            will_pay = u_default[i] >= p_post
+            ok = will_pay & (day <= horizon)
         if payday is not None and payday[i]:
             day = snap_to_payday(day, int(payday[i]), as_of, earliest[i])
             ok = ok & (day <= horizon)
         closed = ok & (day >= 1)                          # day < 1: kayıtların son günüyle bugün arasında ödendi
+        close_day = day
         if cheque_p is not None and cheque_p[i] > 0:
             day = np.where(by_cheque[i], day + cheque_terms[i], day)
             ok = ok & ~bounced[i] & (day <= horizon)
         ok = ok & (day >= 1)
+        share = np.ones(n_sims)                           # kapanışta gelen pay
+        first_ok = None
+        if split_p is not None and split_p[i] > 0:
+            splits = by_split[i] & will_pay & (~by_cheque[i] if cheque_p is not None else True)
+            start = earliest[i] - 1                       # fatura günü (kayıt kesiminden önceye gitmez)
+            first = np.maximum(np.floor(start + split_u[i] * (close_day - start) + 0.5), 1).astype(np.int64)
+            first_ok = splits & (first < close_day) & (first <= horizon)
+            share = np.where(first_ok, 1 - split_frac[i], 1.0)
         pay_day[i, ok] = day[ok]
         if projected[i]:
             # Gelecek satışların kendisi de belirsizdir. `sales_level` verilmişse (işletmenin geçmiş satış tahmini
@@ -313,9 +332,13 @@ def simulate(inv: pd.DataFrame, Q: np.ndarray, as_of, opening: float, outflows: 
                 weight = sales_level[min(block, len(sales_level) - 1)]
             else:
                 weight = rng.poisson(1.0, n_sims)
-            np.add.at(inflow, (sims[ok], day[ok]), amount[i] * weight[ok])
+            np.add.at(inflow, (sims[ok], day[ok]), amount[i] * weight[ok] * share[ok])
+            if first_ok is not None:
+                np.add.at(inflow, (sims[first_ok], first[first_ok]), amount[i] * weight[first_ok] * split_frac[i][first_ok])
         else:
-            np.add.at(inflow, (sims[ok], day[ok]), amount[i])
+            np.add.at(inflow, (sims[ok], day[ok]), amount[i] * share[ok])
+            if first_ok is not None:
+                np.add.at(inflow, (sims[first_ok], first[first_ok]), amount[i] * split_frac[i][first_ok])
             collections += closed * amount[i]
 
     if cheques is not None and len(cheques):

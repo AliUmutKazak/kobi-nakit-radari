@@ -23,7 +23,7 @@ import pandas as pd
 from joblib import Parallel, delayed
 
 from .pipeline import forecast, payments_cutoff
-from .synthetic import cash_plan, cheque_portfolio, generate, observe
+from .synthetic import cash_plan, cheque_portfolio, generate, observe, payment_events
 
 REGIMES = {
     "customers": [8, 40],        # müşteri sayısı: yoğunlaşma riski
@@ -57,7 +57,8 @@ def run_case(seed: int, customers: int, trend: float, shock: float, as_of="2026-
     mode = kw.pop("cutoff", "auto")
     through = {"auto": payments_cutoff(obs, as_of), "true": as_of - pd.Timedelta(days=record_lag), "none": None}[mode]
     res = forecast(obs, as_of, 0.0, outflows, horizon, n_sims, seed=seed, calib_hook=calib_hook,
-                   cheques=cheque_portfolio(obs, as_of), payments_through=through, **kw)
+                   cheques=cheque_portfolio(obs, as_of), payments_through=through,
+                   events=payment_events(full[full["issue_date"] <= as_of], as_of, record_lag), **kw)
     sim = res["sim"]
 
     # Gerçekleşen yol: tahmin tarihinden sonra kesilenler dahil tüm faturaların paranın gerçekten geldiği günler
