@@ -130,7 +130,15 @@ def parse_invoices(uploads, terms, rates):
     # Cari hesaptaki tahsilat dağıtımları; satış dosyası cari ekstre değilse eski olaylar geçersizdir.
     store.save("ledger_events", pd.concat(ledger_events, ignore_index=True) if ledger_events
                else pd.DataFrame(columns=["date", "invoice_id", "amount"]))
-    return pd.concat(frames, ignore_index=True).drop_duplicates("invoice_id"), notes
+    combined = pd.concat(frames, ignore_index=True).drop_duplicates("invoice_id")
+    dup = ingest.possible_duplicates(combined)
+    if len(dup):
+        first = dup.iloc[0]
+        notes.append(f"{int(dup['n'].sum())} fatura, aynı müşteriye aynı gün aynı tutarla kesilmiş görünüyor ({len(dup)} grup; "
+                     f"ör. {first['customer_name']}, {first['issue_date']:%d.%m.%Y}: {first['invoice_ids']}). Aynı fatura "
+                     "iki kez girildiyse (ör. elle ve e-faturadan) dosyadan birini çıkarın; aksi hâlde alacak iki kez sayılır. "
+                     "Gerçekten ayrı faturalarsa bir şey yapmanız gerekmez.")
+    return combined, notes
 
 
 @st.cache_data(show_spinner="Demo şirketin 90 günlük kasası hesaplanıyor; 10-20 saniye sürer. Panel açık kaldıkça sonraki işlemler anında gelir...")

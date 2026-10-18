@@ -204,7 +204,7 @@ Büyük örneklemde iki bölge de yeşil. Sınavdaki sarı, 17–20 işletmelik 
 
 ## Kapsamadıkları (sonraki sürüm)
 
-- Mükerrer fatura laboratuvarda yok. Aynı fatura numarası yüklemede tekilleştirilir; farklı numarayla iki kez girilmiş fatura ayırt edilemez. Kısmi ödeme ve eksik vade sürüm 4'te, tahsilat kayıt gecikmesi sürüm 3'te eklendi.
+- Mükerrer fatura laboratuvarda yok. Aynı fatura numarası yüklemede tekilleştirilir. Farklı numarayla iki kez girilmiş olası faturalar (aynı müşteri, gün ve tutar) panelde kullanıcıya gösterilir, kendiliğinden silinmez. Kısmi ödeme ve eksik vade sürüm 4'te, tahsilat kayıt gecikmesi sürüm 3'te eklendi.
 - Çek ve senet sürüm 2'de eklendi. Ciro edilen ya da iskontoya verilen çekler ve keşideci bazlı risk laboratuvarda yok. Karşılıksızlık oranı ülke geneli (TBB) olarak alınıyor.
 - Müşteri sayısı aralıkları ve geçmiş uzunluğu varsayımdır. Fatura düzeyinde açık bir Türk KOBİ verisi bulunamadı; pilot verisi geldikçe bu aralıklar gerçek dağılıma çekilecek.
 

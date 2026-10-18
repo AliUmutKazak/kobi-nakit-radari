@@ -247,6 +247,21 @@ def _finish_invoices(df: pd.DataFrame, default_terms: int, notes: list[str],
     return df[cols].sort_values("issue_date").reset_index(drop=True)
 
 
+def possible_duplicates(df: pd.DataFrame) -> pd.DataFrame:
+    """Olası mükerrer faturalar: aynı müşteri, aynı gün, aynı tutar, farklı numara.
+
+    Aynı numara yüklemede zaten tekilleştirilir. Aynı faturanın farklı numarayla iki kez girilmesi (ör. elle ve
+    e-faturadan) alacağı iki kez saydırır ve kasayı olduğundan dolu gösterir. Aynı gün aynı tutarda gerçekten iki
+    fatura da kesilebileceği için kayıt silinmez; kullanıcıya gösterilir. Dönen: grup başına bir satır
+    (customer_name, issue_date, amount, invoice_ids)."""
+    key = df.assign(_day=pd.to_datetime(df["issue_date"]).dt.normalize(), _amt=df["amount"].round(2))
+    g = key.groupby(["customer_id", "_day", "_amt"])
+    out = g.agg(customer_name=("customer_name", "first"), n=("invoice_id", "nunique"),
+                invoice_ids=("invoice_id", lambda x: ", ".join(map(str, sorted(set(x))))))
+    out = out[out["n"] > 1].reset_index().rename(columns={"_day": "issue_date", "_amt": "amount"})
+    return out[["customer_name", "issue_date", "amount", "n", "invoice_ids"]]
+
+
 def load_invoices(file, default_terms: int = 30, mapping: dict | None = None, rates: dict | None = None):
     """Kesilen faturalar. Zorunlu: fatura no, müşteri, fatura tarihi, tutar."""
     notes: list[str] = []

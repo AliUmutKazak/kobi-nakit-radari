@@ -1320,3 +1320,13 @@ def test_installment_habits_are_learned_from_collection_events():
     off = pipeline.forecast(obs, AS_OF, 0.0, out, n_sims=300)
     on = pipeline.forecast(obs, AS_OF, 0.0, out, n_sims=300, events=ev)
     assert on["sim"].p50[30] > off["sim"].p50[30] and on["info"]["installment_n"] > 0
+
+
+def test_possible_duplicate_invoices_are_flagged_not_removed():
+    from radar import ingest
+    df = pd.DataFrame({"invoice_id": ["A1", "GIB2026000000001", "A2", "A3"], "customer_id": ["C1", "C1", "C1", "C2"],
+                       "customer_name": ["Ege A.Ş."] * 3 + ["Bursa Ltd."],
+                       "issue_date": pd.to_datetime(["2026-09-01", "2026-09-01", "2026-09-02", "2026-09-01"]),
+                       "amount": [1000.0, 1000.0, 1000.0, 1000.0]})
+    dup = ingest.possible_duplicates(df)
+    assert len(dup) == 1 and dup.iloc[0]["invoice_ids"] == "A1, GIB2026000000001" and dup.iloc[0]["n"] == 2

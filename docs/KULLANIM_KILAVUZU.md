@@ -42,6 +42,8 @@ Sol menüde **"Kendi verim"**i seçin. Ayarlar dört bölümde toplanmıştır.
 
 **Çekle ödeyen müşteriler.** Cari hesap ekstresi yüklerseniz, çekle kapanan faturalar ("çek", "müşteri çeki", "senet" açıklamalı alacak satırları) tanınır. Panel her müşterinin çekle ödeme payını ve çek vadesini sizin kayıtlarınızdan öğrenir. Bu müşterilerin açık faturaları ve yeni satışları için para, fatura kapandığı gün değil çek vadesinde sayılır.
 
+**Olası mükerrer faturalar.** Aynı fatura numarası yüklemede bir kez sayılır. Aynı müşteriye aynı gün aynı tutarla, ama farklı numarayla kesilmiş faturalar varsa panel veri notlarında bunları gösterir. Aynı fatura iki kez girildiyse (ör. elle ve e-faturadan) dosyadan birini çıkarın; aksi hâlde alacak iki kez sayılır. Gerçekten ayrı faturalarsa bir şey yapmanız gerekmez; panel hiçbir kaydı kendiliğinden silmez.
+
 **Taksitle ödeyen müşteriler.** Bir fatura birden çok tahsilatla kapanmışsa (banka ekstresindeki eşleşmelerden ya da cari hesap ekstresindeki alacak satırlarından), panel bu müşterinin taksit alışkanlığını öğrenir: faturaların ne kadarını taksitle kapattığı, ilk taksidin tutarın ne kadarı olduğu ve ne zaman geldiği. Henüz hiç ödenmemiş faturalarında ilk taksit, kapanıştan önce kasaya sayılır. Kısmen ödenmiş faturalarda yalnızca kalan tutar beklenir.
 
 **Dosyalarınız güncel olsun.** Dosyalardaki en son hareket tahmin tarihinden bir haftadan eskiyse panel kırmızı bir uyarı verir: aradaki günlerde gelen ödemeleri bilemediği için onları ödenmemiş sayar ve riski olduğundan yüksek gösterir. Ya güncel dosya yükleyin ya da tahmin tarihini dosyalarınızın tarihine çekin.
