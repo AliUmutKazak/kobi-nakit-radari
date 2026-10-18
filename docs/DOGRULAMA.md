@@ -2,6 +2,10 @@
 
 Tarih: 14 Ekim 2026. Yeniden üretmek için: `python run_validation.py 24` (yaklaşık 3 dakika).
 
+## Sıralı laboratuvar: pilot çevrimiçi izleme (18 Ekim 2026)
+
+Her sentetik işletme 52 hafta boyunca haftalık pilot tahsilat kaydı üretti. Çevrimiçi izlemede iki kusur bulundu ve düzeltildi. Birincisi, aşım ayarlanmamış banda göre ölçülüyordu; bu yüzden geri besleme kopuktu. İkincisi, tahsilat kaydı ölçüldüğü tanımla hesaplanmıyordu: çekte kapanış günü ve taksitler hesaba katılmıyordu. Ayrıca kaynağa dayanmayan katsayı sınırları kaldırıldı. Sınavda (40 yeni işletme, 1.000 kayıt) kötümser uç aşımı %10,7, iyimser %8,9 çıktı. Basel yeşil, Kupiec iki uçta da geçiyor (p = 0,49 / 0,25). Eski kuralda kötümser uç aşımı %7,8'di (Kupiec p = 0,018). Protokol 1.5. Ayrıntı: [LAB_RAPORU.md](LAB_RAPORU.md).
+
 ## Senaryo laboratuvarı, sürüm 5: taksit alışkanlığı (18 Ekim 2026)
 
 Taksit alışkanlığı artık işletmenin kendi tahsilat olaylarından öğreniliyor (banka eşleşmeleri ya da cari hesap dağıtımları). Eşleştirilmiş 120 işletmede taksit kaynaklı kötümser sapma −0,107'den +0,016'ya indi. Sınavda (240 işletme) alt aşım %5, üst %14 çıktı (Basel yeşil, Spiegelhalter p = 0,55). Bileşen analizinde açık faturalar ve yeni satış tutarı kalibre çıktı. Yeni satışların tahsilatında küçük bir kötümserlik var (PIT 0,55). Bandın kötümser ucunun genişliği tasarımdaki ihtiyat ilkesinden geliyor. Üç düzeltme denendi, uçtan uca kazanç göstermedi ve reddedildi: yeni faturalar için ayrı ayar, kalibrasyonu kapatma ve deneysel Bayes büzmesi. Ayrıntı: [LAB_RAPORU.md](LAB_RAPORU.md).

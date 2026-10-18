@@ -1163,12 +1163,12 @@ def test_online_quantile_tracking_moves_each_tail_separately():
     # Her 14 günde ~200 TL geliyor. Bant çok yüksekte: hep kötümserin altında -> kötümser taraf genişler.
     low = pilot.online_adjustment(table(500.0, 900.0), inv)
     assert low["n"] > 10 and low["lo"] > 1.5 and low["hi"] == pytest.approx(1 - 0.1 * 0.1 * low["n"])   # aşımsız her kayıt -0,01
-    # Bant çok aşağıda: hep iyimserin üstünde -> iyimser taraf genişler, kötümser 1'de kalır.
+    # Bant çok aşağıda: hep iyimserin üstünde -> iyimser taraf genişler, kötümser yavaşça daralır.
     high = pilot.online_adjustment(table(0.0, 50.0), inv)
-    assert high["lo"] == 1.0 and high["hi"] > 1.5
-    # Bant doğru: kötümser 1'in altına inmez (Basel ihtiyatı); kayıt yoksa ayar yok.
+    assert high["hi"] > 1.5 and high["lo"] == pytest.approx(1 - 0.01 * high["n"])
+    # Aşım yoksa her kayıt katsayıyı yalnızca 0,01 daraltır; kayıt yoksa ayar yok.
     ok = pilot.online_adjustment(table(0.0, 900.0), inv)
-    assert ok["lo"] == 1.0 and pilot.online_adjustment(pd.DataFrame(), inv) == {"lo": 1.0, "hi": 1.0, "n": 0}
+    assert ok["lo"] == pytest.approx(1 - 0.01 * ok["n"]) and pilot.online_adjustment(pd.DataFrame(), inv) == {"lo": 1.0, "hi": 1.0, "n": 0}
 
 
 def test_sales_method_is_chosen_by_own_history_and_level_is_unbiased():
@@ -1330,3 +1330,19 @@ def test_possible_duplicate_invoices_are_flagged_not_removed():
                        "amount": [1000.0, 1000.0, 1000.0, 1000.0]})
     dup = ingest.possible_duplicates(df)
     assert len(dup) == 1 and dup.iloc[0]["invoice_ids"] == "A1, GIB2026000000001" and dup.iloc[0]["n"] == 2
+
+
+def test_online_tracking_converges_on_the_shown_band():
+    from radar import pilot
+    rng = np.random.default_rng(0)
+    t0 = pd.Timestamp("2025-01-06")
+    n = 300
+    # Bant gerçek dağılımdan dar (P90 ham bantta ~%31 aşılır). Geri beslemeyle katsayı dengeye gelir:
+    # N(100, 20) için doğru iyimser katsayı ~ 1,28 · 20 / 10 = 2,56; aşım oranı %10'a yaklaşır.
+    recs = pd.DataFrame({"as_of": [t0 + pd.Timedelta(days=7 * i) for i in range(n)],
+                         "until": [t0 + pd.Timedelta(days=7 * i + 7) for i in range(n)],
+                         "p10": 90.0, "p50": 100.0, "p90": 110.0, "actual": rng.normal(100, 20, n)})
+    state, band = pilot.track_quantiles(recs, recs["until"].max())
+    assert 1.8 < state["hi"] < 3.4                      # eski (ham bantla) yöntemde ~6,5'e kadar büyürdü
+    late = band.iloc[n // 2:]
+    assert 0.04 < (late["actual"] > late["hi"]).mean() < 0.18

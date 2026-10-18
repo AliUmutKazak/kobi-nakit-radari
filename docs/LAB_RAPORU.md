@@ -2,6 +2,28 @@
 
 Tarih: 18 Ekim 2026. Kod: `src/radar/lab.py`. Güncel sürüm 5 (16 boyut; taksit alışkanlığı öğreniliyor). Ayrıntılı tablolar: sürüm 5 [geliştirme](lab/gelistirme_v5.md), [sınav](lab/sinav_v5.md); sürüm 4 [geliştirme](lab/gelistirme_v4.md), [sınav](lab/sinav_v4.md); sürüm 3 [geliştirme](lab/gelistirme_v3.md), [geliştirme, kesim düzeltmesi kapalı](lab/gelistirme_v3_kesim_duzeltmesi_kapali.md), [sınav](lab/sinav_v3.md); sürüm 2 [geliştirme](lab/gelistirme_v2.md), [geliştirme, çek düzeltmesi kapalı](lab/gelistirme_v2_cek_duzeltmesi_kapali.md), [sınav](lab/sinav_v2.md); sürüm 1 [geliştirme](lab/gelistirme_v1.md), [sınav](lab/sinav_v1.md). Sınav koşuları kaydı: [lab/sinav_kaydi.csv](lab/sinav_kaydi.csv) (tohum 0: sürüm 1; tohum 1: sürüm 2; tohum 2: sürüm 3; tohum 3: sürüm 4; tohum 4: sürüm 5).
 
+## Sıralı laboratuvar: pilot sırasındaki çevrimiçi izleme (18 Ekim 2026)
+
+Tek tahmin tarihli laboratuvar, pilotta haftalar içinde çalışan çevrimiçi kantil izlemeyi sınayamaz. Bu yüzden her sentetik işletme 52 hafta boyunca haftada bir tahmin edildi, pilottaki gibi. Kayıt, açık faturalardan 30 günlük tahsilat; gerçekleşen, tahsilat olaylarından ölçüldü. Kayıtlar bir kez üretildi, izleme kuralları aynı kayıtlar üzerinde geri oynatıldı. Değerlendirme son 26 haftanın kayıtlarıyla yapıldı (40 işletme × 25 kayıt = 1.000).
+
+**Bulunan ve düzeltilen iki kusur.**
+1. *Çevrimiçi izlemenin geri beslemesi kopuktu.* Uygulama gerçekleşeni ayarlanmamış ham banda göre değerlendiriyordu. Yöntemin yayımlanmış hâlinde (Gibbs ve Candès 2021) aşım, o gün gösterilen ayarlanmış banda göre ölçülür. Geri besleme koparsa katsayı dengeye gelmez: ham bant az aşılıyorsa alt sınıra yapışır, çok aşılıyorsa sınırsız büyür. Yeni testte ham bandı dar bir akışta katsayı 2,56 civarında dengeye geliyor; eski uygulama 6,5'e kadar büyütürdü. Açık verilerdeki önceki geri oynatma doğru yöntemi kullanmıştı; ürüne geçen sürüm ondan sapmıştı.
+2. *Pilot tahsilat kaydı ölçüldüğü tanımla hesaplanmıyordu.* Gerçekleşen kapanış ve kısmi tahsilat olaylarından ölçülüyor, oysa tahmin çekli faturalarda parayı çek vadesinde sayıyordu ve taksitleri bilmiyordu. Çekli ve taksitli işletmede bu, pilot ölçütünü haksız yere kötümser gösterirdi. Kayıt artık aynı tanımla hesaplanıyor.
+
+**Kural karşılaştırması.** Kurallar geliştirme işletmeleriyle (tohum 14) karşılaştırıldı. Seçilen kural 40 yeni sınav işletmesinde (tohum 5) bir kez sınandı ve sınav kaydına yazıldı.
+
+| Kural | Geliştirme: alt / üst aşım | Geliştirme: aralık skoru | **Sınav: alt / üst aşım** | Sınav: Kupiec alt / üst p | Sınav: aralık skoru |
+|---|---|---|---|---|---|
+| İzleme yok | %8,5 / %5,4 | 1,029 | %10,3 / %6,8 | 0,79 / <0,001 | 1,146 |
+| Protokol 1.4 (kötümser ≥ 1, iyimser ≥ 0,5) | %6,3 / %6,5 | 1,028 | %7,8 / %8,9 | 0,018 / 0,25 | 1,111 |
+| **Protokol 1.5** (yayımlanmış yöntem, adım 0,1) | %9,7 / %6,5 | 1,018 | **%10,7 / %8,9** | **0,49 / 0,25** | **1,094** |
+
+Geliştirmede adım 0,05 ve 0,2 de denendi. Adım 0,2 iki uçta da Kupiec'i geçti, ama aralık skorunu kötüleştirdi (1,069). Adım 0,1 protokolde ön kayıtlı olduğu ve doğru skorlama kuralında en iyiler arasında olduğu için değiştirilmedi.
+
+- **Kaldırılan sınırlar.** 1.4'teki sınırları (kötümser ≥ 1, iyimser ≥ 0,5) ben koymuştum; bir kurum ya da yayına dayanmıyorlardı. Kötümser ucu gereğinden geniş tuttular. Kaldırılınca sınavda iki uç da Kupiec'i geçti, Basel yeşil kaldı ve aralık skoru en iyi oldu.
+- **Uyarı.** Garanti, işletmeler ortalamasında uzun dönem aşım oranı içindir. Tek tek bakıldığında, sınavdaki en kötü işletmede kötümser uç aşımı 1.4 kuralında %24, 1.5 kuralında %36 oldu. Pilot raporu her işletmenin kendi Basel bölgesini ve Kupiec testini zaten ayrı gösterir (protokol B2).
+- **Protokol 1.5'e işlendi** (pilot verisi görülmeden).
+
 ## Sürüm 5: taksit alışkanlığı ve kötümser kaymanın kaynağı (18 Ekim 2026)
 
 **Eklenen: taksit alışkanlığının öğrenilmesi** (`pipeline.installment_habits`). Her müşteri için üç şey işletmenin kendi tahsilat olaylarından öğreniliyor: son bir yılda birden çok tahsilatla kapanan faturaların payı (işletme ortalamasına büzülerek), ilk taksidin tutar oranı ve ilk taksidin fatura günüyle kapanış arasındaki zamanı. Olaylar banka ekstresindeki eşleşmelerden ya da cari hesap ekstresindeki alacak dağıtımlarından geliyor. Cari hesap dağıtımları artık ayrı bir tabloda saklanıyor. Simülasyonda henüz ödenmemiş faturanın ilk taksidi kapanıştan önce kasaya giriyor.
@@ -34,7 +56,7 @@ Düzeltme sapmayı işletmelerin %93'ünde azalttı (fark +0,12 ± 0,01). Aralı
 2. *Yeni faturalar için ayrı yeniden ayar grubu.* Her geçmiş tarihten sonra kesilen faturaların ödeme günleri, o günkü modelle tahmin edilip gerçekleşenle karşılaştırıldı. Geçmiş tarihlerde bu faturalar zaten kalibre çıktı; ayar sonucu değiştirmedi. Etkisi gösterilemediği için koddan çıkarıldı.
 3. *Deneysel Bayes büzmesi* (beta-binom, moment yöntemi). Çek ve taksit alışkanlığında müşteri oranlarını sabit 10 fatura yerine veriden tahmin edilen güçle büzme denendi. Müşteri oranları belirgin biçimde doğruladı: taksitçi müşteri 0,96, eski yöntemde ~0,77. Ama 160 işletmede uçtan uca kazanç yok: sapma farkı +0,003 ± 0,009, aralık skoru farkı +0,03 ± 0,05. Çekteki iyimserlik ile taksitteki kötümserlik birbirini dengeliyor. Kural gereği eski yöntem korundu.
 
-**Sonuç ve sıradaki adım.** Laboratuvarın ölçebildiği yöntemsel kaynaklar giderildi ya da etkisiz çıktı. Kalan sapma güvenli yönde ve ihtiyat ilkesinden kaynaklanıyor. Bunun düzeltmesi işletmenin kendi gerçekleşmelerine bağlı: pilot kayıtları biriktikçe çevrimiçi kantil izlemenin kötümser uçta da bir alt sınırla daraltabilmesi. Bu, pilot protokolünde ön kayıtlı güncellemedir.
+**Sonuç ve sıradaki adım.** Laboratuvarın ölçebildiği yöntemsel kaynaklar giderildi ya da etkisiz çıktı. Kalan sapma güvenli yönde ve ihtiyat ilkesinden kaynaklanıyor. Bunun düzeltmesi işletmenin kendi gerçekleşmelerine bağlı: pilot kayıtları biriktikçe çevrimiçi kantil izleme kötümser ucu da daraltabilir. Bu, sıralı laboratuvarla sınanıp protokol 1.5'e işlendi (yukarıda).
 
 ## Sürüm 4: kısmi ödemeler ve eksik vade (18 Ekim 2026)
 

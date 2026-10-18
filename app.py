@@ -596,7 +596,9 @@ if lag_days:
 if own and store.get("pilot_on", "0") == "1" and pilot.record_due(store.pilot_records(), res["as_of"],
                                                                   res.get("last_activity")) is None:
     with st.spinner("Bu haftanın pilot kaydı alınıyor; yarım dakika kadar sürer..."):
-        weekly = pd.concat([pilot.forward_record(res["obs"], res["as_of"]), pilot.cash_record(res)], ignore_index=True)
+        weekly = pd.concat([pilot.forward_record(res["obs"], res["as_of"], events=res.get("events"),
+                                                 payments_through=res["info"].get("payments_through")),
+                            pilot.cash_record(res)], ignore_index=True)
     digest = hashlib.sha256("|".join(store.get(f"hash_{n}", "") for n in
                                      ("invoices", "payments", "outflows", "payables", "cheques")).encode()).hexdigest()
     meta = {"surum": pilot.VERSION, "kesim": f"{pd.Timestamp(res['as_of']):%Y-%m-%d}",

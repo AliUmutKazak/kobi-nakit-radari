@@ -93,7 +93,8 @@ def build(obs: pd.DataFrame, as_of, opening: float = 0.0, outflows: pd.DataFrame
     cash = cash_backtest(obs, min(as_of, last)) if history_days >= MIN_HISTORY_DAYS else pd.DataFrame()
     return {"label": label, "as_of": as_of, "res": res, "quality": quality, "delays": delays, "cash": cash,
             "gap": gap_summary(res), "weeks": weekly_table(res), "top": _top(res, key, obs),
-            "record": forward_record(obs, as_of), "cash_record": cash_record(res)}
+            "record": forward_record(obs, as_of, events=res.get("events") if isinstance(res, dict) else None,
+                                     payments_through=res["info"].get("payments_through")), "cash_record": cash_record(res)}
 
 
 def cash_backtest(obs: pd.DataFrame, as_of, horizons=(14, 30), origins: int = 4, step: int = 21,
@@ -145,17 +146,23 @@ def summarize_backtest(bt: pd.DataFrame, step: int) -> pd.DataFrame:
     return pd.DataFrame(out)
 
 
-def forward_record(obs: pd.DataFrame, as_of, horizons=(14, 30), n_sims: int = 1000) -> pd.DataFrame:
+def forward_record(obs: pd.DataFrame, as_of, horizons=(14, 30), n_sims: int = 1000, events: pd.DataFrame | None = None,
+                   payments_through=None) -> pd.DataFrame:
     """İleriye dönük kayıt, hedef A (tahsilat): bugün açık faturalardan önümüzdeki 14 ve 30 günde tahsil
     edilecek tutar; model ve üç basit yöntem. Yeni satışlar, giderler ve açılış kasası bu hedefe dahil değildir.
-    Rapor her hafta değiştirilmeden saklanır, ufuk dolunca gerçekleşenle karşılaştırılır (protokol B1)."""
+    Rapor her hafta değiştirilmeden saklanır, ufuk dolunca gerçekleşenle karşılaştırılır (protokol B1).
+
+    Gerçekleşen, tahsilat olaylarından ölçülür (fatura kapanışı ve kısmi tahsilatlar; reconcile.collection_events).
+    Tahmin aynı tanımla yapılır: çekle kapanan faturada kapanış günü esas alınır (para çek vadesinde gelse de;
+    çek ayarı kapalı), kısmi tahsilatlar olaylardan öğrenilen taksit alışkanlığıyla, tahsilatların işlendiği son gün
+    (payments_through) ana tahmindeki gibi. Kasa hedefi (cash_record) ise paranın geldiği günü esas alır."""
     as_of = pd.Timestamp(as_of)
     book = obs[(obs["issue_date"] <= as_of) & ~(obs["paid_date"] <= as_of) & (obs["open_amount"] > 0)]
     book = book.assign(amount=book["open_amount"])
     # Tek simülasyon yeter: açılış kasası sıfır, gider ve yeni satış yokken kasa yolu, o güne kadarki
     # tahsilatın kendisidir; h. günün yüzdelikleri h günlük tahsilatın yüzdelikleridir.
     sim = forecast(obs, as_of, 0.0, pd.DataFrame({"date": [], "amount": []}), horizon=max(horizons), n_sims=n_sims,
-                   include_projected=False)["sim"]
+                   include_projected=False, cheque_aware=False, events=events, payments_through=payments_through)["sim"]
     rows = []
     for h in horizons:
         end = as_of + pd.Timedelta(days=h)
@@ -323,20 +330,62 @@ Kur değişimi, yeni kredi ve plan dışı büyük giderler dahil değildir.</p>
 </body></html>"""
 
 
-ONLINE_ETA = 0.1          # adım büyüklüğü; açık verilerde 0,1 / 0,2 / 0,4 aynı sonucu verdi
-ONLINE_RISK_FLOOR = 1.0   # kötümser uç, kalibrasyonun verdiği genişliğin altına daralmaz (Basel ihtiyatı)
-ONLINE_UPPER_FLOOR = 0.5
+ONLINE_ETA = 0.1          # adım büyüklüğü (protokol 1.4'te ön kayıtlı)
+# Katsayılar için yalnızca sıfır sınırı vardır (bant ters dönmez); yayımlanmış yöntem (Gibbs ve Candès 2021) budur.
+# Önceki sürümdeki sınırlar (kötümser >= 1, iyimser >= 0,5) bir kurum ya da yayına dayanmıyordu; sıralı
+# laboratuvarda kötümser ucu gereğinden geniş tuttu (1.000 kayıtta aşım %6,3; sınırsız %9,7, Kupiec p = 0,75).
+ONLINE_RISK_FLOOR = 0.0
+ONLINE_UPPER_FLOOR = 0.0
+
+
+def track_quantiles(recs: pd.DataFrame, data_end, tail: float = 0.10, eta: float | None = None,
+                    lo_floor: float | None = None, hi_floor: float | None = None, lo_floor_late: float | None = None,
+                    narrow_after: int = 26) -> tuple[dict, pd.DataFrame]:
+    """Uyarlanabilir konformal çıkarım (Gibbs ve Candès 2021; Angelopoulos, Candès ve Tibshirani 2023, P terimi).
+
+    recs sütunları: as_of, until, p10, p50, p90, actual. Kayıtlar tahmin günü sırasıyla işlenir. Her kayda, o gün
+    geçerli olan katsayılarla ayarlanmış bant uygulanır: alt = p50 − w_lo (p50 − p10), üst = p50 + w_hi (p90 − p50).
+    Katsayılar yalnızca o güne kadar ufku dolmuş kayıtlarla güncellenir: w ← w + eta (aşım − 0,10). Aşım, gerçekleşenin
+    o gün GÖSTERİLEN (ayarlanmış) bandın dışında kalmasıdır; geri besleme bu sayede kapanır ve uzun dönemde her uçta
+    aşım oranı %10'a yaklaşır. lo_floor_late: `narrow_after` kayıt dolduktan sonra kötümser katsayının alt sınırı
+    (verilmezse lo_floor kalır). Dönen: son katsayılar ve kayıt başına ayarlanmış bant."""
+    eta = ONLINE_ETA if eta is None else eta
+    lo_floor = ONLINE_RISK_FLOOR if lo_floor is None else lo_floor
+    hi_floor = ONLINE_UPPER_FLOOR if hi_floor is None else hi_floor
+    recs = recs.assign(as_of=pd.to_datetime(recs["as_of"]), until=pd.to_datetime(recs["until"])).sort_values("as_of")
+    data_end = pd.Timestamp(data_end)
+    w_lo = w_hi = 1.0
+    n = 0
+    pending: list[dict] = []
+    out = []
+
+    def mature(upto):
+        nonlocal w_lo, w_hi, n
+        ready = sorted((q for q in pending if q["until"] <= upto and q["until"] <= data_end), key=lambda q: q["until"])
+        for q in ready:
+            floor = lo_floor_late if lo_floor_late is not None and n >= narrow_after else lo_floor
+            w_lo = max(floor, w_lo + eta * (float(q["actual"] < q["lo"]) - tail))
+            w_hi = max(hi_floor, w_hi + eta * (float(q["actual"] > q["hi"]) - tail))
+            n += 1
+            pending.remove(q)
+
+    for r in recs.itertuples():
+        mature(r.as_of)
+        q = {"as_of": r.as_of, "until": r.until, "actual": r.actual,
+             "lo": r.p50 - w_lo * (r.p50 - r.p10), "hi": r.p50 + w_hi * (r.p90 - r.p50), "w_lo": w_lo, "w_hi": w_hi}
+        pending.append(q)
+        out.append(q)
+    mature(data_end)
+    return {"lo": w_lo, "hi": w_hi, "n": n}, pd.DataFrame(out)
 
 
 def online_adjustment(table: pd.DataFrame, later: pd.DataFrame, events: pd.DataFrame | None = None,
                       tail: float = 0.10) -> dict:
-    """Çevrimiçi kantil izleme (Angelopoulos, Candès ve Tibshirani 2023, "Conformal PID control", P terimi;
-    Gibbs ve Candès 2021, uyarlanabilir konformal çıkarım).
+    """Pilot tahsilat kayıtlarıyla çevrimiçi kantil izleme (track_quantiles). Kayıt yoksa (1, 1). Adım küçük olduğu
+    için (0,1 × 0,1 = haftada en fazla %1 daralma) az kayıtla bant ancak çok az daralabilir.
 
-    İşletmenin ufku dolmuş haftalık tahsilat kayıtları dolma sırasıyla işlenir. Her uç için katsayı
-    w ← w + eta (aşım − 0,10): kayıt o gün gösterilen kötümser (iyimser) değerin altında (üstünde) kaldıysa
-    aşım 1'dir. Uzun dönemde her uçta aşım oranı, verinin nasıl üretildiğinden bağımsız olarak %10'a yaklaşır.
-    Kötümser katsayı 1'in altına inmez: az kayıtla riskin küçümsenmesi kabul edilmez. Kayıt yoksa (1, 1)."""
+    Düzeltme (18.10.2026): önceki sürüm gerçekleşeni ayarlanmamış banda göre değerlendiriyordu; bu durumda katsayı
+    dengeye gelmez (ham bant az aşılıyorsa alt sınıra yapışır, çok aşılıyorsa sınırsız büyür)."""
     if table is None or not len(table):
         return {"lo": 1.0, "hi": 1.0, "n": 0}
     rec = table[table.get("target", pd.Series("tahsilat", index=table.index)).fillna("tahsilat") == "tahsilat"]
@@ -346,17 +395,13 @@ def online_adjustment(table: pd.DataFrame, later: pd.DataFrame, events: pd.DataF
     issued = later.set_index(later["invoice_id"].astype(str))["issue_date"]
     ev = events.assign(issue=events["invoice_id"].astype(str).map(issued))
     data_end = max(later["issue_date"].max(), events["date"].max() if len(events) else later["issue_date"].max())
-    w_lo = w_hi = 1.0
-    n = 0
-    for r in rec.assign(until=pd.to_datetime(rec["until"]), as_of=pd.to_datetime(rec["as_of"])).sort_values("until").itertuples():
-        if r.until > data_end:
-            continue
-        hit = (ev["issue"] <= r.as_of) & (ev["date"] > r.as_of) & (ev["date"] <= r.until)
-        actual = float(ev.loc[hit, "amount"].sum())
-        w_lo = max(ONLINE_RISK_FLOOR, w_lo + ONLINE_ETA * (float(actual < r.p10) - tail))
-        w_hi = max(ONLINE_UPPER_FLOOR, w_hi + ONLINE_ETA * (float(actual > r.p90) - tail))
-        n += 1
-    return {"lo": w_lo, "hi": w_hi, "n": n}
+    rec = rec.assign(until=pd.to_datetime(rec["until"]), as_of=pd.to_datetime(rec["as_of"]))
+    rec = rec.assign(actual=[float(ev.loc[(ev["issue"] <= a) & (ev["date"] > a) & (ev["date"] <= u), "amount"].sum())
+                             for a, u in zip(rec["as_of"], rec["until"])])
+    if "p50" not in rec:
+        rec = rec.assign(p50=(rec["p10"] + rec["p90"]) / 2)
+    state, _ = track_quantiles(rec[["as_of", "until", "p10", "p50", "p90", "actual"]], data_end, tail)
+    return state
 
 
 def records_from_table(table: pd.DataFrame) -> list[dict]:
