@@ -17,19 +17,24 @@ Düzeltme sapmayı işletmelerin %93'ünde azalttı (fark +0,12 ± 0,01). Aralı
 
 **Sınav (sürüm 5, tohum 4, 240 işletme):** alt aşım %5, üst %14 (Basel yeşil, Kupiec alt p = 0,006, üst p = 0,052), Spiegelhalter p = 0,55. Zayıf bölge yok. Geliştirmede (tohum 1): alt %5, üst %11.
 
-**Kötümser kaymanın kaynağı bulundu.** Sürüm 3–5'in altı koşusunda kötümser uç %5–6, iyimser uç %10–14 aşıldı. 120 işletmede tahmin bileşenlerine ayrıldı. Her bileşen için gerçekleşenin simülasyon dağılımındaki yeri (PIT; doğru kalibrasyonda ortalama 0,50, uçlarda %10) ölçüldü:
+**Kötümser kaymanın kaynağı (bileşen analizi).** Sürüm 3–5'in altı koşusunda kötümser uç %5–6, iyimser uç %10–14 aşıldı. 120 işletmede tahmin bileşenlerine ayrıldı. Her bileşen için gerçekleşenin simülasyon dağılımındaki yeri (PIT) ölçüldü; doğru kalibrasyonda ortalama 0,50 ve uçlarda %10 beklenir.
 
 | Bileşen | Ortalama PIT | P10 altı | P90 üstü |
 |---|---|---|---|
 | Açık faturaların tahsilatı | 0,50 | %5,0 | %2,5 |
 | Yeni satışların tutarı | 0,53 | %10,8 | %11,7 |
-| **Yeni satışların tahsilatı** | **0,60** | %7,5 | **%17,5** |
+| Yeni satışların tahsilatı (taksit kapalı) | 0,55 | %9,2 | %12,5 |
 
-Açık faturalar ve yeni satış tutarı kalibre. Kayma, yeni kesilecek faturaların tahsil zamanlamasından geliyor. Bu faturalarda ufuk içinde tahsil edilen pay modelde 1,7 ± 1,1 puan düşük. Ödenenlerin medyan gecikmesi modelde 9,5 gün, gerçekte 8 gün. Bu bileşenin bandı da dar.
+- **Düzeltme notu:** Bu bölümün ilk yazımında yeni satış tahsilatı için PIT 0,60 verilmişti. O ölçüm, simülasyondaki ilk taksitleri saymayan tanı betiğinden geliyordu ve taksitli senaryolarda değeri olduğundan yüksek gösteriyordu. Doğru değer, taksit kapalıyken ölçülen 0,55'tir.
+- **Yorum:** Açık faturalar ve yeni satış tutarı kalibre. Yeni satışların tahsilatında küçük bir kötümserlik var. Bu faturalarda ufuk içinde tahsil edilen pay modelde 1,7 ± 1,1 puan düşük; ödenenlerin medyan gecikmesi modelde 9,5 gün, gerçekte 8 gün.
+- **Kötümser ucun genişliği:** Asıl kaynak tasarımdır. Konformal genişletme ve çevrimiçi izleme kötümser bandı hiç daraltmaz.
 
-Denenen bir açıklama reddedildi. Varsayım şuydu: kalibrasyonun açık faturalardan öğrenilip yeni faturalara uygulanması onları yavaşlatıyor. Yeni faturalarda kalibrasyon kapatılınca PIT 0,60'tan 0,65'e çıktı; yani kalibrasyon onları zaten hızlandırıyor.
+**Denenip reddedilenler (eşleştirilmiş, aynı işletmeler):**
+1. *Yeni satışlarda açık faturaların kalibrasyonunu kapatmak.* Varsayım, bu kalibrasyonun yeni faturaları yavaşlattığıydı. Kapatınca yeni satış tahsilatı daha da geç kaldı; kalibrasyon onları zaten hızlandırıyormuş.
+2. *Yeni faturalar için ayrı yeniden ayar grubu.* Her geçmiş tarihten sonra kesilen faturaların ödeme günleri, o günkü modelle tahmin edilip gerçekleşenle karşılaştırıldı. Geçmiş tarihlerde bu faturalar zaten kalibre çıktı; ayar sonucu değiştirmedi. Etkisi gösterilemediği için koddan çıkarıldı.
+3. *Deneysel Bayes büzmesi* (beta-binom, moment yöntemi). Çek ve taksit alışkanlığında müşteri oranlarını sabit 10 fatura yerine veriden tahmin edilen güçle büzme denendi. Müşteri oranları belirgin biçimde doğruladı: taksitçi müşteri 0,96, eski yöntemde ~0,77. Ama 160 işletmede uçtan uca kazanç yok: sapma farkı +0,003 ± 0,009, aralık skoru farkı +0,03 ± 0,05. Çekteki iyimserlik ile taksitteki kötümserlik birbirini dengeliyor. Kural gereği eski yöntem korundu.
 
-**Sıradaki adım.** Konformal toplam ayarı şu an yalnızca açık faturaların tahsilatına dayanıyor. Yeni satış tahsilatını da kapsayacak biçimde genişletilecek: işletmenin geçmiş tarihlerinde yeni satış tahmini kurulacak, simüle edilecek ve gerçekleşen tahsilatla karşılaştırılacak. Değişiklik önce geliştirme kümesinde denenecek, sonra yeni tohumlarla sınanacak.
+**Sonuç ve sıradaki adım.** Laboratuvarın ölçebildiği yöntemsel kaynaklar giderildi ya da etkisiz çıktı. Kalan sapma güvenli yönde ve ihtiyat ilkesinden kaynaklanıyor. Bunun düzeltmesi işletmenin kendi gerçekleşmelerine bağlı: pilot kayıtları biriktikçe çevrimiçi kantil izlemenin kötümser uçta da bir alt sınırla daraltabilmesi. Bu, pilot protokolünde ön kayıtlı güncellemedir.
 
 ## Sürüm 4: kısmi ödemeler ve eksik vade (18 Ekim 2026)
 
