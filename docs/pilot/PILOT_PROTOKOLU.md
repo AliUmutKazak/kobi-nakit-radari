@@ -1,6 +1,6 @@
 # Pilot Protokolü
 
-Sürüm 1.5 — 18 Ekim 2026. 1.5: çevrimiçi ayarda aşım, o gün gösterilen (ayarlanmış) banda göre ölçülür; kaynağa dayanmayan katsayı sınırları kaldırıldı; tahsilat kaydı ölçüldüğü tanımla (kapanış ve kısmi tahsilatlar) hesaplanır (bkz. 6. bölüm sonu). 1.4 — 17 Ekim 2026. 1.4: Kupiec p değeri kesin binom hesabıyla; pilot sırasında çevrimiçi kantil izleme; pilot sonrası olasılık yeniden ayarı önceden kaydedildi (bkz. 6. bölüm sonu). 1.3 — 16 Ekim 2026. 1.1: Ek A hukuk müşavirliği taslağına göre güncellendi, Ek D eklendi. 1.2: bağımsız derin inceleme (15.10.2026) üzerine ölçüm tanımları kesinleştirildi. **1.3: kendi belirlediğimiz eşikler (B1'de +2 puan tolerans, B2'de %70 bant içi) kaldırıldı; yerlerine uluslararası ve Türkiye'de geçerli standart testler kondu (Basel Komitesi / BDDK geriye dönük test bölgeleri, Kupiec kapsama testi, Diebold-Mariano testi).** Bütün değişiklikler pilot verisi görülmeden yapıldı. Bu belge, ilk gerçek işletme verisi görülmeden yazılmıştır. Başarı ölçütleri pilot sırasında değiştirilmez; değişiklik gerekirse yeni sürüm numarasıyla, gerekçesiyle ve hangi verinin görüldüğü belirtilerek yapılır.
+Sürüm 1.6 — 20 Ekim 2026. 1.6: ileriye dönük pilottan önce geriye dönük aşama eklendi (5. bölüm başı); ilk yükleme süresi ve mesaj gönderim oranı betimleyici ölçüt oldu; dondurma ve kabul kuralı yazıldı. Ölçütler ve eşikler değişmedi. Pilot verisi görülmeden yapıldı. Sürüm 1.5 — 18 Ekim 2026. 1.5: çevrimiçi ayarda aşım, o gün gösterilen (ayarlanmış) banda göre ölçülür; kaynağa dayanmayan katsayı sınırları kaldırıldı; tahsilat kaydı ölçüldüğü tanımla (kapanış ve kısmi tahsilatlar) hesaplanır (bkz. 6. bölüm sonu). 1.4 — 17 Ekim 2026. 1.4: Kupiec p değeri kesin binom hesabıyla; pilot sırasında çevrimiçi kantil izleme; pilot sonrası olasılık yeniden ayarı önceden kaydedildi (bkz. 6. bölüm sonu). 1.3 — 16 Ekim 2026. 1.1: Ek A hukuk müşavirliği taslağına göre güncellendi, Ek D eklendi. 1.2: bağımsız derin inceleme (15.10.2026) üzerine ölçüm tanımları kesinleştirildi. **1.3: kendi belirlediğimiz eşikler (B1'de +2 puan tolerans, B2'de %70 bant içi) kaldırıldı; yerlerine uluslararası ve Türkiye'de geçerli standart testler kondu (Basel Komitesi / BDDK geriye dönük test bölgeleri, Kupiec kapsama testi, Diebold-Mariano testi).** Bütün değişiklikler pilot verisi görülmeden yapıldı. Bu belge, ilk gerçek işletme verisi görülmeden yazılmıştır. Başarı ölçütleri pilot sırasında değiştirilmez; değişiklik gerekirse yeni sürüm numarasıyla, gerekçesiyle ve hangi verinin görüldüğü belirtilerek yapılır.
 
 ## 1. Amaç
 
@@ -50,6 +50,13 @@ Hedef: farklı sektörlerden 5–10 işletme. Mali müşavir aracılığıyla ul
 
 ## 5. Önceden kayıtlı ölçütler
 
+**Aşama 0: geriye dönük test (1.6).** İleriye dönük kayıtlar başlamadan önce her işletmenin son 12–24 aylık verisiyle panelin geri testi ("Tahmin doğruluğu" sekmesi, "Geri testi çalıştır") yapılır. Bu test geçmiş tarihlerde yalnızca o güne kadarki veriyle tahmin kurar. Modeli aynı basit yöntemlerle karşılaştırır (Diebold-Mariano) ve bandı Basel trafik ışığı ile Kupiec testiyle sınar. Sonuç günler içinde alınır ve işletmeye ilk görüşmede gösterilir.
+- Aşama 0 sonucu B1/B2 kararının yerine geçmez. Geri testte geçmiş veriye sonradan bakma riski vardır (ör. sonradan düzeltilmiş kayıtlar). Bu yüzden ayrıca raporlanır.
+- Aşama 0'da bir işletmede model "geride" çıkarsa, o işletmede ileriye dönük dönemde varsayılan gösterim en iyi basit yöntemdir. Model yine kaydedilir ve B1'de ölçülür.
+- Aşama 0'da hiçbir parametre değiştirilmez.
+
+**Dondurma ve kabul kuralı (1.6).** Pilot bitene kadar modele, senaryo laboratuvarına ve istatistik çerçevesine yeni sürüm ya da test eklenmez. İstisna, sonucu yalnızca daha ihtiyatlı yapan güvenlik düzeltmeleridir. Bir uç Basel yeşil bölgesinde ve Kupiec testi geçiyorsa (p ≥ 0,05) o sonuç kabul edilir ve ayar yapılmaz. Yeşil bölgenin sınırı gözlem sayısına bağlıdır: 100 gözlemde 14 aşıma (%14), 240 gözlemde 31 aşıma (%12,9) kadar.
+
 Her pilot raporu "İleriye dönük kayıt" bölümünde, o gün açık faturalardan önümüzdeki 14 ve 30 günde tahsil edilecek tutarı dört yöntemle yazar: model (kötümser P10 / orta P50 / iyimser P90) ve üç basit yöntem:
 
 - **Vadesinde öder:** vadesi ufuk içinde olan ya da geçmiş her fatura ödenir. KOBİ'lerin çoğunun fiilen yaptığı varsayım.
@@ -93,6 +100,8 @@ Her pilot raporu "İleriye dönük kayıt" bölümünde, o gün açık faturalar
 - Eşleşmeyen banka tahsilatı oranı (veri kalitesi).
 - **Hedef B, kapanış kasası:** her kayıtta açılış kasasından başlayıp bilinen giderler, borçlar, çekler, açık faturalar ve (açıksa) yeni satışlarla 7, 14 ve 28 gün sonraki kasa (P10/P50/P90) yazılır. Gerçekleşen, ufkun sonuna ±3 gün içindeki kayıtta kullanıcının o gün girdiği kasa ve banka toplamıdır (yalnızca o gün güncellenmiş bakiyeler kullanılır). Karşılaştırma: "kasa değişmez". Hedef A'dan ayrı raporlanır; toplam nakit isabeti tahsilat isabetiyle karıştırılmaz. Kapsam dışı kaynaklar (ör. gider dosyası yok) kayıt künyesinde yazılıdır.
 - Pilot sonu görüşmesi: en çok ve en az işe yarayan bölüm, güvenilmeyen sayı, eksik özellik.
+- **Fizibilite (1.6):** ilk yüklemeden ilk kasa bandına kadar geçen süre ve bu sırada yardım gerekip gerekmediği; dosyaların hangi muhasebe programından ve kim tarafından (işletme ya da mali müşavir) çıkarıldığı. Bu bilgi hazır şablonların hangi programlar için yapılacağını belirler.
+- **Aksiyon (1.6):** önerilen tahsilat taslaklarından gönderilenlerin oranı ve kanalı (WhatsApp, e-posta, telefon).
 
 **Pilot sırasında çevrimiçi ayar (önceden kayıtlı algoritma).** Her işletmenin bandı, ufku dolmuş kendi haftalık tahsilat kayıtlarıyla iki uçta ayrı ayrı güncellenir: katsayı ← katsayı + 0,1 × (aşım − 0,10) (Gibbs ve Candès 2021, uyarlanabilir konformal çıkarım; Angelopoulos, Candès ve Tibshirani 2023). Aşım, gerçekleşenin o gün gösterilen, yani o günkü katsayılarla ayarlanmış bandın dışında kalmasıdır. Katsayıların tek sınırı sıfırdır (bant ters dönmez). Bu bir el ayarı değil, önceden tanımlı bir algoritmadır; pilot verisine bakılarak değiştirilmez. Uygulanan katsayılar kayıt künyesine yazılır.
 
@@ -197,6 +206,7 @@ Ek A imzalandıktan sonra veriyi hazırlayacak mali müşavire ya da ön muhaseb
 
 **2. Hazırlık adımları.**
 - Ek A, İşletme, Proje ve Mali Müşavir arasında imzalanmadan paket hazırlanmaz.
+- Bilgisayarda disk şifrelemesi açık olmalı (Ayarlar → Gizlilik ve güvenlik → Cihaz şifrelemesi ya da BitLocker). Kapalıysa pilot verisi yüklenmez.
 - Uygulamayı kendi bilgisayarınızda açın; "Kendi verim" → "İşletme ekle" ile işletmeyi ekleyin; dosyaları yükleyin (fatura listesi ya da cari ekstre, banka ekstresi; varsa giderler, ödenecekler, çekler). Veriler bilgisayarınızdan çıkmaz.
 - Sol menü → "5. Pilot: takma adlı veri paketi" → "Pilota katılıyorum" kutusunu işaretleyin; sonra "Takma adlı paketi hazırla".
 - Zip'i açıp kontrol edin:
@@ -207,4 +217,6 @@ Ek A imzalandıktan sonra veriyi hazırlayacak mali müşavire ya da ön muhaseb
 - Paketi 7-Zip (AES-256) ile parolalayın ya da uçtan uca şifreli bir kanaldan gönderin; parolayı başka bir kanaldan (telefon, SMS) iletin. Şifresiz e-posta eki kullanmayın.
 - %LOCALAPPDATA%\KobiRadar\anonim_anahtar.txt dosyasını paylaşmayın ve silmeyin: sonraki aylarda aynı müşterinin aynı takma adı alması bu dosyaya bağlıdır. Bilgisayar değişecekse dosyayı güvenli biçimde taşıyın.
 
-**3. Her hafta (13 hafta).** Pazartesi güncel fatura ve banka dosyalarını yükleyin ve tahmin tarihini bugün bırakarak paneli açın; haftalık kayıt kendiliğinden alınır. "Tahmin doğruluğu" sekmesinden pilot raporunu indirip saklayın; Ek B'deki iki soruyu cevaplayın.
+**3. İlk gün: geriye dönük test (Aşama 0).** Dosyalar en az 12, mümkünse 24 aylık geçmişi kapsamalı. Yüklemeden sonra "Tahmin doğruluğu" sekmesinde "Geri testi çalıştır" düğmesine basın ve pilot raporunu indirin; sonuç işletmeyle ilk görüşmede konuşulur. Şunları not edin: dosyaların hangi programdan alındığı, ilk yüklemeden ilk kasa grafiğine kadar geçen süre, sütun eşleştirmesi ya da başka bir yardım gerekip gerekmediği.
+
+**4. Her hafta (13 hafta).** Pazartesi güncel fatura ve banka dosyalarını yükleyin ve tahmin tarihini bugün bırakarak paneli açın; haftalık kayıt kendiliğinden alınır. "Tahmin doğruluğu" sekmesinden pilot raporunu indirip saklayın; Ek B'deki iki soruyu cevaplayın.

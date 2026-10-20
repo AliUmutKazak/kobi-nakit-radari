@@ -28,6 +28,11 @@ STAGES = {"hatirlatma": "Hatırlatma", "mutabakat": "Mutabakat", "resmi": "Resm�
 st.set_page_config(page_title="KOBİ Nakit Akışı Radarı", layout="wide")
 
 
+# Bu olasılıktan itibaren risk "en az" diye gösterilir: doğrulamada yüksek riskte gerçekleşme gösterilenden yüksekti
+# (%80 → %92; docs/DOGRULAMA.md). Yeniden ayar (izotonik) gerçek sonuç verisi gerektirir, pilot sonrasına kayıtlı.
+HIGH_RISK = 0.5
+
+
 def tl(x, compact: bool = False) -> str:
     """Türkçe para biçimi: 2.108.055 TL; compact=True ise 2,1 mn TL."""
     x = float(x)
@@ -381,8 +386,10 @@ with st.sidebar:
         with st.expander("1. Temel bilgiler", expanded=True):
             as_of = st.date_input("Tahmin tarihi", format="DD.MM.YYYY",
                                   help="Genellikle bugün. Geçmiş bir tarih seçerseniz o güne kadarki veriyle tahmin yapılır.")
-            opening = st.number_input("Kasa ve bankadaki toplam para (TL)", 0.0, value=float(store.get("opening", 0)),
-                                      step=10_000.0,
+            opening_key = f"opening::{store.path}"
+            if opening_key not in st.session_state:
+                st.session_state[opening_key] = float(store.get("opening", 0))
+            opening = st.number_input("Kasa ve bankadaki toplam para (TL)", 0.0, key=opening_key, step=10_000.0,
                                       help="Her kullanımda güncelleyin; tahmin bu tutardan başlar. Yalnızca gerçekten "
                                            "elinizde olan para: kredili mevduat (KMH), kredi kartı ya da kredi limiti, "
                                            "blokeli tutarlar ve henüz tahsil edilmemiş çekler dahil değildir. Limiti "
@@ -391,6 +398,13 @@ with st.sidebar:
                 st.caption(f"Yüklenen banka ekstresinde son bakiye: {tl(float(store.get('bank_balance')))} "
                            f"({pd.Timestamp(store.get('bank_balance_date')):%d.%m.%Y}). Kasadaki nakit ve başka "
                            "bankalardaki hesaplar bu tutara dahil değildir.")
+                if float(store.get("bank_balance")) >= 0:
+                    def use_bank_balance(key=opening_key, value=float(store.get("bank_balance"))):
+                        st.session_state[key] = value
+
+                    st.button("Ekstre bakiyesini kasa tutarına yaz", on_click=use_bank_balance,
+                              help="Tek banka hesabınız varsa ve kasada nakit yoksa her hafta elle girmek yerine bunu "
+                                   "kullanın. Başka hesaplarınız varsa onları ekleyin.")
             saved_through = store.get("payments_through", "")
             through = st.date_input("Tahsilatlar hangi tarihe kadar işlendi? (isteğe bağlı)", format="DD.MM.YYYY",
                                     value=pd.Timestamp(saved_through).date() if saved_through else None,
@@ -728,10 +742,12 @@ c[1].metric("Açık alacak", tl(m["open_ar"], compact=True), help="Müşterileri
 c[2].metric("Vadesi geçmiş", tl(m["overdue_ar"], compact=True), help="Açık alacağın vadesi dolmuş kısmı.")
 c[3].metric("Ortalama tahsil süresi", f"{m['dso']:.0f} gün",
             help="Alacaklarınız ortalama kaç günlük satışa denk geliyor (DSO). Düşük olması iyidir.")
-c[4].metric("Eksiye düşme riski", f"%{sim.prob_any_breach * 100:.0f}",
+risk_pct = f"%{sim.prob_any_breach * 100:.0f}"
+c[4].metric("Eksiye düşme riski", f"en az {risk_pct}" if sim.prob_any_breach >= HIGH_RISK else risk_pct,
             help="Önümüzdeki 90 gün içinde kasanın en az bir gün eksiye düşme olasılığı. Bağımsız doğrulamada bu "
                  "olasılıklar ortaya doğru sıkışık çıktı (Spiegelhalter testi): yüksek riskte gerçek risk gösterilenden "
-                 "yüksek, düşük riskte düşük. Karar için kötümser çizgiyi esas alın.")
+                 "yüksek, düşük riskte düşük. Bu yüzden %50 ve üzerindeki değerler \"en az\" diye gösterilir. "
+                 "Karar için kötümser çizgiyi esas alın.")
 if own and store.get("sector"):
     line = benchmark.compare(m["dso"], store.get("sector"), store.get("size", "kucuk"))
     if line:
@@ -742,8 +758,8 @@ if shortfall < 0:
     st.warning(f"Kötü durumda ortalama açık: en kötü 10 senaryonun ortalamasında kasa en derin noktasında "
                f"{tl(-shortfall)} eksiye düşüyor. Eksiye düşme olasılığı açığın derinliğini göstermez; bu tutar, "
                "hazır tutulması gereken ek kaynak (kredi limiti, erteleme, erken tahsilat) için bir ölçüdür.")
-if sim.prob_any_breach >= 0.5:
-    st.error(f"Eksiye düşme riski yüksek (%{sim.prob_any_breach * 100:.0f}). Bağımsız doğrulamada %80 gösterilen "
+if sim.prob_any_breach >= HIGH_RISK:
+    st.error(f"Eksiye düşme riski yüksek (en az %{sim.prob_any_breach * 100:.0f}). Bağımsız doğrulamada %80 gösterilen "
              "durumlarda gerçekleşme %92 oldu: yüksek riskte gerçek risk gösterilenden daha yüksek olabilir. "
              "Ödeme ve tahsilat kararlarını kötümser senaryoya göre verin.")
 
@@ -1057,8 +1073,14 @@ with tab_accuracy:
                     "fark_guven_araligi": "Model eksi en iyi basit yöntem, %90 aralık",
                     "dm_sonuc": "İsabet testi (Diebold-Mariano)", "alt_asim": "Kötümserin altı (adet)",
                     "ust_asim": "İyimserin üstü (adet)", "basel_alt": "Basel bölgesi (alt uç)",
-                    "kupiec_p": "Kupiec p değeri", "B1": "B1 (isabet)", "B2": "B2 (aralık)"}),
+                    "kupiec_p": "Kupiec p değeri", "B1": "B1 (isabet)", "B2": "B2 (aralık)"}).drop(
+                    columns=["eksik_hafta", "kasa_guncel_olmayan_kayit"], errors="ignore"),
                     width="stretch", hide_index=True)
+                gaps, stale = int(summary["eksik_hafta"].iloc[0]), int(summary["kasa_guncel_olmayan_kayit"].iloc[0])
+                if gaps or stale:
+                    st.warning(f"Kayıt alınmayan hafta: {gaps}. Kasa tutarı o gün güncellenmemiş kayıt: {stale} (bunlar "
+                               "kapanış kasası ölçümüne girmez). Eksik haftalar sonuçların dayandığı kayıt sayısını azaltır; "
+                               "her hafta bir kez açıp güncel dosyaları yüklemek yeterlidir.")
                 st.caption("Ölçütler uluslararası standartlardır, kendi eşiğimiz yoktur. B1: Diebold-Mariano testi "
                            "(Harvey-Leybourne-Newbold düzeltmesi, %5): model basit yöntemlerden anlamlı biçimde kötü "
                            "değilse geçer. B2: kötümser uç için Basel Komitesi trafik ışığı (BIS 1996) yeşil ve Kupiec "
@@ -1177,6 +1199,10 @@ with tab_collect:
         identity = actions.sender_identity_problem(seller)
         if identity:
             st.error(identity + " Kimlik tamamlanana kadar gönderme düğmeleri kapalıdır.")
+        else:
+            with st.expander("Taslağı kopyala"):
+                st.caption("Sağ üstteki simgeyle panoya kopyalayıp istediğiniz kanaldan (WhatsApp, SMS, e-posta) gönderin.")
+                st.code(body, language=None, wrap_lines=True)
         st.warning(actions.FORMAL_NOTICE_WARNING)
         if draft["note"]:
             st.info(draft["note"])

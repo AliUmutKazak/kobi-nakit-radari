@@ -550,6 +550,9 @@ def load_ledger(file, default_terms: int = 30, fallback_customer: str | None = N
 # "Alınan çekler", "Senedi alındı", "Bono". "Çekim" gibi ilgisiz sözcükler eşleşmez.
 CHEQUE_WORDS = re.compile(r"\b(cek|ceki|cekler|cekleri|cekle|senet|senedi|senetler|senetle|bono|bonosu)\b")
 CHEQUE_EXCLUDED = ("ciro", "iskonto", "faktoring", "tahsil edildi", "odendi", "karsiliksiz", "iade")
+# Kullanıcının "riskli" diye işaretlediği çek (keşidecinin durumunu en iyi işletme bilir): ihtiyatlılık gereği kasaya
+# sayılmaz, ayrı listelenir. Protestolu evrak da buraya girer.
+CHEQUE_RISKY = ("riskli", "supheli", "sorunlu", "takipte", "protesto")
 
 
 def load_cheques(file, rates: dict | None = None):
@@ -570,12 +573,17 @@ def load_cheques(file, rates: dict | None = None):
     if "currency" in df:
         out["currency"] = code
     out = out.dropna(subset=["date", "amount"]).query("amount > 0")
-    gone = out["status"].map(_key).map(lambda s: any(w in s for w in CHEQUE_EXCLUDED))
+    risky = out["status"].map(_key).map(lambda s: any(w in s for w in CHEQUE_RISKY))
+    if risky.any():
+        notes.append(f"DİKKAT: riskli olarak işaretlediğiniz {int(risky.sum())} çek/senet "
+                     f"({out.loc[risky, 'amount'].sum():,.0f} TL) kasaya sayılmadı. Tahsil edilirse kasa daha iyi olur; "
+                     "durumu değişirse dosyada \"Durum\" sütununu güncelleyin.")
+    gone = out["status"].map(_key).map(lambda s: any(w in s for w in CHEQUE_EXCLUDED)) & ~risky
     if gone.any():
         notes.append(f"{int(gone.sum())} çek/senet ({out.loc[gone, 'amount'].sum():,.0f} TL) cirolanmış, iskontoya verilmiş "
                      "ya da sonuçlanmış olduğu için tahmine katılmadı. Ciro edilen çek karşılıksız çıkarsa, aksi şart "
                      "edilmedikçe tedarikçiye karşı sorumluluğunuz sürer (TTK m.818 yollamasıyla m.685 ve 724).")
-    return out[~gone].drop(columns="status").reset_index(drop=True), notes
+    return out[~gone & ~risky].drop(columns="status").reset_index(drop=True), notes
 
 
 # Tam günlük resmî tatiller (2429 sayılı Ulusal Bayram ve Genel Tatiller Hakkında Kanun; tarihler: Diyanet İşleri

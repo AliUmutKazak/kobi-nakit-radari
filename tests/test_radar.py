@@ -1000,6 +1000,10 @@ def test_partial_payments_and_closing_cash_are_scored_from_events():
     row = summary[summary["hedef"] == "kasa"].iloc[0]
     assert detail.loc[detail["hedef"] == "kasa", "gerceklesen"].iloc[0] == 1300.0
     assert row["sapma_model_%"] < row["sapma_sabit_%"]                             # 100 TL'ye karşı 300 TL hata
+    assert row["eksik_hafta"] == 0 and row["kasa_guncel_olmayan_kayit"] == 0
+    k3 = {**k2, "as_of": "2026-10-31", "meta": {}}                                  # 24 Ekim haftası atlandı
+    row = pilot.score([k1, k2, k3], paid, events=ev)[1].query("hedef == 'kasa'").iloc[0]
+    assert row["eksik_hafta"] == 1 and row["kasa_guncel_olmayan_kayit"] == 1
     # Eşleşmesi düşük kayıt uyarılıdır ve tahsilat ölçümüne girmez.
     weak = {**rec, "meta": {"eslesme_orani": 0.5}}
     assert pilot.score([weak], paid, events=ev)[1].empty
@@ -1582,3 +1586,13 @@ def test_fx_conformal_widening_only_widens():
             assert 1.0 <= k <= 3.0
     # Borç tarafında son yıllarda kur sıçramaları %10'dan sık aştığı için bant açıldı.
     assert fx.conformal_k("USD", "2026-10-01", 60, "up", False) > 1.0
+
+
+def test_cheques_marked_risky_are_not_counted(tmp_path):
+    from radar import ingest
+    (tmp_path / "cek.csv").write_text("Vade;Tutar;Keşideci;Durum\n20.11.2026;10.000,00;A;portföyde\n"
+                                      "21.11.2026;5.000,00;B;Riskli\n22.11.2026;3.000,00;C;ciro edildi\n"
+                                      "23.11.2026;2.000,00;D;Şüpheli\n", encoding="utf-8")
+    chq, notes = ingest.load_cheques(tmp_path / "cek.csv")
+    assert chq["amount"].tolist() == [10000.0]
+    assert any(n.startswith("DİKKAT") and "2 çek" in n for n in notes)

@@ -529,6 +529,11 @@ def score(records: list[dict], later: pd.DataFrame, events: pd.DataFrame | None 
     detail = pd.DataFrame(rows)
     if detail.empty:
         return detail, pd.DataFrame()
+    # Eksik haftalar ve güncellenmemiş kasa (1.6, betimleyici): sonuçların kaç kayda dayandığı açıkça görünsün.
+    days = sorted({pd.Timestamp(r["as_of"]).normalize() for r in records})
+    weeks = (days[-1] - days[0]).days // 7 + 1 if days else 0
+    missing_weeks = max(0, weeks - len({(d - days[0]).days // 7 for d in days}))
+    stale_cash = sum(1 for r in records if not r.get("meta", {}).get("acilis_guncel", False))
     rng = np.random.default_rng(seed)
     summary = []
     for (target, h), g_all in detail.groupby(["hedef", "ufuk_gun"]):
@@ -539,6 +544,7 @@ def score(records: list[dict], later: pd.DataFrame, events: pd.DataFrame | None 
         err = lambda d, m: (d[m] - d["gerceklesen"]).abs().sum(min_count=len(d)) / (d["gerceklesen"].abs().sum() or float("nan")) * 100
         e = {m: err(g, m) for m in ["model"] + methods}
         row = {"hedef": target, "ufuk_gun": h, "kayit": len(g), "uyarili_kayit": int(g_all["uyari"].sum()),
+               "eksik_hafta": missing_weeks, "kasa_guncel_olmayan_kayit": stale_cash,
                "sapma_model_%": e["model"], **{f"sapma_{m}_%": e[m] for m in methods},
                "bant_ici": g["bant_ici"].mean(),
                "bant_genisligi_%": (g["p90"] - g["p10"]).sum() / (g["gerceklesen"].abs().sum() or float("nan")) * 100,
