@@ -121,6 +121,46 @@ def _split_args(habits: dict | None, inv: pd.DataFrame, n_sims: int, seed: int) 
     return {"split_p": p, "split_frac": frac, "split_u": u}
 
 
+def unplanned_outflows(bank_out: pd.DataFrame | None, planned: pd.DataFrame | None, as_of, horizon: int = 90,
+                       window_days: int = 90, min_history_days: int = 60) -> tuple[pd.DataFrame, dict | None]:
+    """Gider planının eksiksizliği, işletmenin kendi banka çıkışlarıyla karşılaştırılır.
+
+    Kasa tahmininde giderler kullanıcının girdiği plandan gelir. Plan eksikse (unutulan vergi, SGK, tedarikçi,
+    kredi taksidi) kasa olduğundan dolu görünür; küçük işletmede en sık hata kaynağı budur. Son `window_days`
+    günde bankadan çıkan aylık ortalama tutar, önümüzdeki `horizon` gün için planlanan aylık ortalamayla
+    karşılaştırılır. Plan geçmişin altındaysa fark "plan dışı ödemeler (tahmini)" olarak haftalık eşit
+    paylarla eklenir. Dayanak: ihtiyatlılık; giderler olduğundan düşük gösterilmez (KGK Kavramsal Çerçeve
+    md. 142; 1 Sıra No.lu Muhasebe Sistemi Uygulama Genel Tebliği). Rakam bir eşikten değil, işletmenin kendi
+    banka geçmişinden gelir. Banka geçmişi `min_history_days`'ten kısaysa karşılaştırma yapılmaz.
+    Dönen: (eklenecek satırlar: date, amount, label; özet ya da None)."""
+    empty = pd.DataFrame(columns=["date", "amount", "label"])
+    if bank_out is None or not len(bank_out):
+        return empty, None
+    as_of = pd.Timestamp(as_of)
+    hist = bank_out[bank_out["date"] <= as_of]
+    if not len(hist):
+        return empty, None
+    end = hist["date"].max()
+    span = min(window_days, (end - hist["date"].min()).days + 1)
+    if span < min_history_days:
+        return empty, None
+    recent = hist[hist["date"] > end - pd.Timedelta(days=span)]
+    hist_month = float(recent["amount"].sum()) / span * 30.4
+    plan = planned if planned is not None else empty
+    in_h = plan[(pd.to_datetime(plan["date"]) > as_of) & (pd.to_datetime(plan["date"]) <= as_of + pd.Timedelta(days=horizon))]
+    plan_month = float(in_h["amount"].sum()) / horizon * 30.4
+    gap = hist_month - plan_month
+    info = {"hist_month": hist_month, "plan_month": plan_month, "gap_month": max(gap, 0.0), "span_days": span}
+    if gap <= 0:
+        return empty, info
+    weeks = int(np.ceil(horizon / 7))
+    days = [as_of + pd.Timedelta(days=7 * w + 7) for w in range(weeks)]
+    days = [d for d in days if d <= as_of + pd.Timedelta(days=horizon)]
+    per = gap * horizon / 30.4 / len(days)
+    rows = pd.DataFrame({"date": days, "amount": per, "label": "Plan dışı ödemeler (banka geçmişinden, tahmini)"})
+    return rows, info
+
+
 def payments_cutoff(obs: pd.DataFrame, as_of, window_days: int = 90, alpha: float = 0.05):
     """Tahsilatların kayda hangi güne kadar işlendiği, kayıtlardan tahmin edilir.
 
@@ -484,6 +524,22 @@ def scenario(res: dict, collect_ids=(), collect_in_days: int = 7, delay_labels=(
                     **ctx.get("cheque_args", {}))
 
 
+SAFE_LEVEL = 0.10          # ürünün her yerindeki kötümser senaryo düzeyi (protokolde ön kayıtlı)
+
+
+def safe_to_spend(sim, level: float = SAFE_LEVEL) -> float:
+    """Güvenle harcanabilir tutar: bugün bundan fazlası harcanırsa önümüzdeki dönemde kasanın en az bir gün eksiye
+    düşme olasılığı `level`'i aşar.
+
+    Bugün S harcamak bütün senaryo yollarını S kadar aşağı kaydırır; "eksiye düşme olasılığı en çok %10" koşulu
+    S'nin senaryo başına en düşük kasanın %10'luk yüzdeliğini geçmemesidir. Kasayı fazla göstermenin eksik
+    göstermekten pahalı olduğu kararlarda en iyi tek sayı, maliyet oranına karşılık gelen yüzdeliktir (Gneiting
+    2011, "Quantiles as optimal point forecasts", IJF 27(2)); %10 düzeyi, fazla göstermenin 9 kat pahalı sayılmasına
+    karşılık gelir. Bant dürüst (kalibre) kalır, karar kötümser uçtan verilir (KGK Kavramsal Çerçeve md. 142:
+    ihtiyatlılık, gelirlerin olduğundan yüksek gösterilmemesi; ama kasıtlı olarak düşük gösterilmesi de değil)."""
+    return float(max(0.0, np.quantile(sim.min_balance, level)))
+
+
 def _p10_min(paths: np.ndarray) -> float:
     """Kötümser (P10) kasa çizgisinin en düşük noktası: grafikteki bandın alt kenarı ve "en derin açık" ile aynı tanım."""
     return float(np.percentile(paths, 10, axis=0).min())
@@ -606,8 +662,8 @@ def weekly_table(res: dict, weeks: int = 13) -> pd.DataFrame:
                      "Açık faturalardan beklenen (TL)": float(in_week[~projected].sum()) + chq,
                      "Yeni satışlardan beklenen (TL)": float(in_week[projected].sum()),
                      "Bilinen çıkışlar (TL)": float(out_amt[(out_off >= lo) & (out_off <= hi)].sum()),
-                     "Hafta sonu kasa, orta (P50) (TL)": float(sim.p50[hi]),
                      "Hafta sonu kasa, kötümser (TL)": float(sim.p10[hi]),
+                     "Hafta sonu kasa, orta (P50) (TL)": float(sim.p50[hi]),
                      "Eksiye düşme olasılığı": float(sim.prob_negative[lo:hi + 1].max())})
     return pd.DataFrame(rows)
 

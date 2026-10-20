@@ -30,6 +30,8 @@ ALIASES = {
     "open_amount": ["kalan", "acik tutar", "bakiye", "kalan tutar", "kalan meblag"],
     "phone": ["telefon", "cep", "cep telefonu", "gsm", "whatsapp", "tel", "musteri telefon"],
     "direction": ["b a", "borc alacak", "yon", "islem yonu"],
+    "debit": ["borc", "borc tutari", "cikis", "cikan tutar", "giden"],
+    "balance": ["bakiye", "bakiye tl", "hesap bakiyesi", "kalan bakiye"],
     "status": ["durum", "cek durumu", "statu", "son durum"],
     "disputed": ["itiraz", "itirazli", "ihtilafli", "anlasmazlik"],
     "email": ["e posta", "eposta", "email", "mail", "e mail", "musteri e posta"],
@@ -298,20 +300,69 @@ def load_ubl(files, default_terms: int = 30, rates: dict | None = None):
     return _finish_invoices(df, default_terms, notes, rates), notes
 
 
-def load_payments(file, mapping: dict | None = None):
-    """Banka ekstresi. Zorunlu: tarih, tutar, açıklama. Yalnızca hesaba girişler alınır."""
+def _direction_from_balance(amount: pd.Series, balance: pd.Series) -> pd.Series | None:
+    """Bakiye değişiminden hareketin yönü (+1 giriş, −1 çıkış, NaN bilinmiyor). Ekstre eskiden yeniye ya da
+    yeniden eskiye sıralı olabilir; satırların en az %80'inde |bakiye farkı| = |tutar| tutan sıra seçilir."""
+    a = amount.abs()
+    best, best_hits = None, 0.0
+    for diff in (balance.diff(), balance - balance.shift(-1)):
+        hits = ((diff.abs() - a).abs() <= 0.005 * a + 0.5)
+        rate = hits.sum() / max(int(diff.notna().sum()), 1)       # ilk/son satırın önceki bakiyesi yoktur
+        if rate > best_hits:
+            best, best_hits = np.sign(diff).where(hits), rate
+    return best if best_hits >= 0.8 else None
+
+
+def bank_movements(file, mapping: dict | None = None) -> tuple[pd.DataFrame, pd.DataFrame, list[str]]:
+    """Banka ekstresindeki girişler ve çıkışlar (date, amount, description; tutarlar pozitif) ve notlar.
+
+    Yön sırayla şuradan çıkarılır: B/A (yön) sütunu; ayrı Borç ve Alacak sütunları; eksi işaretli tutar; bakiye
+    değişimi. Hiçbiri yoksa bütün satırlar giriş sayılır ve kullanıcı uyarılır. Önceki sürüm işaretli tutarların
+    mutlak değerini alıyordu: "−15.000" kira ödemesi tahsilat sayılıyordu (kasa olduğundan dolu görünür)."""
     notes: list[str] = []
-    df = _pick(_read(file), PAYMENT_FIELDS + ["direction"], PAYMENT_REQUIRED, mapping)
-    incoming = (df["direction"].map(_key).str.startswith("a", na=False) if "direction" in df
-                else pd.Series(True, index=df.index))       # B/A sütunu varsa yalnızca "A" (alacak) girişlerdir
-    df = pd.DataFrame({"date": _date(df["issue_date"]), "amount": _num(df["amount"]).abs().where(incoming),
-                       "description": df["description"].fillna("")})
-    n = len(df)
-    df = df.dropna(subset=["date", "amount"])
-    df = df[df["amount"] > 0]
-    if len(df) < n:
-        notes.append(f"Ekstrede {n - len(df)} satır atlandı (çıkış hareketi ya da okunamayan tarih/tutar).")
-    return df.reset_index(drop=True), notes
+    df = _pick(_read(file), PAYMENT_FIELDS + ["direction", "debit", "balance"], PAYMENT_REQUIRED, mapping)
+    amt = _num(df["amount"])
+    unknown = pd.Series(False, index=df.index)
+    if "direction" in df:
+        d = df["direction"].map(_key)
+        inflow, outflow = amt.abs().where(d.str.startswith("a", na=False)), amt.abs().where(d.str.startswith("b", na=False))
+    elif "debit" in df:                                       # ayrı Borç / Alacak sütunları
+        inflow, outflow = amt.where(amt > 0), _num(df["debit"]).abs().where(lambda x: x > 0)
+    elif (amt < 0).any():                                     # işaretli tutar
+        inflow, outflow = amt.where(amt > 0), (-amt).where(amt < 0)
+    else:
+        sign = _direction_from_balance(amt, _num(df["balance"])) if "balance" in df else None
+        if sign is not None:
+            inflow, outflow = amt.abs().where(sign > 0), amt.abs().where(sign < 0)
+            unknown = sign.isna() & amt.notna()
+            notes.append("Ekstrede giriş/çıkış sütunu yoktu; yön bakiye değişiminden çıkarıldı.")
+        else:
+            inflow, outflow = amt.abs(), pd.Series(np.nan, index=df.index)
+            notes.append("Ekstrede giriş/çıkış ayrımı (B/A sütunu, Borç/Alacak sütunları, eksi tutar ya da bakiye) "
+                         "bulunamadı; bütün satırlar giriş sayıldı. Ekstrede çıkış hareketleri varsa tahsilatlar olduğundan "
+                         "yüksek görünür: bankadan B/A sütunlu ya da işaretli tutarlı ekstre alın.")
+    date, desc = _date(df["issue_date"]), df["description"].fillna("")
+
+    def frame(values):
+        out = pd.DataFrame({"date": date, "amount": values, "description": desc}).dropna(subset=["date", "amount"])
+        return out[out["amount"] > 0].reset_index(drop=True)
+
+    ins, outs = frame(inflow), frame(outflow)
+    skipped = len(df) - len(ins) - len(outs)
+    if unknown.any():
+        notes.append(f"{int(unknown.sum())} satırın yönü bakiyeden çıkarılamadı ve atlandı.")
+    elif skipped > 0:
+        notes.append(f"Ekstrede {skipped} satır atlandı (okunamayan tarih/tutar).")
+    if len(outs):
+        notes.append(f"Ekstredeki {len(outs)} çıkış hareketi tahsilat sayılmadı; gider planının kontrolünde kullanılır.")
+    return ins, outs, notes
+
+
+def load_payments(file, mapping: dict | None = None):
+    """Banka ekstresi. Zorunlu: tarih, tutar, açıklama. Yalnızca hesaba girişler tahsilat olarak döner
+    (bkz. bank_movements)."""
+    ins, _, notes = bank_movements(file, mapping)
+    return ins, notes
 
 
 PAYABLES_LABEL = "Ödenecek faturalar"

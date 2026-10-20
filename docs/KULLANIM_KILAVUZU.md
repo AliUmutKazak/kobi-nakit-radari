@@ -42,6 +42,8 @@ Sol menüde **"Kendi verim"**i seçin. Ayarlar dört bölümde toplanmıştır.
 
 **Çekle ödeyen müşteriler.** Cari hesap ekstresi yüklerseniz, çekle kapanan faturalar ("çek", "müşteri çeki", "senet" açıklamalı alacak satırları) tanınır. Panel her müşterinin çekle ödeme payını ve çek vadesini sizin kayıtlarınızdan öğrenir. Bu müşterilerin açık faturaları ve yeni satışları için para, fatura kapandığı gün değil çek vadesinde sayılır.
 
+**Banka ekstresi ve plan dışı ödemeler.** Ekstredeki çıkış hareketleri tahsilat sayılmaz. Yön, sırayla B/A sütunundan, Borç/Alacak sütunlarından, eksi işaretli tutardan ya da bakiye değişiminden anlaşılır; hiçbiri yoksa panel uyarır. Panel son 90 günde bankadan çıkan ödemeleri, önümüzdeki 90 gün için planladığınız giderlerle karşılaştırır. Plan geçmişin altındaysa fark "plan dışı ödemeler (tahmini)" olarak kasaya eklenir: unutulan bir gider kasayı olduğundan dolu gösterir. Fark tek seferlik bir ödemeden (ör. yatırım, kendi hesaplarınız arası aktarım) geliyorsa "Diğer ayarlar"dan kapatabilirsiniz. Çıkışların yalnızca tarihi ve tutarı saklanır.
+
 **Olası mükerrer faturalar.** Aynı fatura numarası yüklemede bir kez sayılır. Aynı müşteriye aynı gün aynı tutarla, ama farklı numarayla kesilmiş faturalar varsa panel veri notlarında bunları gösterir. Aynı fatura iki kez girildiyse (ör. elle ve e-faturadan) dosyadan birini çıkarın; aksi hâlde alacak iki kez sayılır. Gerçekten ayrı faturalarsa bir şey yapmanız gerekmez; panel hiçbir kaydı kendiliğinden silmez.
 
 **Taksitle ödeyen müşteriler.** Bir fatura birden çok tahsilatla kapanmışsa (banka ekstresindeki eşleşmelerden ya da cari hesap ekstresindeki alacak satırlarından), panel bu müşterinin taksit alışkanlığını öğrenir: faturaların ne kadarını taksitle kapattığı, ilk taksidin tutarın ne kadarı olduğu ve ne zaman geldiği. Henüz hiç ödenmemiş faturalarında ilk taksit, kapanıştan önce kasaya sayılır. Kısmen ödenmiş faturalarda yalnızca kalan tutar beklenir.
@@ -79,7 +81,7 @@ Biçimi görmek için panelin ilk ekranında örnek dosyaları indirebilirsiniz.
 
 ## 4. Paneli okumak
 
-**Üst satır.** Kasa ve banka, açık alacak, vadesi geçmiş alacak, ortalama tahsil süresi ve eksiye düşme riski (önümüzdeki 90 günde kasanın en az bir gün eksiye düşme olasılığı). Her başlığın yanındaki soru işaretinin üzerine gelince açıklaması çıkar. Uyarılar ve veri notları bunların hemen altındadır.
+**Üst satır.** Kasa ve banka, açık alacak, vadesi geçmiş alacak, ortalama tahsil süresi, eksiye düşme riski (önümüzdeki 90 günde kasanın en az bir gün eksiye düşme olasılığı) ve **güvenle harcanabilir tutar**. Bu sonuncusu harcama kararları için ana sayıdır: bugün bundan fazlasını plan dışı harcarsanız, önümüzdeki 90 günde kasanın eksiye düşmesi 10 benzer durumun 1'inden sık olur. Orta (P50) değer "yarı yarıya" demektir; harcama kararını ona göre değil, kötümser çizgiye ve bu tutara göre verin. Her başlığın yanındaki soru işaretinin üzerine gelince açıklaması çıkar. Uyarılar ve veri notları bunların hemen altındadır.
 
 **"Kasa tahmini" sekmesi.**
 - Mavi bant, kasanızın %80 olasılıkla içinde kalacağı aralıktır; ortadaki çizgi orta tahmindir (P50, medyan: gerçekleşenin bunun altında ya da üstünde kalma olasılığı eşittir; ortalama değildir). Kırmızı kesikli çizgi sıfırdır.

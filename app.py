@@ -102,6 +102,15 @@ def save_upload(store: Store, name: str, uploads, parse) -> None:
     store.set(f"hash_{name}", digest)
 
 
+def parse_bank(uploads):
+    """Banka ekstresi: girişler tahsilat tablosuna, çıkışlar gider planı kontrolü için ayrı tabloya."""
+    ins, outs, notes = ingest.bank_movements(_open(uploads[0]), json.loads(store.get("map_payments", "{}")))
+    # Yalnızca tarih ve tutar saklanır: açıklamada çalışan ya da tedarikçi adı bulunabilir ve kontrol için gerekmez
+    # (KVKK m.4/2-ç: amaçla bağlantılı, sınırlı ve ölçülü işleme).
+    store.save("bank_outflows", outs[["date", "amount"]])
+    return ins, notes
+
+
 def parse_invoices(uploads, terms, rates):
     frames, notes = [], []
     xml = [_open(u) for u in uploads if u.name.lower().endswith(".xml")]
@@ -186,6 +195,17 @@ def run_own(path: str, rev: int, as_of: str, include_projected: bool):
         outflows = flows if outflows is None else pd.concat([outflows, flows], ignore_index=True)
     if cheques is not None:
         notes.append(f"Çek/senet portföyü: {len(cheques)} adet, {tl(cheques['amount'].sum())}.")
+    # Gider planı, işletmenin kendi banka çıkışlarıyla karşılaştırılır; eksikse fark tahmini olarak eklenir.
+    extra, gap = pipeline.unplanned_outflows(store.load("bank_outflows"), outflows, as_of)
+    if gap is not None:
+        notes.append(f"Son {gap['span_days']} günde bankadan ayda ortalama {tl(gap['hist_month'])} ödeme çıktı; önümüzdeki "
+                     f"90 gün için planlanan giderler ayda {tl(gap['plan_month'])}.")
+        if len(extra) and store.get("auto_unplanned", "1") == "1":
+            notes.append(f"Aradaki fark (ayda {tl(gap['gap_month'])}) plan dışı ödemeler olarak kasa planına eklendi: "
+                         "plan eksikse kasa olduğundan dolu görünür. Bu farkı oluşturan ödemeler (ör. tek seferlik yatırım, "
+                         "kendi hesaplarınız arası aktarım) bir daha olmayacaksa \"Diğer ayarlar\"dan kapatabilirsiniz.")
+            extra = extra.assign(kaynak="Banka ekstresi (geçmiş ortalama)", tur="Tahmin (plan dışı)")
+            outflows = extra if outflows is None else pd.concat([outflows, extra], ignore_index=True)
     # Pilot kayıtları biriktikçe bant iki uçta ayrı ayrı çevrimiçi ayarlanır (pilot.online_adjustment).
     # Tahsilat olayları: banka eşleştirmesi varsa onun dağıtımları, yoksa cari hesap ekstresindeki dağıtımlar.
     if allocations is None:
@@ -427,6 +447,11 @@ with st.sidebar:
                                         "karşılaştırılır ve takma adlı pakete eklenir.")
             store.set("pilot_on", int(pilot_on))
         with st.expander("Diğer ayarlar"):
+            auto_unplanned = st.checkbox("Plan dışı ödemeleri banka geçmişinden ekle", store.get("auto_unplanned", "1") == "1",
+                                         help="Banka ekstresi yüklüyse son 90 günün gerçek çıkışları planladığınız giderlerle "
+                                              "karşılaştırılır; plan geçmişin altındaysa fark tahmini gider olarak eklenir "
+                                              "(ihtiyatlılık: giderler olduğundan düşük gösterilmez).")
+            store.set("auto_unplanned", "1" if auto_unplanned else "0")
             match_tol = st.number_input(
                 "Banka eşleştirme toleransı (TL)", 0.0, 1000.0, float(store.get("match_tol", 0.01)), step=1.0,
                 help="Gelen para ile fatura tutarı arasında kabul edilen fark (ör. havale masrafı). Yükseltirseniz "
@@ -445,6 +470,8 @@ with st.sidebar:
                 which = st.selectbox("Son yüklemeyi geri al", undoable, format_func=names.get)
                 if st.button("Önceki dosyaya dön"):
                     store.undo(which)
+                    if which == "payments" and store.can_undo("bank_outflows"):
+                        store.undo("bank_outflows")
                     if which == "invoices" and store.can_undo("ledger_events"):
                         store.undo("ledger_events")             # olaylar satış dosyasıyla birlikte geri alınır
                     store.set(f"hash_{which}", "")
@@ -515,8 +542,7 @@ with st.sidebar:
             store.set(f"fixed_{k}", v)
         save_upload(store, "invoices", invoice_upload,
                     lambda ups: parse_invoices(ups, int(terms), ingest.parse_rates(rates_text)))
-        save_upload(store, "payments", uploads["payments"],
-                    lambda ups: ingest.load_payments(_open(ups[0]), json.loads(store.get("map_payments", "{}"))))
+        save_upload(store, "payments", uploads["payments"], lambda ups: parse_bank(ups))
         save_upload(store, "outflows", uploads["outflows"], lambda ups: (ingest.load_schedule(_open(ups[0])), []))
         save_upload(store, "payables", uploads["payables"], lambda ups: ingest.load_payables(_open(ups[0]), int(terms)))
         save_upload(store, "cheques", uploads["cheques"], lambda ups: ingest.load_cheques(_open(ups[0])))
@@ -622,8 +648,12 @@ if res["simple_model"]:
 if not res["has_outflows"]:
     st.warning("Gider planı yüklenmedi: grafik yalnızca tahsilatları gösteriyor, kasa açığı hesaplanamaz.")
 
-c = st.columns(5)
+c = st.columns(6)
 c[0].metric("Kasa ve banka", tl(res["opening"], compact=True), help="Bugün kasada ve bankada olan toplam para.")
+c[5].metric("Güvenle harcanabilir", tl(pipeline.safe_to_spend(sim), compact=True),
+            help="Bugün bundan fazlasını plan dışı harcarsanız, önümüzdeki 90 günde kasanın en az bir gün eksiye düşmesi "
+                 "10 benzer durumun 1'inden sıktır. Kötümser senaryodan hesaplanır: kasayı olduğundan dolu göstermek, "
+                 "biraz eksik göstermekten daha pahalıdır. Yeni satışlar hesaba katılıyorsa onların gelmeme riski de dahildir.")
 c[1].metric("Açık alacak", tl(m["open_ar"], compact=True), help="Müşterilerin henüz ödemediği faturaların toplamı.")
 c[2].metric("Vadesi geçmiş", tl(m["overdue_ar"], compact=True), help="Açık alacağın vadesi dolmuş kısmı.")
 c[3].metric("Ortalama tahsil süresi", f"{m['dso']:.0f} gün",

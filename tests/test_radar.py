@@ -680,7 +680,7 @@ def test_dashboard_renders_demo_and_own_data_without_errors(tmp_path, monkeypatc
 
     at = AppTest.from_file(str(root / "app.py"), default_timeout=300).run()
     assert not at.exception, [e.value for e in at.exception]
-    assert len(at.metric) == 5 and at.metric[0].value.endswith("TL") and "," in at.metric[0].value
+    assert len(at.metric) == 6 and at.metric[0].value.endswith("TL") and "," in at.metric[0].value
     at.sidebar.radio[0].set_value("Kendi verim").run()
     at.sidebar.date_input[0].set_value(datetime.date(2026, 10, 1)).run()
     assert not at.exception, [e.value for e in at.exception]
@@ -702,11 +702,11 @@ def test_dashboard_renders_demo_and_own_data_without_errors(tmp_path, monkeypatc
     assert not at.exception, [e.value for e in at.exception]
     assert at.session_state["active_business"] == "Deneme Ltd." and len(at.metric) == 0
     at.sidebar.selectbox[0].set_value("İşletmem").run()
-    assert not at.exception and len(at.metric) == 9              # 5 özet + 4 veri kalitesi
+    assert not at.exception and len(at.metric) == 10             # 6 özet + 4 veri kalitesi
     # Tanıtım için örnek işletme: bugünün tarihli uydurma veriyle dolu, eski veri uyarısı yok.
     next(b for b in at.sidebar.button if b.label == "Tanıtım için örnek işletme ekle").click().run()
     assert not at.exception, [e.value for e in at.exception]
-    assert at.session_state["active_business"] == "Örnek İşletme (uydurma veri)" and len(at.metric) == 9
+    assert at.session_state["active_business"] == "Örnek İşletme (uydurma veri)" and len(at.metric) == 10
     assert not any("en son hareket" in e.value for e in at.error)
     at.sidebar.selectbox[0].set_value("İşletmem").run()
     at.sidebar.date_input[0].set_value(datetime.date(2026, 10, 20)).run()
@@ -1144,7 +1144,7 @@ def test_panel_password_gate(tmp_path, monkeypatch):
     assert any("Parola yanlış" in e.value for e in at.error) and len(at.metric) == 0
     at.text_input[0].set_value("dogru-parola-1").run()
     at.button[0].click().run()
-    assert not at.exception and len(at.metric) == 5                       # demo şirket açıldı
+    assert not at.exception and len(at.metric) == 6                       # demo şirket açıldı
 
 
 def test_online_quantile_tracking_moves_each_tail_separately():
@@ -1346,3 +1346,49 @@ def test_online_tracking_converges_on_the_shown_band():
     assert 1.8 < state["hi"] < 3.4                      # eski (ham bantla) yöntemde ~6,5'e kadar büyürdü
     late = band.iloc[n // 2:]
     assert 0.04 < (late["actual"] > late["hi"]).mean() < 0.18
+
+
+def test_bank_statement_direction_never_counts_outgoing_as_collection(tmp_path):
+    from radar import ingest
+    cases = {
+        "isaretli.csv": ("Tarih;Açıklama;Tutar;Bakiye\n01.10.2026;GELEN HAVALE EGE;10.000,00;50.000,00\n"
+                         "02.10.2026;KIRA;-15.000,00;35.000,00\n03.10.2026;SGK;-4.000,00;31.000,00\n"),
+        "borc_alacak.csv": ("Tarih;Açıklama;Borç;Alacak;Bakiye\n01.10.2026;GELEN HAVALE;;10.000,00;50.000,00\n"
+                            "02.10.2026;KIRA;15.000,00;;35.000,00\n03.10.2026;SGK;4.000,00;;31.000,00\n"),
+        "bakiye.csv": ("Tarih;Açıklama;Tutar;Bakiye\n03.10.2026;SGK;4.000,00;31.000,00\n02.10.2026;KIRA;15.000,00;35.000,00\n"
+                       "01.10.2026;GELEN HAVALE;10.000,00;50.000,00\n30.09.2026;ACILIS;1,00;40.000,00\n"),
+    }
+    for name, text in cases.items():
+        (tmp_path / name).write_text(text, encoding="utf-8")
+        ins, outs, _ = ingest.bank_movements(tmp_path / name)
+        # Önceki sürümde işaretli ekstrede kira ve SGK (−15.000, −4.000) tahsilat sayılıyordu.
+        assert list(ins["amount"]) == [10000.0] and sorted(outs["amount"]) == [4000.0, 15000.0], name
+    (tmp_path / "yonsuz.csv").write_text("Tarih;Açıklama;Tutar\n01.10.2026;GELEN;10.000,00\n", encoding="utf-8")
+    _, _, notes = ingest.bank_movements(tmp_path / "yonsuz.csv")
+    assert any("giriş/çıkış ayrımı" in n for n in notes)
+
+
+def test_unplanned_outflows_from_bank_history():
+    as_of = pd.Timestamp("2026-10-01")
+    bank = pd.DataFrame({"date": pd.date_range("2026-07-03", periods=90), "amount": 1000.0})   # ayda ~30.400 TL
+    plan = pd.DataFrame({"date": [as_of + pd.Timedelta(days=d) for d in (5, 35, 65)], "amount": 10_000.0})  # ayda ~10.100
+    rows, info = pipeline.unplanned_outflows(bank, plan, as_of)
+    assert info["hist_month"] == pytest.approx(30_400, rel=0.01) and info["gap_month"] > 19_000
+    assert rows["amount"].sum() == pytest.approx(info["gap_month"] * 90 / 30.4, rel=0.01)
+    full_plan = pd.DataFrame({"date": [as_of + pd.Timedelta(days=d) for d in range(1, 91)], "amount": 1100.0})
+    rows2, info2 = pipeline.unplanned_outflows(bank, full_plan, as_of)
+    assert len(rows2) == 0 and info2["gap_month"] == 0
+    assert pipeline.unplanned_outflows(bank.head(30), plan, as_of)[1] is None        # geçmiş kısa: karşılaştırma yok
+
+
+def test_safe_to_spend_keeps_breach_probability_at_ten_percent():
+    from radar.simulate import SimResult
+    rng = np.random.default_rng(1)
+    mins = rng.normal(100_000, 40_000, 5000)
+    sim = SimResult(dates=None, p10=None, p50=None, p90=None, prob_negative=None, prob_any_breach=None,
+                    min_balance=mins, breach_day=None, pay_day=None, collections=None, paths=None)
+    s = pipeline.safe_to_spend(sim)
+    assert ((mins - s) < 0).mean() == pytest.approx(0.10, abs=0.005)       # harcandığında eksiye düşme olasılığı %10
+    sim2 = SimResult(dates=None, p10=None, p50=None, p90=None, prob_negative=None, prob_any_breach=None,
+                     min_balance=mins - 300_000, breach_day=None, pay_day=None, collections=None, paths=None)
+    assert pipeline.safe_to_spend(sim2) == 0.0
