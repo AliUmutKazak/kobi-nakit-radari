@@ -772,6 +772,11 @@ c[4].metric("Eksiye düşme riski", f"en az {risk_pct}" if sim.prob_any_breach >
                  "olasılıklar ortaya doğru sıkışık çıktı (Spiegelhalter testi): yüksek riskte gerçek risk gösterilenden "
                  "yüksek, düşük riskte düşük. Bu yüzden %50 ve üzerindeki değerler \"en az\" diye gösterilir. "
                  "Karar için kötümser çizgiyi esas alın.")
+# Frekans biçimi (Spiegelhalter, Pearson ve Short 2011, Science 333): sabit paydalı sayı ve iki sonuç birlikte.
+_bad = int(round(sim.prob_any_breach * 100))
+_high = sim.prob_any_breach >= HIGH_RISK
+st.caption(f"100 olası senaryo: {'en az ' if _high else ''}{_bad} senaryoda kasa önümüzdeki 90 günde en az bir gün eksiye "
+           f"düşüyor, {'en çok ' if _high else ''}{100 - _bad} senaryoda düşmüyor.")
 if own and store.get("sector"):
     line = benchmark.compare(m["dso"], store.get("sector"), store.get("size", "kucuk"))
     if line:
@@ -1074,26 +1079,43 @@ with tab_accuracy:
                        f"en az {pilot.RETRO_MIN_ORIGINS} haftalık tahmin günü gerekir (yaklaşık 8 aylık veri).")
         elif st.button(f"Aşama 0 testini çalıştır ({n_retro} hafta; bilgisayara göre birkaç dakika sürer)"):
             bar = st.progress(0.0, text="Geçmiş haftalar tek tek tahmin ediliyor...")
-            retro = pilot.retrospective(res["obs"], res["as_of"],
+            retro = pilot.retrospective(res["obs"], res["as_of"], events=res.get("events"),
                                         progress=lambda f: bar.progress(f, text=f"Geçmiş haftalar: %{f * 100:.0f}"))
             bar.empty()
             store.set("retro_result", retro.to_json(orient="records", force_ascii=False))
             saved = {"data": data_key, "n": n_retro, "ran": f"{pd.Timestamp.now():%d.%m.%Y %H:%M}"}
             store.set("retro_meta", json.dumps(saved))
             store.audit("Aşama 0 geri testi", f"{n_retro} hafta")
+            # B1 kabul marjı (protokol 1.7): ilk ileriye dönük kayıt alınana kadar son Aşama 0'dan; sonra dondurulur.
+            if not len(store.pilot_records()) and "b1_m2" in retro:
+                store.set("b1_margins", json.dumps({
+                    "m2": {str(int(r["ufuk_gun"])): r["b1_m2"] for _, r in retro.iterrows() if pd.notna(r.get("b1_m2"))},
+                    "m1": {str(int(r["ufuk_gun"])): r["b1_m1"] for _, r in retro.iterrows() if pd.notna(r.get("b1_m1"))},
+                    "tarih": saved["ran"]}))
         if saved and store.get("retro_result", ""):
             retro = pd.read_json(io.StringIO(store.get("retro_result")), orient="records")
             if saved.get("data") != data_key:
                 st.caption(f"Son Aşama 0 testi {saved.get('ran')} tarihinde, o günkü verilerle yapıldı. Veriler değiştiyse "
                            "yeniden çalıştırın.")
+            frozen = json.loads(store.get("b1_margins", "{}"))
+            if frozen:
+                m2 = frozen.get("m2", {})
+                st.caption("B1 kabul marjı (protokol 1.7; FDA 2016 eşdeğerlik yaklaşımı): "
+                           + ("; ".join(f"{h} gün {float(v):.1f} puan" for h, v in m2.items()) if m2 else
+                              "belirlenemedi (en iyi basit yöntem \"vadesinde öder\"den anlamlı biçimde iyi çıkmadı; "
+                              "B1 yalnızca model üstün çıkarsa geçer)")
+                           + f". Hesap tarihi {frozen.get('tarih')}; "
+                           + ("ilk ileriye dönük kayıt alındığı için dondurulmuştur." if len(store.pilot_records())
+                              else "ilk ileriye dönük kayıt alınınca dondurulur."))
             show_table(retro.assign(**{c: retro[c].map(verdict_text) for c in ("B1", "B2") if c in retro}).rename(columns={
                 "ufuk_gun": "Ufuk (gün)", "tahmin_tarihi_sayisi": "Tahmin günü", "sapma_model_%": "Model (%)",
                 "sapma_medyan_%": "Müşteri medyanı (%)", "sapma_vade_%": "Vadesinde öder (%)",
                 "sapma_oran_%": "Tahsilat oranı (%)", "bant_ici": "Bant içinde", "bant_genisligi_%": "Bant genişliği (%)",
                 "aralik_skoru_%": "Aralık skoru (%)", "dm_sonuc": "İsabet testi (Diebold-Mariano)",
                 "dm_kiyas": "Kıyaslanan yöntem", "alt_asim": "Kötümserin altı (adet)", "ust_asim": "İyimserin üstü (adet)",
-                "basel_alt": "Basel bölgesi (alt uç)", "kupiec_p": "Kupiec p değeri", "B1": "B1 (isabet)",
-                "B2": "B2 (aralık)"}), width="stretch", hide_index=True)
+                "basel_alt": "Basel bölgesi (alt uç)", "kupiec_p": "Kupiec p değeri", "B1": "Diebold-Mariano: geride değil",
+                "B2": "B2 (aralık)", "b1_m1": "Kontrol etkisi M1 (puan)", "b1_m2": "B1 marjı M2 (puan)",
+                "b1_kontrol": "Kontrol yöntemi"}), width="stretch", hide_index=True)
             st.caption("Haftalık tahmin günlerinin ufukları üst üste biner; isabet testi bunu hesaba katar. Geriye dönük "
                        "test geçmiş kayıtlara sonradan bakar (ör. sonradan düzeltilen kayıtlar); bu yüzden ileriye dönük "
                        "pilotun kararının yerine geçmez. Model bir ufukta \"geride\" çıkarsa, protokole göre o işletmede "
@@ -1116,7 +1138,9 @@ with tab_accuracy:
             reason = pilot.record_due(records, res["as_of"], res.get("last_activity"))
             if reason:
                 st.caption(reason)
-            detail, summary = pilot.score(pilot.records_from_table(records), res["obs"], events=res.get("events"))
+            frozen_m2 = {int(h): float(v) for h, v in json.loads(store.get("b1_margins", "{}")).get("m2", {}).items()}
+            detail, summary = pilot.score(pilot.records_from_table(records), res["obs"], events=res.get("events"),
+                                          margins=frozen_m2)
             parts = pilot.component_variance(records, res["obs"], res.get("events"), store.load("bank_outflows"))
             if len(parts):
                 st.write("Kasa kayıtlarında kalem bazında beklenen ve gerçekleşen (AFP önerisi: kasa ıskaladığında hatanın "
@@ -1130,7 +1154,7 @@ with tab_accuracy:
                          "kasa ve banka toplamı.")
                 view = summary.assign(
                     hedef=summary["hedef"].map({"tahsilat": "Tahsilat", "kasa": "Kapanış kasası"}),
-                    fark_guven_araligi=summary["fark_guven_araligi"].map(
+                    fark_guven_araligi=summary["fark_guven_araligi_95"].map(
                         lambda v: f"{v[0]:+.1f} / {v[1]:+.1f} puan" if isinstance(v, tuple) else "az kayıt"),
                     **{c: summary[c].map(verdict_text) for c in ("B1", "B2") if c in summary})
                 show_table(view.rename(columns={
@@ -1139,22 +1163,28 @@ with tab_accuracy:
                     "sapma_oran_%": "Tahsilat oranı (%)", "sapma_vade_%": "Vadesinde öder (%)",
                     "sapma_sabit_%": "Kasa değişmez (%)", "bant_ici": "Bant içinde",
                     "bant_genisligi_%": "Bant genişliği (%)", "aralik_skoru_%": "Aralık skoru (%)",
-                    "fark_guven_araligi": "Model eksi en iyi basit yöntem, %90 aralık",
+                    "fark_guven_araligi": "Model eksi en iyi basit yöntem, %95 aralık", "B1_marj": "B1 marjı (puan)",
+                    "B1_sonuc": "B1 sonucu",
                     "dm_sonuc": "İsabet testi (Diebold-Mariano)", "alt_asim": "Kötümserin altı (adet)",
                     "ust_asim": "İyimserin üstü (adet)", "basel_alt": "Basel bölgesi (alt uç)",
-                    "kupiec_p": "Kupiec p değeri", "B1": "B1 (isabet)", "B2": "B2 (aralık)"}).drop(
-                    columns=["eksik_hafta", "kasa_guncel_olmayan_kayit"], errors="ignore"),
+                    "kupiec_p": "Kupiec p değeri", "B1": "B1 (isabet)", "B2": "B2 (aralık)",
+                    "ortusmeyen_kayit": "Örtüşmeyen kayıt", "ortusmeyen_alt_asim": "Örtüşmeyen: kötümserin altı",
+                    "ortusmeyen_ust_asim": "Örtüşmeyen: iyimserin üstü",
+                    "ortusmeyen_kupiec_p": "Örtüşmeyen: Kupiec p"}).drop(
+                    columns=["eksik_hafta", "kasa_guncel_olmayan_kayit", "fark_guven_araligi_95"], errors="ignore"),
                     width="stretch", hide_index=True)
                 gaps, stale = int(summary["eksik_hafta"].iloc[0]), int(summary["kasa_guncel_olmayan_kayit"].iloc[0])
                 if gaps or stale:
                     st.warning(f"Kayıt alınmayan hafta: {gaps}. Kasa tutarı o gün güncellenmemiş kayıt: {stale} (bunlar "
                                "kapanış kasası ölçümüne girmez). Eksik haftalar sonuçların dayandığı kayıt sayısını azaltır; "
                                "her hafta bir kez açıp güncel dosyaları yüklemek yeterlidir.")
-                st.caption("Ölçütler uluslararası standartlardır, kendi eşiğimiz yoktur. B1: Diebold-Mariano testi "
-                           "(Harvey-Leybourne-Newbold düzeltmesi, %5): model basit yöntemlerden anlamlı biçimde kötü "
-                           "değilse geçer. B2: kötümser uç için Basel Komitesi trafik ışığı (BIS 1996) yeşil ve Kupiec "
-                           "(1995) kapsama testleri reddetmiyorsa geçer. Haftalık kayıtların ufukları üst üste bindiği "
-                           "için kayıtlar bağımsız sayılmaz; testler bunu hesaba katar.")
+                st.caption("Ölçütler uluslararası standartlardır, kendi eşiğimiz yoktur. B1 (protokol 1.7): model eksi en "
+                           "iyi basit yöntem sapma farkının %95 güven aralığının üst sınırı, Aşama 0'dan dondurulan "
+                           "marjın altındaysa \"eşdeğer\", sıfırın altındaysa \"üstün\"; değilse \"kanıtlanamadı\" "
+                           "(FDA 2016 eşdeğerlik yaklaşımı). Diebold-Mariano sonucu ayrıca gösterilir. B2: kötümser uç için Basel Komitesi trafik ışığı (BIS 1996) yeşil ve Kupiec "
+                           "(1995) kapsama testleri reddetmiyorsa geçer. Haftalık kayıtların ufukları üst üste biner: "
+                           "isabet testi ve güven aralığı bunu hesaba katar, Basel ve Kupiec katmaz (Christoffersen "
+                           "1998). Bu yüzden aşımlar örtüşmeyen alt örneklemle (her ufuk süresinde bir kayıt) de verilir.")
             else:
                 st.caption("Henüz süresi dolan kayıt yok: ilk karşılaştırma, ilk kayıttan 7–14 gün sonra yapılır.")
             show_table(records.drop(columns=["created", "meta"]).rename(columns={

@@ -148,7 +148,7 @@ def retro_origins(obs: pd.DataFrame, as_of, horizons=(14, 30)) -> int:
     return int(max(0, min(RETRO_MAX_ORIGINS, span // RETRO_STEP + 1)))
 
 
-def retrospective(obs: pd.DataFrame, as_of, progress=None) -> pd.DataFrame | None:
+def retrospective(obs: pd.DataFrame, as_of, progress=None, events: pd.DataFrame | None = None) -> pd.DataFrame | None:
     """Aşama 0: geriye dönük pilot testi. Sonuç, ileriye dönük B1/B2 ile aynı ölçütlerle (Diebold-Mariano,
     Basel trafik ışığı, Kupiec) ufuk başına özet tablodur; yeterli geçmiş yoksa None. Haftalık tahmin günlerinin
     ufukları üst üste biner: Diebold-Mariano bunu hesaba katar, Basel ve Kupiec katmaz (ileriye dönük pilottaki
@@ -156,34 +156,126 @@ def retrospective(obs: pd.DataFrame, as_of, progress=None) -> pd.DataFrame | Non
     n = retro_origins(obs, as_of)
     if n < RETRO_MIN_ORIGINS:
         return None
-    return cash_backtest(obs, data_end(obs, as_of), origins=n, step=RETRO_STEP, progress=progress)
+    return cash_backtest(obs, data_end(obs, as_of), origins=n, step=RETRO_STEP, progress=progress, events=events)
 
 
 def cash_backtest(obs: pd.DataFrame, as_of, horizons=(14, 30), origins: int = 4, step: int = 21,
-                  n_sims: int = 500, progress=None) -> pd.DataFrame:
+                  n_sims: int = 500, progress=None, events: pd.DataFrame | None = None,
+                  same_as_forward: bool = True, raw: bool = False) -> pd.DataFrame:
     """Kasa düzeyinde geri test: geçmiş tarihlerde, o gün açık faturalardan 14 ve 30 günde tahsil edilen tutar.
 
-    open_data.cash_study ile aynı ölçüt; farkı, her tahmin tarihinde tek simülasyondan iki ufkun birden
-    okunmasıdır (açılış sıfır, gider ve yeni satış yokken kasa yolu birikmiş tahsilattır). Her ufuk veri
-    kesiminden (as_of) önce biter. Sapmanın yanında bandın ortalama genişliği ve aralık skoru da verilir:
-    yalnızca "bant içinde kaldı mı" sorusu, gereksiz geniş bandı ödüllendirir."""
+    Her tahmin tarihinde tek simülasyondan iki ufuk birden okunur (açılış sıfır, gider ve yeni satış yokken kasa
+    yolu birikmiş tahsilattır). Her ufuk veri kesiminden (as_of) önce biter. Sapmanın yanında bandın ortalama
+    genişliği ve aralık skoru da verilir: yalnızca "bant içinde kaldı mı" sorusu, gereksiz geniş bandı ödüllendirir.
+
+    same_as_forward=True (varsayılan): tanım ileriye dönük kayıtla (forward_record) ve puanlamayla (score) aynıdır.
+    Çekle kapanan fatura kapanış gününde sayılır (çek ayarı kapalı); tahmin günü açık tutar ve taksit alışkanlığı
+    o güne kadarki tahsilat olaylarından gelir; kayıtlar tahmin gününe kadar işlenmiş sayılır; gerçekleşen,
+    tahmin gününden sonraki tahsilat olaylarının toplamıdır (kısmi ödemeler kendi tarihiyle). Dış inceleme
+    (21.10.2026) eski tanımın farklı olduğunu buldu: çekli işletmede model haksız yere "geride" çıkabiliyordu.
+    False yalnızca eski tanımla karşılaştırma içindir. raw=True: özet yerine tahmin günü satırları."""
     as_of, H = pd.Timestamp(as_of), max(horizons)
     full = obs.assign(true_paid_date=obs["paid_date"])
+    ev = collection_events(obs) if events is None else events
+    ev = ev.assign(issue=ev["invoice_id"].astype(str).map(obs.set_index(obs["invoice_id"].astype(str))["issue_date"]))
     rows = []
     for k in range(origins):
         t = as_of - pd.Timedelta(days=H + k * step)
         past = observe(full, t)
-        sim = forecast(past, t, 0.0, pd.DataFrame({"date": [], "amount": []}), H, n_sims,
-                       include_projected=False, seed=k)["sim"]
         was_open = (full["issue_date"] <= t) & ~(full["true_paid_date"] <= t)
+        if same_as_forward:
+            ev_t = ev[ev["date"] <= t]
+            paid_by_t = ev_t.groupby(ev_t["invoice_id"].astype(str))["amount"].sum()
+            # Tahmin günü açık tutar: fatura tutarı eksi o güne kadarki tahsilat olayları (kısmi ödemeler).
+            open_t = (past["amount"] - past["invoice_id"].astype(str).map(paid_by_t).fillna(0.0)).clip(lower=0.0)
+            past["open_amount"] = np.where(past["paid_date"].isna(), open_t, 0.0)
+            sim = forecast(past, t, 0.0, pd.DataFrame({"date": [], "amount": []}), H, n_sims,
+                           include_projected=False, seed=k, cheque_aware=False, events=ev_t,
+                           payments_through=t)["sim"]
+            book = past[(past["paid_date"].isna()) & (past["open_amount"] > 0)]
+            book = book.assign(amount=book["open_amount"])
+        else:
+            sim = forecast(past, t, 0.0, pd.DataFrame({"date": [], "amount": []}), H, n_sims,
+                           include_projected=False, seed=k)["sim"]
+            book = full[was_open]
         for h in horizons:
             end = t + pd.Timedelta(days=h)
-            rows.append({"h": h, "actual": full.loc[was_open & (full["true_paid_date"] <= end), "amount"].sum(),
+            if same_as_forward:
+                actual = ev.loc[(ev["issue"] <= t) & (ev["date"] > t) & (ev["date"] <= end), "amount"].sum()
+            else:
+                actual = full.loc[was_open & (full["true_paid_date"] <= end), "amount"].sum()
+            rows.append({"h": h, "origin": t, "actual": float(actual),
                          "p10": sim.p10[h], "p50": sim.p50[h], "p90": sim.p90[h],
-                         **naive_collections(past, full[was_open], t, end)})
+                         **naive_collections(past, book, t, end)})
         if progress is not None:
             progress((k + 1) / origins)
-    return summarize_backtest(pd.DataFrame(rows), step)
+    bt = pd.DataFrame(rows)
+    return bt if raw else summarize_backtest(bt, step)
+
+
+# Protokol 1.7: B1 eşdeğerlik (non-inferiority) iddiasıdır; kabul marjı önceden belirlenir (FDA 2016, "Non-Inferiority
+# Clinical Trials to Establish Effectiveness"; CONSORT uzantısı, Piaggio vd. 2012). M1: kontrol yönteminin (en iyi
+# güçlü basit yöntem) plaseboya ("vadesinde öder", KOBİ'nin fiilen yaptığı varsayım) karşı geçmişte gösterilmiş
+# üstünlüğü; ihtiyatlı olsun diye %95 güven aralığının alt sınırı. M2 = M1'in %50'si (FDA: kardiyovasküler sonuç
+# çalışmalarında yerleşik uygulama, "etkinin en az yarısını korumak"). Karar: model eksi en iyi basit yöntem farkının
+# iki yönlü %95 güven aralığının üst sınırı M2'den küçükse eşdeğer (FDA: tek yönlü alfa 0,025).
+MARGIN_FRACTION = 0.5
+CI_LEVEL = 95
+
+
+def _err(d: pd.DataFrame, col: str, actual: str) -> float:
+    total = d[actual].abs().sum()
+    return (d[col] - d[actual]).abs().sum() / total * 100 if total else float("nan")
+
+
+def block_bootstrap(g: pd.DataFrame, date_col: str, block: int, stat, n_boot: int = 1000, seed: int = 0) -> np.ndarray:
+    """Tarih blokları yeniden örneklenerek bir istatistiğin dağılımı: üst üste binen ufuklarda ardışık kayıtlar
+    birlikte örneklenir (hareketli blok bootstrap; Künsch 1989)."""
+    rng = np.random.default_rng(seed)
+    dates = sorted(g[date_col].unique())
+    by_date = {x: g[g[date_col] == x] for x in dates}
+    out = []
+    for _ in range(n_boot):
+        starts = rng.integers(0, len(dates), int(np.ceil(len(dates) / block)))
+        pick = [dates[(st + j) % len(dates)] for st in starts for j in range(block)][:len(dates)]
+        out.append(stat(pd.concat([by_date[x] for x in pick])))
+    return np.asarray(out)
+
+
+def ci(values: np.ndarray, level: int = CI_LEVEL) -> tuple[float, float]:
+    tail = (100 - level) / 2
+    return float(np.percentile(values, tail)), float(np.percentile(values, 100 - tail))
+
+
+def b1_margin(g: pd.DataFrame, h: int, step: int, actual: str = "actual", cols=None, date_col: str = "origin",
+              seed: int = 0) -> dict:
+    """Aşama 0 satırlarından B1 kabul marjı (M1, M2; sapma puanı). M1 ≤ 0 ise kontrolün etkisi gösterilemedi:
+    marj belirlenemez ve B1 yalnızca üstünlükle geçer."""
+    cols = cols or {"vade": "naive_due", "medyan": "naive_median", "oran": "naive_rate"}
+    strong = [m for m in ("medyan", "oran") if g[cols[m]].notna().all()]
+    if not strong or len(g[date_col].unique()) < RETRO_MIN_ORIGINS:
+        return {"m1": None, "m2": None}
+    best = min(strong, key=lambda m: _err(g, cols[m], actual))
+    diffs = block_bootstrap(g, date_col, max(1, int(np.ceil(h / step))),
+                            lambda d: _err(d, cols["vade"], actual) - _err(d, cols[best], actual), seed=seed)
+    m1 = ci(diffs)[0]
+    return {"m1": m1, "m2": MARGIN_FRACTION * m1 if m1 > 0 else None, "kontrol": best}
+
+
+def b1_decision(ci95: tuple[float, float] | None, m2: float | None, worse_than_due: bool) -> tuple[bool | None, str]:
+    """Protokol 1.7 B1 kararı: (geçti mi, sonuç)."""
+    if ci95 is None:
+        return None, "değerlendirilemedi (az kayıt)"
+    lo, hi = ci95
+    if worse_than_due:
+        return False, "geride (vadesinde öder'den kötü)"
+    if hi < 0:
+        return True, "üstün"
+    if m2 is not None and hi < m2:
+        return True, "eşdeğer (marj içinde)"
+    if m2 is not None and lo > m2:
+        return False, "geride (marjın dışında)"
+    return False, "kanıtlanamadı" + ("" if m2 is not None else " (marj belirlenemedi)")
 
 
 def summarize_backtest(bt: pd.DataFrame, step: int) -> pd.DataFrame:
@@ -206,7 +298,8 @@ def summarize_backtest(bt: pd.DataFrame, step: int) -> pd.DataFrame:
                     "dm_sonuc": acc["sonuc"], "dm_kiyas": acc["kiyas"], "B1": acc["B1"],
                     "alt_asim": band["below"], "ust_asim": band["above"],
                     "basel_alt": band["basel_lower"]["zone"], "kupiec_p": band["kupiec_central"]["p_value"],
-                    "B2": interval_passes(band)})
+                    "B2": interval_passes(band),
+                    **({f"b1_{k}": v for k, v in b1_margin(g, h, step).items()} if "origin" in g else {})})
     return pd.DataFrame(out)
 
 
@@ -558,7 +651,7 @@ def read_record(page: str) -> dict:
 
 
 def score(records: list[dict], later: pd.DataFrame, events: pd.DataFrame | None = None,
-          n_boot: int = 1000, seed: int = 0) -> tuple[pd.DataFrame, pd.DataFrame]:
+          n_boot: int = 1000, seed: int = 0, margins: dict | None = None) -> tuple[pd.DataFrame, pd.DataFrame]:
     """Ufku dolmuş kayıtları sonradan gelen veriyle karşılaştırır. Dönen ikinci tablo protokol ölçütleridir.
 
     Hedef A (tahsilat): gerçekleşen, tahmin günü açık olan faturalara ufuk içinde gelen tahsilat olaylarının
@@ -566,7 +659,10 @@ def score(records: list[dict], later: pd.DataFrame, events: pd.DataFrame | None 
     Hedef B (kapanış kasası): gerçekleşen, ufkun sonuna en yakın (±3 gün) kayıtta girilmiş güncel kasa.
     Haftalık kayıtların ufukları üst üste biner; bu yüzden kayıtlar bağımsız sayılmaz: model ile en iyi
     basit yöntem arasındaki farkın güven aralığı, tarih bloklarıyla yeniden örneklenerek (blok bootstrap)
-    hesaplanır. Banka eşleşmesi düşük olan kayıtlar uyarılıdır ve B1'e girmez."""
+    hesaplanır. Banka eşleşmesi düşük olan kayıtlar uyarılıdır ve B1'e girmez.
+
+    margins: {ufuk: M2} (protokol 1.7; ilk Aşama 0 testinde dondurulur). B1 tahsilatta marjlı eşdeğerlik
+    kararıdır (b1_decision); Diebold-Mariano sonucu ayrıca betimleyici olarak verilir."""
     events = collection_events(later) if events is None else events
     issued = later.set_index(later["invoice_id"].astype(str))["issue_date"]
     ev = events.assign(issue=events["invoice_id"].astype(str).map(issued))
@@ -604,7 +700,6 @@ def score(records: list[dict], later: pd.DataFrame, events: pd.DataFrame | None 
     weeks = (days[-1] - days[0]).days // 7 + 1 if days else 0
     missing_weeks = max(0, weeks - len({(d - days[0]).days // 7 for d in days}))
     stale_cash = sum(1 for r in records if not r.get("meta", {}).get("acilis_guncel", False))
-    rng = np.random.default_rng(seed)
     summary = []
     for (target, h), g_all in detail.groupby(["hedef", "ufuk_gun"]):
         g = g_all[~g_all["uyari"]] if target == "tahsilat" else g_all
@@ -624,23 +719,33 @@ def score(records: list[dict], later: pd.DataFrame, events: pd.DataFrame | None 
         strong = [m for m in methods if m != "vade" and g[m].notna().all()]
         dates = sorted(g["tahmin_tarihi"].unique())
         block = max(1, int(np.ceil(h / 7)))
+        ci95 = None
         if strong and len(dates) >= 4:
-            diffs = []
-            for _ in range(n_boot):
-                starts = rng.integers(0, len(dates), int(np.ceil(len(dates) / block)))
-                pick = [dates[(s + j) % len(dates)] for s in starts for j in range(block)][:len(dates)]
-                d = pd.concat([g[g["tahmin_tarihi"] == x] for x in pick])
-                diffs.append(err(d, "model") - min(err(d, m) for m in strong))
-            row["fark_guven_araligi"] = (float(np.percentile(diffs, 5)), float(np.percentile(diffs, 95)))
+            diffs = block_bootstrap(g, "tahmin_tarihi", block,
+                                    lambda d: err(d, "model") - min(err(d, m) for m in strong), n_boot, seed)
+            row["fark_guven_araligi"] = ci(diffs, 90)
+            ci95 = ci(diffs)
         else:
             row["fark_guven_araligi"] = None
+        row["fark_guven_araligi_95"] = ci95
         overlap = max(1, int(np.ceil(h / 7)))                    # haftalık kayıtlar: ufuk kaç hafta üst üste biner
         band = interval_report(g["gerceklesen"], g["p10"], g["p90"])
         row.update({"alt_asim": band["below"], "ust_asim": band["above"], "basel_alt": band["basel_lower"]["zone"],
                     "kupiec_p": band["kupiec_central"]["p_value"], "B2": interval_passes(band)})
+        # Basel ve Kupiec aşımların bağımsız olduğunu varsayar (Christoffersen 1998); üst üste binen ufuklarda bu
+        # tutmaz. Betimleyici kontrol: her `block` haftada bir kayıt (örtüşmeyen alt örneklem).
+        sub = g[g["tahmin_tarihi"].isin(dates[::block])]
+        sub_band = interval_report(sub["gerceklesen"], sub["p10"], sub["p90"])
+        row.update({"ortusmeyen_kayit": len(sub), "ortusmeyen_alt_asim": sub_band["below"],
+                    "ortusmeyen_ust_asim": sub_band["above"], "ortusmeyen_kupiec_p": sub_band["kupiec_central"]["p_value"]})
         errors = pd.DataFrame({m: (g[m] - g["gerceklesen"]).abs() for m in ["model"] + methods})
         if target == "tahsilat":
             acc = accuracy_test(errors, overlap)
+            m2 = (margins or {}).get(int(h))
+            vs_due = diebold_mariano(errors["model"], errors["vade"], overlap) if g["vade"].notna().all() else {}
+            passed, result = b1_decision(ci95, m2, vs_due.get("p_worse", 1.0) < SIGNIFICANCE)
+            row.update({"B1_marj": m2, "B1_sonuc": result})
+            acc = {**acc, "B1": passed}
         else:                                                    # kapanış kasası: tek karşılaştırma "kasa değişmez"
             dm = diebold_mariano(errors["model"], errors["sabit"], overlap)
             res = (None if not np.isfinite(dm["p_worse"]) else

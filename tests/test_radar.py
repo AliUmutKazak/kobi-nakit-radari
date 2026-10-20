@@ -1643,3 +1643,37 @@ def test_simple_method_replaces_model_where_retrospective_says_behind(full):
     reps = pilot.simple_replacements(retro, obs, AS_OF)
     assert [r["ufuk_gun"] for r in reps] == [14] and reps[0]["yontem"] == "oran" and reps[0]["tutar"] >= 0
     assert pilot.simple_replacements(retro.assign(dm_sonuc="eşdeğer"), obs, AS_OF) == []
+
+
+def test_retrospective_uses_same_definition_as_forward_record_for_cheque_payers():
+    """Dış inceleme (21.10.2026): Aşama 0 çek ayarı açık ve olaysız çalışıyordu; çekli işletmede model tahsilatı
+    çek vadesine kaydırıyor, gerçekleşen ise kapanışta sayılıyordu. Ölçülen etki (12 hafta, çek payı 0,5): 30 günde
+    sapma %37'den %16'ya indi. Aynı tanımla çekli ve çeksiz işletmenin sonucu aynıdır (kapanış ölçülür)."""
+    from radar import pilot
+    kw = dict(origins=4, step=7)
+    with_cheques = observe(generate(seed=11, as_of=AS_OF, cheque_share=0.5), AS_OF)
+    without = observe(generate(seed=11, as_of=AS_OF, cheque_share=0.0), AS_OF)
+    new = pilot.cash_backtest(with_cheques, AS_OF, **kw)
+    old = pilot.cash_backtest(with_cheques, AS_OF, same_as_forward=False, **kw)
+    ref = pilot.cash_backtest(without, AS_OF, **kw)
+    assert np.allclose(new["sapma_model_%"], ref["sapma_model_%"])
+    assert (old["sapma_model_%"] > new["sapma_model_%"] + 5).all()
+
+
+def test_b1_is_a_non_inferiority_decision_with_prespecified_margin():
+    from radar import pilot
+    assert pilot.b1_decision((-6.0, -1.0), 4.0, False) == (True, "üstün")
+    assert pilot.b1_decision((-2.0, 3.0), 4.0, False) == (True, "eşdeğer (marj içinde)")
+    assert pilot.b1_decision((-2.0, 6.0), 4.0, False) == (False, "kanıtlanamadı")       # az kanıt "geçti" sayılmaz
+    assert pilot.b1_decision((5.0, 9.0), 4.0, False)[1] == "geride (marjın dışında)"
+    assert pilot.b1_decision((-2.0, 3.0), None, False) == (False, "kanıtlanamadı (marj belirlenemedi)")
+    assert pilot.b1_decision((-6.0, -1.0), 4.0, True)[0] is False                      # vadesinde öder'den kötü
+    # Marj: kontrolün (en iyi basit yöntem) "vadesinde öder"e üstünlüğünün %95 alt sınırının yarısı.
+    rng = np.random.default_rng(0)
+    actual = rng.uniform(80, 120, 20)
+    g = pd.DataFrame({"origin": pd.date_range("2026-01-05", periods=20, freq="7D"), "actual": actual,
+                      "naive_due": actual * 1.6, "naive_median": actual * rng.uniform(0.95, 1.05, 20),
+                      "naive_rate": actual * 1.3})
+    m = pilot.b1_margin(g, 14, 7)
+    assert m["kontrol"] == "medyan" and 50 < m["m1"] < 60 and m["m2"] == pytest.approx(m["m1"] / 2)
+    assert pilot.b1_margin(g.assign(naive_due=g["naive_median"]), 14, 7)["m2"] is None   # kontrolün etkisi yok
