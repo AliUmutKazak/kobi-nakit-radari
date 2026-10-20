@@ -66,6 +66,8 @@ Ortak noktalar şunlar: fatura bazında ödeme tahmini, banka ve muhasebe verisi
 | 11 | Karar sayısının seçimi | Orta değere bakılırsa iyimser | **Bugün eklendi:** "güvenle harcanabilir tutar" (%10'luk uçtan); haftalık tabloda kötümser sütun öne alındı |
 | 12 | Tek tek işletmede kısa dönem sapması | İyimser olabilir | Çevrimiçi izleme ortalamada standart; pilot raporu her işletmeyi ayrıca Basel ve Kupiec ile sınıyor |
 | 13 | Tahmin ile gerçekleşenin kalem bazında karşılaştırılması (AFP) | — | **Yapıldı (20.10):** her kasa kaydında açık faturalardan, yeni satışlardan beklenen tahsilat ve planlanan giderler ayrı saklanıyor; ufuk dolunca gerçekleşenle kalem kalem karşılaştırılıyor |
+| 15 | Vergi ödeme gününün tatile denk gelmesi (panel yalnızca hafta sonunu biliyordu) | Tarih kayması (tutar değişmez) | **Yapıldı (20.10):** resmî tatiller eklendi (VUK m.18/4; Diyanet 2026–2027 listeleri) |
+| 16 | Eski kasa tutarı (tahmin girilen tutardan başlar; eski tutar bütün çizgiyi kaydırır) | Kasa sonradan azaldıysa **iyimser** | **Yapıldı (20.10):** kasa tutarı tahmin gününden önce girildiyse ya da ekstre daha yeniyse uyarı; ekstredeki son bakiye girilen tutarın yanında gösteriliyor |
 | 14 | Pazarlama iddiaları | Hukuki risk | Kural konuldu: gerçek veride bağımsız ölçüm olmadan doğruluk iddiası yok |
 
 ## 5. Bugün yapılanlar
@@ -80,6 +82,9 @@ Ortak noktalar şunlar: fatura bazında ödeme tahmini, banka ve muhasebe verisi
 1. **Gider belirsizliği** (madde 3). 30 günlük blok oranları, işletmenin kendi banka çıkışlarından öğreniliyor (en az 90 günlük geçmiş gerekir). Ortalama gider değişmez; yalnızca belirsizliği banda girer. Laboratuvara "aylık gider dalgalanması" boyutu eklendi (sürüm 6).
 2. **Kötü durumda ortalama açık** (Basel FRTB'deki beklenen açık mantığı). En kötü 10 senaryonun ortalamasında kasanın ne kadar eksiye düştüğü, hazır tutulması gereken ek kaynağın bir ölçüsü olarak gösteriliyor.
 3. **Yeni satış payı, ödeme sözü güvenilirliği, kalem bazında tahmin–gerçekleşen** (madde 4, 10, 13).
+
+4. **Resmî tatiller** (madde 15). Muhtasar, KDV ve SGK ödeme günleri hafta sonuna ya da resmî tatile denk gelirse izleyen ilk iş gününe kayıyor. Dini bayram tarihleri her yıl Diyanet listesinden eklenmeli (MEVZUAT_KONTROLU.md, bölüm 5).
+5. **Eski kasa tutarı uyarısı ve ekstre bakiyesi** (madde 16). Ekstrede bakiye sütunu varsa son bakiye ve tarihi, kasa tutarı alanının altında gösteriliyor. Kasadaki nakit ve başka bankalardaki hesaplar o tutara dahil olmadığından iki tutar otomatik eşitlenmiyor; karar kullanıcıda.
 
 ## 7. Kalan açık konular
 

@@ -104,7 +104,10 @@ def save_upload(store: Store, name: str, uploads, parse) -> None:
 
 def parse_bank(uploads):
     """Banka ekstresi: girişler tahsilat tablosuna, çıkışlar gider planı kontrolü için ayrı tabloya."""
-    ins, outs, notes = ingest.bank_movements(_open(uploads[0]), json.loads(store.get("map_payments", "{}")))
+    ins, outs, notes, last = ingest.bank_movements(_open(uploads[0]), json.loads(store.get("map_payments", "{}")),
+                                                   with_balance=True)
+    store.set("bank_balance", f"{last[1]:.2f}" if last else "")
+    store.set("bank_balance_date", f"{last[0]:%Y-%m-%d}" if last else "")
     # Yalnızca tarih ve tutar saklanır: açıklamada çalışan ya da tedarikçi adı bulunabilir ve kontrol için gerekmez
     # (KVKK m.4/2-ç: amaçla bağlantılı, sınırlı ve ölçülü işleme).
     store.save("bank_outflows", outs[["date", "amount"]])
@@ -379,6 +382,10 @@ with st.sidebar:
                                   help="Genellikle bugün. Geçmiş bir tarih seçerseniz o güne kadarki veriyle tahmin yapılır.")
             opening = st.number_input("Kasa ve bankadaki toplam para (TL)", 0.0, value=float(store.get("opening", 0)),
                                       step=10_000.0, help="Her kullanımda güncelleyin; tahmin bu tutardan başlar.")
+            if store.get("bank_balance", ""):
+                st.caption(f"Yüklenen banka ekstresinde son bakiye: {tl(float(store.get('bank_balance')))} "
+                           f"({pd.Timestamp(store.get('bank_balance_date')):%d.%m.%Y}). Kasadaki nakit ve başka "
+                           "bankalardaki hesaplar bu tutara dahil değildir.")
             saved_through = store.get("payments_through", "")
             through = st.date_input("Tahsilatlar hangi tarihe kadar işlendi? (isteğe bağlı)", format="DD.MM.YYYY",
                                     value=pd.Timestamp(saved_through).date() if saved_through else None,
@@ -654,6 +661,20 @@ if res["simple_model"]:
             "müşteri alışkanlığına dayalı basit tahmin kullanılıyor; bant daha geniş ve daha az kişisel olur.")
 if not res["has_outflows"]:
     st.warning("Gider planı yüklenmedi: grafik yalnızca tahsilatları gösteriyor, kasa açığı hesaplanamaz.")
+if own:
+    # Tahmin girilen kasa tutarından başlar; eski bir tutar bütün çizgiyi aynı miktarda kaydırır.
+    opened, as_of_day = store.get("opening_date", ""), pd.Timestamp(res["as_of"]).normalize()
+    bank_day = store.get("bank_balance_date", "")
+    if not opened:
+        st.warning("Kasa ve banka tutarının hangi gün girildiği kayıtlı değil. Tahmin bu tutardan başlıyor; bugünkü "
+                   "toplamı \"Temel bilgiler\" bölümünde kontrol edin.")
+    elif bank_day and pd.Timestamp(bank_day) > pd.Timestamp(opened):
+        st.warning(f"Banka ekstresi ({pd.Timestamp(bank_day):%d.%m.%Y}) kasa tutarından daha yeni: kasa tutarı en son "
+                   f"{pd.Timestamp(opened):%d.%m.%Y} tarihinde değiştirildi. Tutar güncel değilse tahminin tamamı o "
+                   "fark kadar kayar; \"Temel bilgiler\" bölümünde güncelleyin.")
+    elif pd.Timestamp(opened) < as_of_day:
+        st.info(f"Kasa tutarı en son {pd.Timestamp(opened):%d.%m.%Y} tarihinde değiştirildi; tahmin "
+                f"{as_of_day:%d.%m.%Y} günü bu tutarla başlıyor. Bugünkü toplam farklıysa güncelleyin.")
 
 c = st.columns(6)
 c[0].metric("Kasa ve banka", tl(res["opening"], compact=True), help="Bugün kasada ve bankada olan toplam para.")

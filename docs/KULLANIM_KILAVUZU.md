@@ -36,7 +36,7 @@ Tanıtım ya da deneme için: "Kendi verim" → "İşletme ekle" → **"Tanıtı
 
 Sol menüde **"Kendi verim"**i seçin. Ayarlar dört bölümde toplanmıştır.
 
-**1. Temel bilgiler.** Tahmin tarihi (genellikle bugün) ve kasa + bankadaki toplam paranız. Kasa tutarını her kullanımda güncelleyin.
+**1. Temel bilgiler.** Tahmin tarihi (genellikle bugün) ve kasa + bankadaki toplam paranız. Kasa tutarını her kullanımda güncelleyin. Tahmin bu tutardan başlar: eski bir tutar bütün çizgiyi aynı miktarda kaydırır. Tutar tahmin gününden önce girildiyse panel hatırlatır; yüklediğiniz banka ekstresi kasa tutarından daha yeniyse sarı uyarı verir. Ekstrede bakiye sütunu varsa ekstredeki son bakiye ve tarihi alanın altında görünür. Kasadaki nakit ve başka bankalardaki hesaplar o tutara dahil değildir; toplamı siz girersiniz.
 
 **Tahsilatlar hangi tarihe kadar işlendi?** Yüklediğiniz dosyada tahsilatlar bugüne kadar işlenmemişse, son işlenen günü bu alana girin. Bu durum, dosya muhasebe programından birkaç gün önce alındıysa ya da kayıtlar yasal süre içinde ama günü gününe işlenmiyorsa oluşur (Vergi Usul Kanunu m.219: kayıtlar en geç 10 gün; fişe dayanan kayıtlarda esas deftere 45 gün). O günden sonra gelmiş olabilecek ödemeler kasa bakiyenizin içinde sayılır, ikinci kez "gelecek tahsilat" olarak eklenmez. Alanı boş bırakırsanız tarih kayıtlardan tahmin edilir: son tahsilattan bu yana geçen süre işletmenin olağan tahsilat sıklığına göre olağan dışı uzunsa kayıtlar orada kesilmiş sayılır ve panel sarı bir uyarı gösterir. Bu durumda kasa tutarını bugünkü banka bakiyesiyle girmeniz önemlidir.
 
@@ -71,7 +71,7 @@ Fatura listesinde en az **fatura no, müşteri, fatura tarihi, tutar** olmalı. 
 | Dosya | Ne işe yarar |
 |---|---|
 | Banka ekstresi | Hangi faturanın ödendiğini otomatik bulur. Fatura listesinde ödeme bilgisi yoksa gereklidir. |
-| Planlı giderler | Maaş, kira, kredi taksidi gibi çıkışlar. Yoksa **3. Aylık sabit giderler** bölümüne tutarları yazın; panel vergi takvimine göre yerleştirir. |
+| Planlı giderler | Maaş, kira, kredi taksidi gibi çıkışlar. Yoksa **3. Aylık sabit giderler** bölümüne tutarları yazın; panel vergi takvimine göre yerleştirir. Son gün hafta sonuna ya da resmî tatile denk gelirse ödeme izleyen ilk iş gününe kayar (VUK m.18/4). |
 | Ödenecek faturalar | Tedarikçilere borçlarınız ve vadeleri. |
 | Çek / senet portföyü | Elinizdeki müşteri çekleri ve vadeleri. "Durum" sütununda ciro edildi / iskonto yazanlar hesaba katılmaz. |
 

@@ -313,12 +313,26 @@ def _direction_from_balance(amount: pd.Series, balance: pd.Series) -> pd.Series 
     return best if best_hits >= 0.8 else None
 
 
-def bank_movements(file, mapping: dict | None = None) -> tuple[pd.DataFrame, pd.DataFrame, list[str]]:
+def _last_balance(date: pd.Series, balance: pd.Series) -> tuple[pd.Timestamp, float] | None:
+    """Ekstredeki en son bakiye ve tarihi. Ekstre eskiden yeniye sıralıysa son satır, yeniden eskiye sıralıysa ilk
+    satır en yenidir (aynı gündeki hareketlerin sırası yalnızca dosya sırasından bilinir)."""
+    ok = date.notna() & balance.notna()
+    if not ok.any():
+        return None
+    d, b = date[ok], balance[ok]
+    i = d.index[-1] if d.iloc[0] <= d.iloc[-1] else d.index[0]
+    return d[i], float(b[i])
+
+
+def bank_movements(file, mapping: dict | None = None, with_balance: bool = False):
     """Banka ekstresindeki girişler ve çıkışlar (date, amount, description; tutarlar pozitif) ve notlar.
 
     Yön sırayla şuradan çıkarılır: B/A (yön) sütunu; ayrı Borç ve Alacak sütunları; eksi işaretli tutar; bakiye
     değişimi. Hiçbiri yoksa bütün satırlar giriş sayılır ve kullanıcı uyarılır. Önceki sürüm işaretli tutarların
-    mutlak değerini alıyordu: "−15.000" kira ödemesi tahsilat sayılıyordu (kasa olduğundan dolu görünür)."""
+    mutlak değerini alıyordu: "−15.000" kira ödemesi tahsilat sayılıyordu (kasa olduğundan dolu görünür).
+
+    with_balance=True ise dördüncü değer ekstredeki son bakiye ve tarihidir (bakiye sütunu yoksa None); panel bunu
+    girilen kasa tutarının yanında gösterir."""
     notes: list[str] = []
     df = _pick(_read(file), PAYMENT_FIELDS + ["direction", "debit", "balance"], PAYMENT_REQUIRED, mapping)
     amt = _num(df["amount"])
@@ -355,6 +369,8 @@ def bank_movements(file, mapping: dict | None = None) -> tuple[pd.DataFrame, pd.
         notes.append(f"Ekstrede {skipped} satır atlandı (okunamayan tarih/tutar).")
     if len(outs):
         notes.append(f"Ekstredeki {len(outs)} çıkış hareketi tahsilat sayılmadı; gider planının kontrolünde kullanılır.")
+    if with_balance:
+        return ins, outs, notes, (_last_balance(date, _num(df["balance"])) if "balance" in df else None)
     return ins, outs, notes
 
 
@@ -522,9 +538,34 @@ def load_cheques(file):
     return out[~gone].drop(columns="status").reset_index(drop=True), notes
 
 
+# Tam günlük resmî tatiller (2429 sayılı Ulusal Bayram ve Genel Tatiller Hakkında Kanun; tarihler: Diyanet İşleri
+# Başkanlığı, "2026 / 2027 Yılı Resmi Tatil Günleri", 20.10.2026'da okundu). Arife ve 28 Ekim öğleden sonra yarım gün
+# tatildir; sabahı iş günü olduğu için ödeme o gün sayılır (erken saymak kasa açısından ihtiyatlı). Dini bayramlar
+# her yıl güncellenir; 2028 ve sonrası için yalnızca sabit tarihli tatiller bilinir.
+_FIXED_HOLIDAYS = ("01-01", "04-23", "05-01", "05-19", "07-15", "08-30", "10-29")
+_RELIGIOUS_HOLIDAYS = {
+    2026: ["2026-03-20", "2026-03-21", "2026-03-22", "2026-05-27", "2026-05-28", "2026-05-29", "2026-05-30"],
+    2027: ["2027-03-09", "2027-03-10", "2027-03-11", "2027-05-16", "2027-05-17", "2027-05-18", "2027-05-19"],
+}
+
+
+def is_holiday(day) -> bool:
+    day = pd.Timestamp(day)
+    return f"{day:%m-%d}" in _FIXED_HOLIDAYS or f"{day:%Y-%m-%d}" in _RELIGIOUS_HOLIDAYS.get(day.year, [])
+
+
+def next_business_day(day) -> pd.Timestamp:
+    """VUK m.18/4: sürenin son günü resmî tatile rastlarsa süre, tatili izleyen ilk iş günü biter. Hafta sonu da
+    tatil sayılır (vergi daireleri cumartesi ve pazar kapalı)."""
+    day = pd.Timestamp(day)
+    while day.dayofweek >= 5 or is_holiday(day):
+        day += pd.Timedelta(days=1)
+    return day
+
+
 # Vergi takvimi (GİB): muhtasar ve prim hizmet beyannamesi ödemesi izleyen ayın 26'sı, KDV 28'i.
-# SGK primi: izleyen ayın son günü. Son gün hafta sonuna denk gelirse ilk iş gününe kayar
-# (resmî tatiller dahil değil).
+# SGK primi: izleyen ayın son günü. Son gün hafta sonuna ya da resmî tatile denk gelirse ilk iş gününe kayar.
+# GİB'in süre uzatmaları önceden bilinmez; ödeme asıl son günde sayılır (kasa açısından ihtiyatlı).
 def fixed_cost_plan(as_of, horizon: int = 90, payroll: float = 0.0, payroll_day: int = 1, muhtasar: float = 0.0,
                     sgk: float = 0.0, kdv: float = 0.0, rent: float = 0.0, rent_day: int = 1) -> pd.DataFrame:
     """Dosyası olmayan kullanıcı için aylık sabit giderlerden kasa çıkışı üretir."""
@@ -539,8 +580,7 @@ def fixed_cost_plan(as_of, horizon: int = 90, payroll: float = 0.0, payroll_day:
                 continue
             date = first + pd.Timedelta(days=min(day, month.days_in_month) - 1)
             if label in ("Muhtasar", "KDV", "SGK primi"):
-                while date.dayofweek >= 5:
-                    date += pd.Timedelta(days=1)
+                date = next_business_day(date)
             if as_of < date <= end:
                 rows.append((date, float(amount), label))
     return pd.DataFrame(rows, columns=["date", "amount", "label"]).sort_values("date").reset_index(drop=True)

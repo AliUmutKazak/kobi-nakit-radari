@@ -1363,9 +1363,14 @@ def test_bank_statement_direction_never_counts_outgoing_as_collection(tmp_path):
         ins, outs, _ = ingest.bank_movements(tmp_path / name)
         # Önceki sürümde işaretli ekstrede kira ve SGK (−15.000, −4.000) tahsilat sayılıyordu.
         assert list(ins["amount"]) == [10000.0] and sorted(outs["amount"]) == [4000.0, 15000.0], name
+        # Ekstredeki son bakiye: dosya eskiden yeniye ya da yeniden eskiye sıralı olabilir.
+        _, _, _, last = ingest.bank_movements(tmp_path / name, with_balance=True)
+        if "Bakiye" in text:
+            assert last == (pd.Timestamp("2026-10-03"), 31000.0), name
     (tmp_path / "yonsuz.csv").write_text("Tarih;Açıklama;Tutar\n01.10.2026;GELEN;10.000,00\n", encoding="utf-8")
     _, _, notes = ingest.bank_movements(tmp_path / "yonsuz.csv")
     assert any("giriş/çıkış ayrımı" in n for n in notes)
+    assert ingest.bank_movements(tmp_path / "yonsuz.csv", with_balance=True)[3] is None
 
 
 def test_unplanned_outflows_from_bank_history():
@@ -1436,3 +1441,13 @@ def test_cash_components_and_component_variance():
     v = pilot.component_variance(rec, obs, ev, bank).set_index("kalem")
     assert v.loc["Açık faturalardan tahsilat", "fark"] == -100 and v.loc["Yeni satışlardan tahsilat", "gerceklesen"] == 300
     assert v.loc["Giderler", "fark"] == 200
+
+
+def test_tax_payments_move_past_official_holidays():
+    from radar import ingest
+    # Nisan 2026 KDV'sinin son günü 28 Mayıs: Kurban Bayramı (27-30 Mayıs) ve hafta sonu, ilk iş günü 1 Haziran.
+    assert ingest.next_business_day("2026-05-28") == pd.Timestamp("2026-06-01")
+    assert ingest.next_business_day("2026-05-26") == pd.Timestamp("2026-05-26")        # arife yarım gün: iş günü
+    assert ingest.next_business_day("2026-10-29") == pd.Timestamp("2026-10-30")        # Cumhuriyet Bayramı
+    plan = ingest.fixed_cost_plan("2026-05-01", horizon=40, kdv=1000.0)
+    assert list(plan["date"]) == [pd.Timestamp("2026-06-01")]
