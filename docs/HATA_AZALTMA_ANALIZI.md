@@ -120,6 +120,7 @@ Uygulamanın ayrıntıları:
 - Aynı gruptaki dövizler için aynı gün seçiliyor, böylece dövizler arasındaki ilişki korunuyor.
 - ECB tablosunda olmayan bir döviz kur sabit sayılarak kalıyor; panel uyarıyor.
 - Borç dosyasında kuru girilmemiş döviz dışarıda bırakılmıyor (alacakta bırakılır, çünkü bırakmak ihtiyatlıdır). Tutar TL sayılıyor ve "DİKKAT" notu çıkıyor.
+- Aynı kural gider dosyasındaki dövizli kalemlere ve döviz çeklerine de uygulanıyor. Kuru girilmemiş dövizli gider TL sayılıp uyarılıyor; kuru girilmemiş döviz çeki, bir giriş olduğu için tahmine katılmıyor. Net durum hesabında döviz çekleri alacak tarafında sayılıyor.
 - Laboratuvar verisinde döviz olmadığı için laboratuvar sonuçları değişmiyor.
 
 **Kullanım koşulu.** ECB internet sitesindeki Copyright bölümüne göre bilgiler, ECB kaynak gösterilerek serbestçe kullanılabilir. Değişiklik yapıldıysa bu belirtilmeli; ücretli bir belgede alıcıya verinin ECB sitesinden ücretsiz edinilebileceği bildirilmeli. Panel bu notu gösteriyor. ECB, kurların yalnızca bilgi amaçlı olduğunu ve işlemlerde kullanılmamasını yazıyor. Burada kurlar dönüşüm için değil, yalnızca geçmiş dalgalanmayı ölçmek için kullanılıyor; dönüşümde kullanıcının girdiği kur geçerli.
@@ -128,7 +129,7 @@ Uygulamanın ayrıntıları:
 
 1. Tek işletmede kısa dönem sapması (madde 12). Pilot raporu her işletmeyi ayrıca sınıyor; gerçek veriyle izlenecek.
 2. Gerçek Türk KOBİ verisi. Bütün bu sonuçlar sentetik ya da yabancı açık veriyle; son hakem pilot.
-3. Borç ağırlıklı dövizde kötümser uç %10 yerine %11–15 sıklıkla aşılıyor (bölüm 7). Kur sıçramalarını daha iyi yakalayan bir yöntem (ör. Basel 2.5'teki stresli dönem yaklaşımı) gerçek pilot verisiyle değerlendirilecek. Elle girilen gider planındaki dövizli kalemler (ör. dövizli kira) henüz döviz olarak okunmuyor.
+3. Borç ağırlıklı dövizde kötümser uç %10 yerine %11–15 sıklıkla aşılıyor (bölüm 7). Kur sıçramalarını daha iyi yakalayan bir yöntem (ör. Basel 2.5'teki stresli dönem yaklaşımı) gerçek pilot verisiyle değerlendirilecek.
 
 ## 9. Yasal uyum notu
 

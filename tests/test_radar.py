@@ -1510,3 +1510,23 @@ def test_foreign_currency_payables_are_converted_and_add_fx_risk(tmp_path, full)
     assert exp.loc[0, "payable"] == pytest.approx(495000.0) and exp.loc[0, "net"] < 0
     up = pipeline.fx_shift(on, 0.10)                                  # TL %10 değer kaybederse borç 49.500 TL büyür
     assert up["p50"][-1] == pytest.approx(on["sim"].p50[-1] - 49500.0, abs=1.0)
+
+
+def test_foreign_currency_schedule_and_cheques(tmp_path, full):
+    from radar import ingest
+    (tmp_path / "gider.csv").write_text("Tarih;Tutar;Kalem;Para Birimi\n05.11.2026;1.000,00;Lisans;USD\n"
+                                        "10.11.2026;500,00;Yazılım;GBP\n12.11.2026;20.000,00;Maaş;TL\n", encoding="utf-8")
+    notes = []
+    out = ingest.load_schedule(tmp_path / "gider.csv", rates={"USD": 49.5}, notes=notes)
+    assert out["amount"].tolist() == [49500.0, 500.0, 20000.0] and out["currency"].tolist() == ["USD", "TRY", "TRY"]
+    assert any(n.startswith("DİKKAT") and "GBP" in n for n in notes)  # gider dışarıda bırakılmaz, uyarılır
+    (tmp_path / "cek.csv").write_text("Vade;Tutar;Keşideci;Para Birimi\n20.11.2026;2.000,00;Ihracatci;EUR\n"
+                                      "25.11.2026;300,00;Isvicre;CHF\n", encoding="utf-8")
+    chq, cn = ingest.load_cheques(tmp_path / "cek.csv", rates={"EUR": 55.6})
+    assert chq["amount"].tolist() == [111200.0] and chq["currency"].tolist() == ["EUR"]   # kuru olmayan giriş katılmaz
+    assert any("CHF" in n and "katılmadı" in n for n in cn)
+    obs = observe(full, AS_OF)
+    on = pipeline.forecast(obs, AS_OF, 1e6, out, n_sims=400, cheques=chq)
+    assert sorted(on["info"]["fx_currencies"]) == ["EUR", "USD"] and on["info"]["fx_short"] == ["USD"]
+    exp = pipeline.fx_exposure(on).set_index("currency")
+    assert exp.loc["EUR", "receivable"] == pytest.approx(111200.0) and exp.loc["USD", "payable"] == pytest.approx(49500.0)

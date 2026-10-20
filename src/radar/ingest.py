@@ -167,6 +167,30 @@ def _currency_codes(df: pd.DataFrame) -> pd.Series:
             .replace({"TL": "TRY", "TRL": "TRY", "YTL": "TRY", "": "TRY", "₺": "TRY", "NAN": "TRY"}))
 
 
+def _to_tl(amount: pd.Series, code: pd.Series, rates: dict | None, what: str, outgoing: bool,
+           notes: list[str]) -> tuple[pd.Series, pd.Series]:
+    """Dövizli tutarı girilen kurla TL'ye çevirir. Kuru girilmemiş döviz ihtiyatlı tarafa göre ele alınır: kasaya
+    giriş (çek) dışarıda bırakılır (NaN döner); kasadan çıkış (borç, gider) dışarıda bırakılamaz, çünkü kasa
+    olduğundan dolu görünür: tutar TL sayılır ve "DİKKAT" notuyla uyarılır."""
+    rate = code.map({"TRY": 1.0} | (rates or {}))
+    if rate.isna().any():
+        kinds = ", ".join(sorted(code[rate.isna()].unique()))
+        if outgoing:
+            notes.append(f"DİKKAT: {int(rate.isna().sum())} dövizli {what} ({kinds}) kuru girilmedi; tutarları TL "
+                         "sayıldı ve ödeme olduğundan küçük görünüyor olabilir. Kasa olduğundan dolu görünmesin diye "
+                         "\"Diğer ayarlar\" bölümünde bu dövizlerin kurunu girin.")
+            code = code.where(rate.notna(), "TRY")
+            rate = rate.fillna(1.0)
+        else:
+            notes.append(f"{int(rate.isna().sum())} dövizli {what} ({kinds}) kuru girilmediği için tahmine katılmadı; "
+                         "katmak için bu dövizlerin kurunu girin.")
+    converted = (code != "TRY") & rate.notna()
+    if converted.any():
+        notes.append(f"{int(converted.sum())} dövizli {what} girilen kurla TL'ye çevrildi. Para "
+                     + ("ödendiği" if outgoing else "geldiği") + " günkü kurun belirsizliği tahmin bandına katılır.")
+    return amount * rate, code
+
+
 def _finish_invoices(df: pd.DataFrame, default_terms: int, notes: list[str],
                      rates: dict[str, float] | None = None) -> pd.DataFrame:
     df = df.copy()
@@ -406,19 +430,7 @@ def load_payables(file, default_terms: int = 30, rates: dict[str, float] | None 
             due[missing] = _date(df["issue_date"])[missing] + pd.Timedelta(days=default_terms)
             notes.append(f"{int(missing.sum())} borç faturasında vade yoktu; fatura tarihi + {default_terms} gün varsayıldı.")
     amount = _num(df["open_amount"]).fillna(_num(df["amount"])) if "open_amount" in df else _num(df["amount"])
-    code = _currency_codes(df)
-    rate = code.map({"TRY": 1.0} | (rates or {}))
-    if rate.isna().any():
-        kinds = ", ".join(sorted(code[rate.isna()].unique()))
-        notes.append(f"DİKKAT: {int(rate.isna().sum())} dövizli borç faturasının ({kinds}) kuru girilmedi; tutarları "
-                     "TL sayıldı ve borç olduğundan küçük görünüyor olabilir. Kasa olduğundan dolu görünmesin diye "
-                     "\"Diğer ayarlar\" bölümünde bu dövizlerin kurunu girin.")
-        code = code.where(rate.notna(), "TRY")
-    converted = code != "TRY"
-    if converted.any():
-        notes.append(f"{int(converted.sum())} dövizli borç faturası girilen kurla TL'ye çevrildi. Ödeme günündeki kur "
-                     "belirsizliği tahmin bandına katılır (kur yükselirse borç büyür).")
-    amount = amount * rate.fillna(1.0)
+    amount, code = _to_tl(amount, _currency_codes(df), rates, "borç faturası", outgoing=True, notes=notes)
     out = pd.DataFrame({"date": due, "amount": amount, "label": PAYABLES_LABEL, "currency": code,
                         "supplier": df["supplier"] if "supplier" in df else "",
                         "invoice_id": df["invoice_id"] if "invoice_id" in df else ""})
@@ -540,19 +552,25 @@ CHEQUE_WORDS = re.compile(r"\b(cek|ceki|cekler|cekleri|cekle|senet|senedi|senetl
 CHEQUE_EXCLUDED = ("ciro", "iskonto", "faktoring", "tahsil edildi", "odendi", "karsiliksiz", "iade")
 
 
-def load_cheques(file):
+def load_cheques(file, rates: dict | None = None):
     """Alınan çek/senet portföyü. Durum sütunu varsa cirolanmış, iskontoya/faktoringe verilmiş ya da
-    sonuçlanmış evrak kasaya giriş sayılmaz: ciro edilen çekin parası bize değil tedarikçiye gelir."""
-    df = _pick(_read(file), ["due_date", "issue_date", "amount", "drawer", "status"], ["amount"])
+    sonuçlanmış evrak kasaya giriş sayılmaz: ciro edilen çekin parası bize değil tedarikçiye gelir.
+    Para birimi sütunu varsa döviz çeki girilen kurla TL'ye çevrilir; kuru girilmemişse tahmine katılmaz."""
+    df = _pick(_read(file), ["due_date", "issue_date", "amount", "drawer", "status", "currency"], ["amount"])
     date = df["due_date"] if "due_date" in df else df.get("issue_date")
     if date is None:
         raise ValueError("Eksik sütun: tarih veya vade.")
-    out = pd.DataFrame({"date": _date(date), "amount": _num(df["amount"]),
+    notes = []
+    amount, code = _num(df["amount"]), _currency_codes(df)
+    if "currency" in df:
+        amount, code = _to_tl(amount, code, rates, "çek/senet", outgoing=False, notes=notes)
+    out = pd.DataFrame({"date": _date(date), "amount": amount,
                         "label": df["drawer"] if "drawer" in df else "",
                         "status": df["status"].fillna("") if "status" in df else ""})
+    if "currency" in df:
+        out["currency"] = code
     out = out.dropna(subset=["date", "amount"]).query("amount > 0")
     gone = out["status"].map(_key).map(lambda s: any(w in s for w in CHEQUE_EXCLUDED))
-    notes = []
     if gone.any():
         notes.append(f"{int(gone.sum())} çek/senet ({out.loc[gone, 'amount'].sum():,.0f} TL) cirolanmış, iskontoya verilmiş "
                      "ya da sonuçlanmış olduğu için tahmine katılmadı. Ciro edilen çek karşılıksız çıkarsa, aksi şart "
@@ -608,12 +626,20 @@ def fixed_cost_plan(as_of, horizon: int = 90, payroll: float = 0.0, payroll_day:
     return pd.DataFrame(rows, columns=["date", "amount", "label"]).sort_values("date").reset_index(drop=True)
 
 
-def load_schedule(file, label_field: str = "label"):
-    """Tarih + tutar listesi: planlı giderler (label) veya çek/senet portföyü (drawer)."""
-    df = _pick(_read(file), ["due_date", "issue_date", "amount", label_field], ["amount"])
+def load_schedule(file, label_field: str = "label", rates: dict | None = None, notes: list[str] | None = None):
+    """Tarih + tutar listesi: planlı giderler (label) veya çek/senet portföyü (drawer).
+    Para birimi sütunu varsa planlı giderdeki dövizli kalem girilen kurla TL'ye çevrilir (bkz. _to_tl); notlar
+    verilen listeye eklenir."""
+    df = _pick(_read(file), ["due_date", "issue_date", "amount", label_field, "currency"], ["amount"])
     date = df["due_date"] if "due_date" in df else df.get("issue_date")
     if date is None:
         raise ValueError("Eksik sütun: tarih veya vade.")
-    out = pd.DataFrame({"date": _date(date), "amount": _num(df["amount"]),
+    amount, code = _num(df["amount"]), _currency_codes(df)
+    if "currency" in df:
+        amount, code = _to_tl(amount, code, rates, "gider kalemi", outgoing=True,
+                              notes=notes if notes is not None else [])
+    out = pd.DataFrame({"date": _date(date), "amount": amount,
                         "label": df[label_field] if label_field in df else ""})
+    if "currency" in df:
+        out["currency"] = code
     return out.dropna(subset=["date", "amount"]).query("amount > 0").reset_index(drop=True)

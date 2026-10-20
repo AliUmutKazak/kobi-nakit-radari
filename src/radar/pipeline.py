@@ -122,14 +122,16 @@ def _split_args(habits: dict | None, inv: pd.DataFrame, n_sims: int, seed: int) 
 
 
 def fx_args(inv: pd.DataFrame, as_of, horizon: int, n_sims: int, seed: int,
-            outflows: pd.DataFrame | None = None) -> dict | None:
+            outflows: pd.DataFrame | None = None, cheques: pd.DataFrame | None = None) -> dict | None:
     """Dövizli faturalar ve dövizli borçlar için simülasyona giden kur yolları (bkz. radar.fx). Döviz yoksa None.
     ECB tablosunda olmayan dövizler kur sabit sayılarak kalır ve "unknown" listesinde döner (panel uyarır)."""
     code = (inv["currency"].fillna("TRY").astype(str).str.upper() if "currency" in inv
             else pd.Series("TRY", index=inv.index))
     out_code = (set(outflows["currency"].fillna("TRY").astype(str).str.upper())
                 if outflows is not None and "currency" in outflows else set())
-    foreign = sorted((set(code) | out_code) - {"TRY"})
+    chq_code = (set(cheques["currency"].fillna("TRY").astype(str).str.upper())
+                if cheques is not None and "currency" in cheques else set())
+    foreign = sorted((set(code) | out_code | chq_code) - {"TRY"})
     if not foreign:
         return None
     # Net durum (ufuktaki TL karşılığı): borç alacaktan fazlaysa kur yükselişi kasayı daraltır (bkz. radar.fx).
@@ -139,6 +141,11 @@ def fx_args(inv: pd.DataFrame, as_of, horizon: int, n_sims: int, seed: int,
         off = (pd.to_datetime(outflows["date"]) - pd.Timestamp(as_of)).dt.days
         within = outflows[(off >= 1) & (off <= horizon)]
         payable = within["amount"].groupby(within["currency"].fillna("TRY").astype(str).str.upper()).sum()
+    if chq_code - {"TRY"}:
+        coff = (pd.to_datetime(cheques["date"]) - pd.Timestamp(as_of)).dt.days
+        cw = cheques[(coff >= 1) & (coff <= horizon)]
+        receivable = receivable.add(cw["amount"].groupby(cw["currency"].fillna("TRY").astype(str).str.upper()).sum(),
+                                    fill_value=0.0)
     short = [c for c in foreign if payable.get(c, 0.0) > receivable.get(c, 0.0)]
     paths = fx.fx_paths(foreign, as_of, horizon, n_sims, seed, short=short)
     known = [c for c in foreign if c in paths]
@@ -543,7 +550,7 @@ def forecast(obs: pd.DataFrame, as_of, opening: float, outflows: pd.DataFrame, h
     out_level = outflow_levels(outflow_history, as_of, horizon, n_sims, seed)
     if out_level is not None:
         ctx["cheque_args"]["outflow_level"] = out_level
-    fx_info = fx_args(sim_inv, as_of, horizon, n_sims, seed, outflows) if fx_aware else None
+    fx_info = fx_args(sim_inv, as_of, horizon, n_sims, seed, outflows, cheques) if fx_aware else None
     if fx_info and fx_info["currencies"]:
         ctx["cheque_args"] |= {k: fx_info[k] for k in ("fx_code", "fx_mult", "fx_names")}
     sim = simulate(sim_inv, ctx["Q"], as_of, opening, outflows, horizon, n_sims, seed=seed, aging=ctx["aging"],
@@ -692,6 +699,10 @@ def fx_exposure(res: dict) -> pd.DataFrame:
     if "currency" in obs:
         fx = obs[(obs["open_amount"] > 0) & (obs["currency"].fillna("TRY") != "TRY")]
         rec = fx.groupby("currency")["open_amount"].sum()
+    chq = res["ctx"].get("cheques")
+    if chq is not None and len(chq) and "currency" in chq:                 # döviz çekleri alacak tarafında
+        c = chq[chq["currency"].fillna("TRY") != "TRY"]
+        rec = rec.add(c.groupby("currency")["amount"].sum(), fill_value=0.0)
     pay = pd.Series(dtype=float)
     if flows is not None and len(flows) and "currency" in flows:
         f = flows[flows["currency"].fillna("TRY") != "TRY"]
@@ -705,7 +716,8 @@ def fx_exposure(res: dict) -> pd.DataFrame:
 
 def fx_shift(res: dict, pct: float) -> dict:
     """TL, dövizlere karşı `pct` kadar değer kaybederse (eksi: kazanırsa) bugün açık dövizli faturalardan gelecek
-    TL tutarı ve ufuktaki dövizli borçların TL tutarı o oranda değişir; aynı senaryolarla kasa bandı. Kur tahmini
+    TL tutarı, ufuktaki dövizli borçlar ve döviz çekleri o oranda değişir (çekin karşılıksız çıkması bu
+    hesapta yok); aynı senaryolarla kasa bandı. Kur tahmini
     değil, kullanıcının senaryosudur."""
     sim, inv = res["sim"], res["ctx"]["sim_inv"]
     currency = inv["currency"].fillna("TRY") if "currency" in inv else pd.Series("TRY", index=inv.index)
@@ -714,13 +726,14 @@ def fx_shift(res: dict, pct: float) -> dict:
     t = np.arange(paths.shape[1])[None, :]
     for k in hit:
         paths += float(inv["open_amount"].iloc[k]) * pct * (t >= sim.pay_day[k][:, None])
-    flows = res["outflows"]
-    if flows is not None and len(flows) and "currency" in flows:
-        f = flows[flows["currency"].fillna("TRY") != "TRY"]
+    for table, sign in ((res["outflows"], -1.0), (res["ctx"].get("cheques"), 1.0)):   # borçlar ve döviz çekleri
+        if table is None or not len(table) or "currency" not in table:
+            continue
+        f = table[table["currency"].fillna("TRY") != "TRY"]
         off = (pd.to_datetime(f["date"]) - pd.Timestamp(res["as_of"])).dt.days.to_numpy()
         for d, amt in zip(off, f["amount"].to_numpy(float)):
             if 1 <= d < paths.shape[1]:
-                paths[:, d:] -= amt * pct
+                paths[:, d:] += sign * amt * pct
     p10, p50, p90 = np.percentile(paths, [10, 50, 90], axis=0)
     return {"p10": p10, "p50": p50, "p90": p90, "prob_any_breach": float((paths.min(axis=1) < 0).mean()),
             "p10_min": _p10_min(paths), "p10_min_before": _p10_min(sim.paths)}

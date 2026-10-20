@@ -366,8 +366,14 @@ def simulate(inv: pd.DataFrame, Q: np.ndarray, as_of, opening: float, outflows: 
         c_amt = cheques["amount"].to_numpy(float)
         z = np.sqrt(rho_market) * zm + np.sqrt(1 - rho_market) * rng.standard_normal((len(c_off), n_sims))
         cleared = ndtr(z) <= 1 - cheque_bounce
+        c_code = (cheques["currency"].fillna("TRY").astype(str).to_numpy() if "currency" in cheques
+                  else np.full(len(c_off), "TRY"))
         for j in np.flatnonzero((c_off >= 1) & (c_off <= horizon)):
-            inflow[cleared[j], c_off[j]] += c_amt[j]
+            if fx_names and fx_mult is not None and c_code[j] in fx_names:    # döviz çeki: vade günündeki kurla
+                rate = fx_mult[fx_names.index(c_code[j])][:, c_off[j]]
+                inflow[cleared[j], c_off[j]] += c_amt[j] * rate[cleared[j]]
+            else:
+                inflow[cleared[j], c_off[j]] += c_amt[j]
 
     out = np.zeros(horizon + 1)
     off = (pd.to_datetime(outflows["date"]) - as_of).dt.days.to_numpy()

@@ -85,7 +85,7 @@ def save_upload(store: Store, name: str, uploads, parse) -> None:
     if not uploads:
         return
     mapping = store.get(f"map_{name}", "{}") + (store.get("rates", "") + store.get("terms", "")
-                                                 if name in ("invoices", "payables") else "")
+                                                 if name in ("invoices", "payables", "outflows", "cheques") else "")
     digest = hashlib.md5(b"".join(u.getvalue() for u in uploads) + mapping.encode()).hexdigest()
     if digest == store.get(f"hash_{name}"):
         return
@@ -164,7 +164,7 @@ def run_demo(seed: int, include_projected: bool, today: str):
 def run_own(path: str, rev: int, as_of: str, include_projected: bool):
     """`rev` kayıt her değiştiğinde artar; sonuç ancak o zaman yeniden hesaplanır. `path` işletmeyi ayırır."""
     store = get_store(path)
-    notes = [n for name in ("invoices", "payments", "payables") for n in json.loads(store.get(f"notes_{name}", "[]"))]
+    notes = [n for name in ("invoices", "payments", "payables", "outflows") for n in json.loads(store.get(f"notes_{name}", "[]"))]
     obs = store.apply_events(store.load("invoices"), as_of)
     obs = obs[obs["issue_date"] <= pd.Timestamp(as_of)]
     payments = store.load("payments")
@@ -557,10 +557,15 @@ with st.sidebar:
         save_upload(store, "invoices", invoice_upload,
                     lambda ups: parse_invoices(ups, int(terms), ingest.parse_rates(rates_text)))
         save_upload(store, "payments", uploads["payments"], lambda ups: parse_bank(ups))
-        save_upload(store, "outflows", uploads["outflows"], lambda ups: (ingest.load_schedule(_open(ups[0])), []))
+        def parse_outflows(ups):
+            out_notes: list[str] = []
+            return ingest.load_schedule(_open(ups[0]), rates=ingest.parse_rates(rates_text), notes=out_notes), out_notes
+
+        save_upload(store, "outflows", uploads["outflows"], parse_outflows)
         save_upload(store, "payables", uploads["payables"],
                     lambda ups: ingest.load_payables(_open(ups[0]), int(terms), ingest.parse_rates(rates_text)))
-        save_upload(store, "cheques", uploads["cheques"], lambda ups: ingest.load_cheques(_open(ups[0])))
+        save_upload(store, "cheques", uploads["cheques"],
+                    lambda ups: ingest.load_cheques(_open(ups[0]), ingest.parse_rates(rates_text)))
 
 own = source == "Kendi verim"
 for name, (title, fields, required) in MAPPABLE.items():

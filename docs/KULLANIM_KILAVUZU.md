@@ -71,9 +71,9 @@ Fatura listesinde en az **fatura no, müşteri, fatura tarihi, tutar** olmalı. 
 | Dosya | Ne işe yarar |
 |---|---|
 | Banka ekstresi | Hangi faturanın ödendiğini otomatik bulur. Fatura listesinde ödeme bilgisi yoksa gereklidir. |
-| Planlı giderler | Maaş, kira, kredi taksidi gibi çıkışlar. Yoksa **3. Aylık sabit giderler** bölümüne tutarları yazın; panel vergi takvimine göre yerleştirir. Son gün hafta sonuna ya da resmî tatile denk gelirse ödeme izleyen ilk iş gününe kayar (VUK m.18/4). |
+| Planlı giderler | Maaş, kira, kredi taksidi gibi çıkışlar. Yoksa **3. Aylık sabit giderler** bölümüne tutarları yazın; panel vergi takvimine göre yerleştirir. Son gün hafta sonuna ya da resmî tatile denk gelirse ödeme izleyen ilk iş gününe kayar (VUK m.18/4). Dövizli ödeme (ör. ithalat ya da yurt dışından alınan yazılım lisansı) varsa "Para birimi" sütunu ekleyin ve kurunu girin; kuru girilmeyen dövizli gider TL sayılır ve panel uyarır. |
 | Ödenecek faturalar | Tedarikçilere borçlarınız ve vadeleri. Dövizli borç varsa "Para birimi" sütunu ekleyin ve "Diğer ayarlar" bölümünde kurunu girin; kuru girilmeyen dövizli borç TL sayılır ve panel uyarır. |
-| Çek / senet portföyü | Elinizdeki müşteri çekleri ve vadeleri. "Durum" sütununda ciro edildi / iskonto yazanlar hesaba katılmaz. |
+| Çek / senet portföyü | Elinizdeki müşteri çekleri ve vadeleri. "Durum" sütununda ciro edildi / iskonto yazanlar hesaba katılmaz. Döviz çeki varsa "Para birimi" sütunu ekleyin; kuru girilmeyen döviz çeki hesaba katılmaz. |
 
 Biçimi görmek için panelin ilk ekranında örnek dosyaları indirebilirsiniz. Yüklediğiniz her şey yalnızca bu bilgisayarda saklanır; bir sonraki açılışta yeniden yüklemeniz gerekmez.
 
@@ -126,5 +126,5 @@ En altta **"Pilot raporunu hazırla"** düğmesi, tek sayfalık, yazdırılabili
 
 - Tahmin müşterilerinizin geçmişteki davranışına dayanır. Gecikmeler hızla artıyorsa tahmin iyimser kalabilir; panel bu durumu fark ettiğinde uyarır, o zaman kötümser çizgiyi esas alın.
 - Alacağınız birkaç müşteride toplanmışsa (panel bunu da uyarır), tek bir müşterinin gecikmesi sonucu tek başına belirler.
-- Yeni kredi ve beklenmedik büyük giderler tahmine dahil değildir. Kur dalgalanması dövizli alacaklar ve "Ödenecek faturalar" dosyasındaki dövizli borçlar için banda girer; elle girilen gider planındaki dövizli kalemler (ör. dövizli kira) TL sayılır.
+- Yeni kredi ve beklenmedik büyük giderler tahmine dahil değildir. Kur dalgalanması; dövizli alacaklar, döviz çekleri, dövizli borçlar ve gider dosyasındaki dövizli kalemler için banda girer. "Aylık sabit giderler" bölümüne yazılan tutarlar TL sayılır.
 - Verileriniz bu bilgisayardaki şifrelenmemiş bir dosyada durur (yeri kenar çubuğunda yazar). Bilgisayarınızın Windows parolasını ve disk şifrelemesini açık tutun, dosyayı düzenli yedekleyin.
