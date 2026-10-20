@@ -58,10 +58,10 @@ Hedef: farklı sektörlerden 5–10 işletme. Mali müşavir aracılığıyla ul
 
 Sonuç kaydedilir, pilot raporuna girer ve işletmeyle ilk görüşmede konuşulur. En az 4 haftalık tahmin günü kurulamıyorsa (yaklaşık 8 aydan kısa veri) Aşama 0 yapılmaz.
 - Aşama 0 sonucu B1/B2 kararının yerine geçmez. Geri testte geçmiş veriye sonradan bakma riski vardır (ör. sonradan düzeltilmiş kayıtlar). Bu yüzden ayrıca raporlanır.
-- Aşama 0'da bir işletmede model bir ufukta "geride" çıkarsa, panel bunu sonuç sayfasının üstünde uyarı olarak gösterir. O ufukta karar için ileriye dönük kayıttaki en iyi basit yöntemin sayısı esas alınır. Model yine kaydedilir ve B1'de ölçülür.
+- Aşama 0'da bir işletmede model bir ufukta "geride" çıkarsa, o ufkun tahsilatı için o işletmenin geçmişinde en isabetli çıkan basit yöntemin sayısı panelin üstünde gösterilir ve karar için esas alınır (`pilot.simple_replacements`). Basit yöntemlerin belirsizlik bandı olmadığı için kasa bandı, kötümser çizgi ve "güvenle harcanabilir tutar" modelden gelmeye devam eder; panel bunu açıkça yazar. Model yine kaydedilir ve B1'de ölçülür. Ürün genelinde varsayılanın değişmesi pilot sonundaki karar kuralına bağlıdır.
 - Aşama 0'da hiçbir parametre değiştirilmez.
 
-**Dondurma ve kabul kuralı (1.6).** Pilot bitene kadar modele, senaryo laboratuvarına ve istatistik çerçevesine yeni sürüm ya da test eklenmez. İstisna, sonucu yalnızca daha ihtiyatlı yapan güvenlik düzeltmeleridir. Bir uç Basel yeşil bölgesinde ve Kupiec testi geçiyorsa (p ≥ 0,05) o sonuç kabul edilir ve ayar yapılmaz. Yeşil bölgenin sınırı gözlem sayısına bağlıdır: 100 gözlemde 14 aşıma (%14), 240 gözlemde 31 aşıma (%12,9) kadar.
+**Dondurma ve kabul kuralı (1.6).** Pilot bitene kadar modele, senaryo laboratuvarına ve istatistik çerçevesine yeni sürüm ya da test eklenmez. Pilot başlayana kadar yeni özellik de eklenmez; yalnızca hata ve güvenlik düzeltmeleri ile pilot işletmesinin ya da mali müşavirin açıkça istediği şeyler yapılır. İstisna, sonucu yalnızca daha ihtiyatlı yapan güvenlik düzeltmeleridir. Bir uç Basel yeşil bölgesinde ve Kupiec testi geçiyorsa (p ≥ 0,05) o sonuç kabul edilir ve ayar yapılmaz. Yeşil bölgenin sınırı gözlem sayısına bağlıdır: 100 gözlemde 14 aşıma (%14), 240 gözlemde 31 aşıma (%12,9) kadar.
 
 Her pilot raporu "İleriye dönük kayıt" bölümünde, o gün açık faturalardan önümüzdeki 14 ve 30 günde tahsil edilecek tutarı dört yöntemle yazar: model (kötümser P10 / orta P50 / iyimser P90) ve üç basit yöntem:
 

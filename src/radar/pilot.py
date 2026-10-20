@@ -98,14 +98,42 @@ def build(obs: pd.DataFrame, as_of, opening: float = 0.0, outflows: pd.DataFrame
     history_days = (obs["issue_date"].max() - obs["issue_date"].min()).days
     delays = delay_study(obs, origins=4, step=60) if history_days >= MIN_HISTORY_DAYS else pd.DataFrame()
     # Veri tahmin tarihinden eskiyse, son hareketten sonraki ödemeler bilinmez; geri test orada biter.
-    cash = cash_backtest(obs, min(as_of, last)) if history_days >= MIN_HISTORY_DAYS else pd.DataFrame()
     if retro is not None and len(retro):          # Aşama 0 yapılmışsa kısa geri testin yerine o raporlanır
         cash = retro
+    else:
+        cash = cash_backtest(obs, min(as_of, last)) if history_days >= MIN_HISTORY_DAYS else pd.DataFrame()
     return {"label": label, "as_of": as_of, "res": res, "quality": quality, "delays": delays, "cash": cash,
             "retro": retro is not None and len(retro) > 0,
             "gap": gap_summary(res), "weeks": weekly_table(res), "top": _top(res, key, obs),
             "record": forward_record(obs, as_of, events=res.get("events") if isinstance(res, dict) else None,
                                      payments_through=res["info"].get("payments_through")), "cash_record": cash_record(res)}
+
+
+SIMPLE_METHODS = {"medyan": ("naive_median", "müşteri her zamanki kadar geç öder"),
+                  "oran": ("naive_rate", "son dönemin tahsilat oranı sürer"),
+                  "vade": ("naive_due", "her fatura vadesinde ödenir")}
+
+
+def simple_replacements(retro: pd.DataFrame, obs: pd.DataFrame, as_of) -> list[dict]:
+    """Aşama 0'da modelin "geride" kaldığı her ufuk için, o işletmenin geçmişinde en isabetli çıkan basit yöntemle
+    bugün açık faturalardan beklenen tahsilat (protokol 1.6). Basit yöntemlerin bandı yoktur; bu yüzden kasa bandı
+    yerine geçmez, o ufuktaki tahsilat sayısı olarak gösterilir."""
+    if retro is None or not len(retro) or "dm_sonuc" not in retro:
+        return []
+    as_of = pd.Timestamp(as_of)
+    book = obs[(obs["issue_date"] <= as_of) & ~(obs["paid_date"] <= as_of) & (obs["open_amount"] > 0)]
+    book = book.assign(amount=book["open_amount"])
+    out = []
+    for _, row in retro[retro["dm_sonuc"] == "geride"].iterrows():
+        errs = {m: row.get(f"sapma_{m}_%") for m in SIMPLE_METHODS if pd.notna(row.get(f"sapma_{m}_%"))}
+        if not errs:
+            continue
+        best = min(errs, key=errs.get)
+        h = int(row["ufuk_gun"])
+        value = naive_collections(obs, book, as_of, as_of + pd.Timedelta(days=h))[SIMPLE_METHODS[best][0]]
+        out.append({"ufuk_gun": h, "yontem": best, "ad": SIMPLE_METHODS[best][1], "tutar": value,
+                    "sapma_model": float(row["sapma_model_%"]), "sapma_yontem": float(errs[best])})
+    return out
 
 
 def data_end(obs: pd.DataFrame, as_of) -> pd.Timestamp:

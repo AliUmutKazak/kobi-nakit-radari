@@ -33,6 +33,32 @@ st.set_page_config(page_title="KOBİ Nakit Akışı Radarı", layout="wide")
 HIGH_RISK = 0.5
 
 
+def tr_number(x: float, digits: int = 2) -> str:
+    """Türkçe sayı biçimi: binlik ayırıcı nokta, ondalık virgül (yalnızca sayıya uygulanır, cümleye değil)."""
+    return f"{x:,.{digits}f}".replace(",", "X").replace(".", ",").replace("X", ".")
+
+
+def verdict_text(v) -> str:
+    """B1/B2 sonucu: True/False/None; kayıttan (JSON) okununca 1.0/0.0/NaN da gelebilir."""
+    if v is None or (isinstance(v, float) and v != v):
+        return "değerlendirilemedi"
+    return "geçti" if bool(v) else "kaldı"
+
+
+def synced_state(key: str, stored) -> None:
+    """Anahtarlı alanı kayıtlı değerle eşler. Kayıtlı değer panel dışında değiştiyse (yedekten geri yükleme, işletme
+    verisinin silinmesi) alan da güncellenir; yoksa eski oturum değeri kayda geri yazılırdı."""
+    shadow = key + "::stored"
+    if key not in st.session_state or st.session_state.get(shadow) != stored:
+        st.session_state[key] = stored
+    st.session_state[shadow] = stored
+
+
+def retro_data_key(store, res) -> str:
+    """Aşama 0 sonucunun hangi verilerle üretildiği: yüklenen dosyaların özeti ve tahmin tarihi."""
+    return "|".join([store.get(f"hash_{n}", "") for n in ("invoices", "payments")] + [str(res["as_of"])[:10]])
+
+
 def tl(x, compact: bool = False) -> str:
     """Türkçe para biçimi: 2.108.055 TL; compact=True ise 2,1 mn TL."""
     x = float(x)
@@ -388,8 +414,7 @@ with st.sidebar:
             as_of = st.date_input("Tahmin tarihi", format="DD.MM.YYYY",
                                   help="Genellikle bugün. Geçmiş bir tarih seçerseniz o güne kadarki veriyle tahmin yapılır.")
             opening_key = f"opening::{store.path}"
-            if opening_key not in st.session_state:
-                st.session_state[opening_key] = float(store.get("opening", 0))
+            synced_state(opening_key, float(store.get("opening", 0)))
             opening = st.number_input("Kasa ve bankadaki toplam para (TL)", 0.0, key=opening_key, step=10_000.0,
                                       help="Her kullanımda güncelleyin; tahmin bu tutardan başlar. Yalnızca gerçekten "
                                            "elinizde olan para: kredili mevduat (KMH), kredi kartı ya da kredi limiti, "
@@ -493,8 +518,7 @@ with st.sidebar:
             terms = st.number_input("Vadesi yazmayan faturalar için vade (gün)", 0, 365, int(store.get("terms", 30)),
                                     help="TTK m.1530: vade yazmıyorsa borçlu, faturayı aldıktan 30 gün sonra temerrüde düşer.")
             rates_key = f"rates_text::{store.path}"            # işletme değişince kendi kurları gelsin
-            if rates_key not in st.session_state:
-                st.session_state[rates_key] = store.get("rates", "")
+            synced_state(rates_key, store.get("rates", ""))
             rates_text = st.text_input("Döviz kurları (dövizli fatura, çek, borç ya da gider varsa)", key=rates_key,
                                        placeholder="USD=49,50; EUR=55,60",
                                        help="Dövizli tutarlar bu kurla TL'ye çevrilir. Kuru girilmeyen dövizli alacak ve çek "
@@ -503,8 +527,7 @@ with st.sidebar:
             if ecb:
                 ecb_day, ecb_rates = ecb
                 st.caption(f"Avrupa Merkez Bankası (ECB) referans kurları, {ecb_day:%d.%m.%Y}: "
-                           + "; ".join(f"{c} = {v:,.4f}".replace(",", "X").replace(".", ",").replace("X", ".")
-                                       for c, v in ecb_rates.items())
+                           + "; ".join(f"{c} = {tr_number(v, 4)}" for c, v in ecb_rates.items())
                            + ". Bilgi amaçlıdır: bankanızın ve TCMB'nin kuru farklı olabilir; vergi ve muhasebe "
                              "değerlemesinde ECB kuru kullanılmaz. Veriler ECB internet sitesinden ücretsiz edinilebilir.")
 
@@ -776,25 +799,25 @@ if res["disputed_total"]:
 if m["over_60_terms"]:
     notes.append(f"{m['over_60_terms']} açık faturada vade 60 günden uzun. TTK m.1530'a göre alacaklı KOBİ ise ya da "
                  "borçlu büyük işletmeyse vade 60 günü aşamaz; bu sözleşmeleri gözden geçirin.")
-if own and store.get("retro_result", ""):
+if own and store.get("retro_result", "") and json.loads(store.get("retro_meta", "{}")).get("data") == retro_data_key(store, res):
     _retro = pd.read_json(io.StringIO(store.get("retro_result")), orient="records")
-    _behind = _retro.loc[_retro["dm_sonuc"] == "geride", "ufuk_gun"].tolist() if "dm_sonuc" in _retro else []
-    if _behind:
-        st.warning(f"Aşama 0 geriye dönük testinde model bu işletmede {', '.join(f'{int(h)}' for h in _behind)} günlük "
-                   "ufukta basit bir yöntemin istatistiksel olarak gerisinde kaldı (Diebold-Mariano, %5). Bu ufuklarda "
-                   "tahsilat için pilot raporundaki \"İleriye dönük kayıt\" tablosunda en iyi basit yöntemin sayısını "
-                   "esas alın; kasa grafiğine temkinli yaklaşın.")
+    for rep in pilot.simple_replacements(_retro, res["obs"], res["as_of"]):
+        st.warning(f"**{rep['ufuk_gun']} günlük tahsilat için bu işletmede basit yöntem esas alınır.** Aşama 0 geriye "
+                   f"dönük testinde model, \"{rep['ad']}\" yönteminin istatistiksel olarak gerisinde kaldı "
+                   f"(Diebold-Mariano, %5; geçmiş sapma model %{rep['sapma_model']:.0f}, bu yöntem "
+                   f"%{rep['sapma_yontem']:.0f}). Bu yönteme göre önümüzdeki {rep['ufuk_gun']} günde açık faturalardan "
+                   f"beklenen tahsilat: **{tl(rep['tutar'])}**. Basit yöntemin belirsizlik bandı yoktur; kasa grafiği ve "
+                   "güvenle harcanabilir tutar modelden gelir, bu ufukta onlara temkinli yaklaşın.")
 for note in notes:
     if note.startswith("DİKKAT"):           # kasayı olduğundan dolu gösterebilecek veri sorunları gizlenmez
         st.warning(note)
 if own:
     for cur, given, ref, diff in fx.stale_rates(ingest.parse_rates(store.get("rates", ""))):
-        st.warning(f"Girdiğiniz {cur} kuru ({given:,.2f}) ECB'nin {fx.latest()[0]:%d.%m.%Y} kurundan ({ref:,.2f}) "
-                   f"%{abs(diff) * 100:.0f} {'düşük' if diff < 0 else 'yüksek'}; bu fark, son 3 yılda kurun bir ayda "
-                   "gösterdiği olağan hareketten büyük. Kur eskiyse dövizli tutarlar yanlış çevrilir. \"Diğer ayarlar\" "
-                   "bölümünde güncelleyin ve dövizli tutar içeren dosyaları yeniden yükleyin (kayıtlı dosyalar yüklendikleri "
-                   "günkü kurla çevrilmiş olarak saklanır)."
-                   .replace(",", "X").replace(".", ",").replace("X", "."))
+        st.warning(f"Girdiğiniz {cur} kuru ({tr_number(given, 2)}) ECB'nin {fx.latest()[0]:%d.%m.%Y} kurundan "
+                   f"({tr_number(ref, 2)}) %{abs(diff) * 100:.0f} {'düşük' if diff < 0 else 'yüksek'}; bu fark, son 3 yılda "
+                   "kurun bir ayda gösterdiği olağan hareketten büyük. Kur eskiyse dövizli tutarlar yanlış çevrilir. "
+                   "\"Diğer ayarlar\" bölümünde güncelleyin ve dövizli tutar içeren dosyaları yeniden yükleyin (kayıtlı "
+                   "dosyalar yüklendikleri günkü kurla çevrilmiş olarak saklanır).")
 if notes:
     with st.expander(f"Veri notları ({len(notes)})"):
         for note in notes:
@@ -1044,8 +1067,7 @@ with tab_accuracy:
                  "eldeki bilgiyle 14 ve 30 günlük tahsilat tahmin edilir ve gerçekleşenle karşılaştırılır. Ölçütler "
                  "ileriye dönük pilottakilerle aynıdır; sonuç pilotun başında işletmeyle konuşulur.")
         n_retro = pilot.retro_origins(res["obs"], res["as_of"])
-        # Hangi verilerle yapıldığı: yüklenen dosyaların özeti ve tahmin tarihi (ayar değişiklikleri sayılmaz).
-        data_key = "|".join([store.get(f"hash_{n}", "") for n in ("invoices", "payments")] + [str(res["as_of"])[:10]])
+        data_key = retro_data_key(store, res)              # ayar değişiklikleri sayılmaz
         saved = json.loads(store.get("retro_meta", "{}"))
         if n_retro < pilot.RETRO_MIN_ORIGINS:
             st.caption(f"Yeterli geçmiş yok: her tahmin gününden önce en az {pilot.RETRO_MIN_TRAIN_DAYS} günlük geçmiş ve "
@@ -1064,9 +1086,7 @@ with tab_accuracy:
             if saved.get("data") != data_key:
                 st.caption(f"Son Aşama 0 testi {saved.get('ran')} tarihinde, o günkü verilerle yapıldı. Veriler değiştiyse "
                            "yeniden çalıştırın.")
-            verdict = {True: "geçti", False: "kaldı", None: "değerlendirilemedi"}
-            show_table(retro.assign(**{c: retro[c].map(lambda v: verdict.get(v if isinstance(v, bool) else None, "–"))
-                                       for c in ("B1", "B2") if c in retro}).rename(columns={
+            show_table(retro.assign(**{c: retro[c].map(verdict_text) for c in ("B1", "B2") if c in retro}).rename(columns={
                 "ufuk_gun": "Ufuk (gün)", "tahmin_tarihi_sayisi": "Tahmin günü", "sapma_model_%": "Model (%)",
                 "sapma_medyan_%": "Müşteri medyanı (%)", "sapma_vade_%": "Vadesinde öder (%)",
                 "sapma_oran_%": "Tahsilat oranı (%)", "bant_ici": "Bant içinde", "bant_genisligi_%": "Bant genişliği (%)",
@@ -1108,13 +1128,11 @@ with tab_accuracy:
                 st.write("Süresi dolan kayıtlarda tahmin ile gerçekleşen (sapma ve aralık skoru: düşük iyi). "
                          "Tahsilat: açık faturalardan gelen para, kısmi ödemeler dahil. Kasa: o gün girdiğiniz "
                          "kasa ve banka toplamı.")
-                verdict = {True: "geçti", False: "kaldı", None: "değerlendirilemedi"}
                 view = summary.assign(
                     hedef=summary["hedef"].map({"tahsilat": "Tahsilat", "kasa": "Kapanış kasası"}),
                     fark_guven_araligi=summary["fark_guven_araligi"].map(
                         lambda v: f"{v[0]:+.1f} / {v[1]:+.1f} puan" if isinstance(v, tuple) else "az kayıt"),
-                    **{c: summary[c].map(lambda v: verdict.get(v if isinstance(v, bool) else None, "–"))
-                       for c in ("B1", "B2") if c in summary})
+                    **{c: summary[c].map(verdict_text) for c in ("B1", "B2") if c in summary})
                 show_table(view.rename(columns={
                     "hedef": "Hedef", "ufuk_gun": "Ufuk (gün)", "kayit": "Kayıt", "uyarili_kayit": "Uyarılı (dışarıda)",
                     "sapma_model_%": "Model (%)", "sapma_medyan_%": "Müşteri medyanı (%)",

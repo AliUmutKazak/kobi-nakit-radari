@@ -680,6 +680,7 @@ def test_dashboard_renders_demo_and_own_data_without_errors(tmp_path, monkeypatc
     pay, pay_notes = ingest.load_payables(borc, rates={"USD": 49.5})
     store.save("payables", pay)
     store.set("notes_payables", __import__("json").dumps(pay_notes, ensure_ascii=False))
+    store.set("rates", "USD=41,50")                                       # eski kur: uyarı çıkmalı
     store.set("pilot_on", 1)                                              # pilot kayıtları bölümü de çizilsin
     store.set("sector", "46")                                             # TCMB sektör karşılaştırması da çizilsin
     store.add_pilot_record("2026-09-01", pd.DataFrame({
@@ -697,6 +698,14 @@ def test_dashboard_renders_demo_and_own_data_without_errors(tmp_path, monkeypatc
     assert any("Ortalama tahsil süreniz" in i.value for i in at.info)
     assert any(w.value.startswith("DİKKAT") for w in at.warning)          # kuru girilmemiş dövizli borç
     assert any(h.value == "Kur değişirse" for h in at.subheader)
+    stale = next(w.value for w in at.warning if "Girdiğiniz USD kuru" in w.value)
+    assert "(41,50)" in stale and "yanlış çevrilir. " in stale and "bu fark, son" in stale   # noktalama bozulmaz
+    # Kasa tutarı panel dışında değişirse (ör. yedekten geri yükleme) alan da güncellenir, eskisi geri yazılmaz.
+    Store(db).set("opening", 123456.0)
+    at.run()
+    assert not at.exception, [e.value for e in at.exception]
+    assert float(Store(db).get("opening")) == 123456.0
+    assert any(n.value == 123456.0 for n in at.sidebar.number_input)
     next(b for b in at.button if b.label == "Geri testi çalıştır").click().run()
     assert not at.exception, [e.value for e in at.exception]
     assert any("Basel Komitesi trafik ışığı" in m.value for m in at.markdown)
@@ -706,6 +715,8 @@ def test_dashboard_renders_demo_and_own_data_without_errors(tmp_path, monkeypatc
     next(b for b in at.button if b.label.startswith("Aşama 0 testini çalıştır")).click().run()
     assert not at.exception, [e.value for e in at.exception]
     assert Store(db).get("retro_result") and "Aşama 0" in Store(db).audit_log()["action"].str.cat()
+    table = next(d.value for d in at.dataframe if "B1 (isabet)" in d.value.columns)
+    assert set(table["B1 (isabet)"]) <= {"geçti", "kaldı", "değerlendirilemedi"}       # kayıttan okununca da
     next(b for b in at.button if b.label == "Pilot raporunu hazırla").click().run()
     assert not at.exception, [e.value for e in at.exception]
     assert (tmp_path / "KobiRadar" / "anonim_anahtar.txt").exists()
@@ -1615,3 +1626,20 @@ def test_retrospective_phase_uses_weekly_origins_and_reports_progress(full):
     r = pilot.build(obs, AS_OF, retro=summary)
     page = pilot.render(r)
     assert r["retro"] and "Aşama 0" in page and "Kupiec p" in page
+
+
+def test_currency_spellings_from_accounting_exports():
+    from radar import ingest
+    df = pd.DataFrame({"currency": ["$", "Dolar", "€", "Avro", "EURO", "£", "Sterlin", "TL", "₺", None, " usd "]})
+    assert ingest._currency_codes(df).tolist() == ["USD", "USD", "EUR", "EUR", "EUR", "GBP", "GBP", "TRY", "TRY", "TRY",
+                                                   "USD"]
+
+
+def test_simple_method_replaces_model_where_retrospective_says_behind(full):
+    from radar import pilot
+    obs = observe(full, AS_OF)
+    retro = pd.DataFrame({"ufuk_gun": [14, 30], "dm_sonuc": ["geride", "eşdeğer"], "sapma_model_%": [30.0, 10.0],
+                          "sapma_medyan_%": [20.0, 12.0], "sapma_oran_%": [15.0, 11.0], "sapma_vade_%": [40.0, 50.0]})
+    reps = pilot.simple_replacements(retro, obs, AS_OF)
+    assert [r["ufuk_gun"] for r in reps] == [14] and reps[0]["yontem"] == "oran" and reps[0]["tutar"] >= 0
+    assert pilot.simple_replacements(retro.assign(dm_sonuc="eşdeğer"), obs, AS_OF) == []

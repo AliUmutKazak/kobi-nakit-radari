@@ -164,7 +164,15 @@ def _currency_codes(df: pd.DataFrame) -> pd.Series:
     if "currency" not in df:
         return pd.Series("TRY", index=df.index)
     return (df["currency"].fillna("TRY").astype(str).str.strip().str.upper()
-            .replace({"TL": "TRY", "TRL": "TRY", "YTL": "TRY", "": "TRY", "₺": "TRY", "NAN": "TRY"}))
+            .replace(CURRENCY_ALIASES))
+
+
+# Muhasebe çıktılarında görülen yazımlar (ISO 4217 koduna çevrilir).
+CURRENCY_ALIASES = {"TL": "TRY", "TRL": "TRY", "YTL": "TRY", "": "TRY", "₺": "TRY", "NAN": "TRY",
+                    "$": "USD", "US$": "USD", "DOLAR": "USD", "ABD DOLARI": "USD",
+                    "€": "EUR", "EURO": "EUR", "AVRO": "EUR",
+                    "£": "GBP", "STERLIN": "GBP", "STERLİN": "GBP", "İNGILIZ STERLINI": "GBP", "İNGİLİZ STERLİNİ": "GBP",
+                    "CHF": "CHF", "İSVIÇRE FRANGI": "CHF", "İSVİÇRE FRANGI": "CHF", "YUAN": "CNY", "RMB": "CNY"}
 
 
 def _to_tl(amount: pd.Series, code: pd.Series, rates: dict | None, what: str, outgoing: bool,
