@@ -61,7 +61,7 @@ Ortak noktalar şunlar: fatura bazında ödeme tahmini, banka ve muhasebe verisi
 | 6 | Hiç tahsil edilemeyen alacak, müşteri yoğunlaşması | İyimser | Müşteri bazında temerrüt oranı; "en büyük müşterim geç öderse" senaryosu; tahsili zor alacaklar ayrı |
 | 7 | Eski veriyle tahmin | İyimser | Tahsilat kayıt kesimi kayıtlardan tahmin ediliyor ve uyarı veriliyor |
 | 8 | Mükerrer fatura | İyimser | Olası mükerrerler gösteriliyor |
-| 9 | Kur değişimi | İki yönlü | Kur senaryosu var; kur belirsizliği banda girmiyor (açık) |
+| 9 | Kur değişimi (dövizli alacak bugünkü kurla TL'ye çevriliyordu) | Kötümser uç için **iyimser** (TL değer kazanırsa) | **Yapıldı (20.10):** kur belirsizliği ECB kur geçmişinden banda katıldı; TL'nin geçmişteki değer kaybı geleceğe taşınmıyor. Ayrıntı bölüm 7'de |
 | 10 | Ödeme sözleri | Sözler tutulmazsa iyimser | Söz tarihi yeni vade sayılıyor, müşterinin gecikme alışkanlığı üstüne ekleniyor. **Yapıldı (20.10):** geçmiş sözlerin tutulma oranı ve en çok söz tutmayan müşteriler gösteriliyor |
 | 11 | Karar sayısının seçimi | Orta değere bakılırsa iyimser | **Bugün eklendi:** "güvenle harcanabilir tutar" (%10'luk uçtan); haftalık tabloda kötümser sütun öne alındı |
 | 12 | Tek tek işletmede kısa dönem sapması | İyimser olabilir | Çevrimiçi izleme ortalamada standart; pilot raporu her işletmeyi ayrıca Basel ve Kupiec ile sınıyor |
@@ -86,12 +86,47 @@ Ortak noktalar şunlar: fatura bazında ödeme tahmini, banka ve muhasebe verisi
 4. **Resmî tatiller** (madde 15). Muhtasar, KDV ve SGK ödeme günleri hafta sonuna ya da resmî tatile denk gelirse izleyen ilk iş gününe kayıyor. Dini bayram tarihleri her yıl Diyanet listesinden eklenmeli (MEVZUAT_KONTROLU.md, bölüm 5).
 5. **Eski kasa tutarı uyarısı ve ekstre bakiyesi** (madde 16). Ekstrede bakiye sütunu varsa son bakiye ve tarihi, kasa tutarı alanının altında gösteriliyor. Kasadaki nakit ve başka bankalardaki hesaplar o tutara dahil olmadığından iki tutar otomatik eşitlenmiyor; karar kullanıcıda.
 
-## 7. Kalan açık konular
+6. **Kur belirsizliği** (madde 9). Aşağıda.
 
-1. Kur değişiminin belirsizliği banda girmiyor (madde 9). Kur senaryosu var.
-2. Tek işletmede kısa dönem sapması (madde 12). Pilot raporu her işletmeyi ayrıca sınıyor; gerçek veriyle izlenecek.
-3. Gerçek Türk KOBİ verisi. Bütün bu sonuçlar sentetik ya da yabancı açık veriyle; son hakem pilot.
+## 7. Kur belirsizliği (20 Ekim 2026)
 
-## 8. Yasal uyum notu
+**Sorun.** Dövizli fatura, kullanıcının girdiği bugünkü kurla TL'ye çevriliyordu ve para hangi gün gelirse gelsin o kur sayılıyordu. TL çoğu dönemde değer kaybettiği için bu genellikle ihtiyatlı görünür. Ancak her zaman öyle değil.
 
-Bugünkü değişikliklerin hiçbiri yeni bir kişisel veri amacı yaratmıyor. Banka çıkışlarından kimlik bilgisi saklanmıyor (KVKK m.4/2-ç). "Güvenle harcanabilir tutar" bir karar destek göstergesi; yatırım ya da finansal danışmanlık sayılmayacak biçimde nasıl ifade edileceği avukata soruldu (MEVZUAT_KONTROLU.md, soru 22). Tanıtımda doğruluk iddiası kullanılmaması kuralı da aynı belgede (soru 21).
+**Ölçüm.** Veri: Avrupa Merkez Bankası (ECB) euro referans kurları, 2005–2026; USD/TRY çapraz kurdan türetildi. Yöntem önceden belirlendi:
+- tarihsel benzetim, yalnızca tahmin gününe kadarki veriyle (genişleyen pencere);
+- TL'nin geçmişteki ortalama değer kaybı çıkarıldı (rassal yürüyüş; Meese ve Rogoff 1983);
+- 2010'dan itibaren örtüşmeyen dönemler.
+
+| Döviz, ufuk | Dönem sayısı | Kur sabit: TL karşılığı bugünkünden düşük | Tarihsel benzetim: kötümser uç aşımı | İyimser uç aşımı |
+|---|---|---|---|---|
+| USD, 30 gün | 204 | %29 | %5,4 | %14,7 |
+| USD, 60 gün | 102 | %26 | %3,9 | %23,5 |
+| USD, 90 gün | 68 | %24 | %4,4 | %23,5 |
+| EUR, 30 gün | 204 | %36 | %4,9 | %17,2 |
+| EUR, 60 gün | 102 | %25 | %3,9 | %23,5 |
+| EUR, 90 gün | 68 | %25 | %7,4 | %26,5 |
+
+**Bulgular:**
+- Kur sabit sayılınca dövizli alacağın TL karşılığı, dönemlerin dörtte biri ile üçte birinde bugünkünden düşük çıkıyor. Bu, kötümser çizgide hiç yoktu.
+- Tarihsel benzetimde kötümser uç %4–7 sıklıkla aşılıyor (hedef %10). Yani bu uç ihtiyatlı: Kupiec testi "fazla temkinli" yönünde reddediyor.
+- İyimser uç %15–27 sıklıkla aşılıyor. Sebep, TL'nin değer kaybının geleceğe taşınmaması. Kur farkının kasayı büyüteceğine güvenmemek bilinçli bir tercih: hata yalnızca "kasa olduğundan az görünür" yönünde.
+- Değer kaybı korunsaydı kötümser uç aşımı %5–7, iyimser %12–21 olurdu. Bu da TL'nin gelecekte de aynı hızla değer kaybedeceğini varsaymak olurdu.
+
+**Uygulama** (`radar/fx.py`):
+- Her senaryo için geçmişten bir başlangıç günü seçiliyor. Paranın geldiği günün kur oranı, faturanın TL tutarıyla çarpılıyor.
+- Bütün dövizler için aynı gün seçiliyor, böylece dövizler arasındaki ilişki korunuyor.
+- ECB tablosunda olmayan bir döviz kur sabit sayılarak kalıyor ve panel bunu uyarıyor.
+- Laboratuvar verisinde döviz olmadığı için laboratuvar sonuçları değişmiyor.
+- Sınama yeniden üretilebilir: `python tools/kur_sinamasi.py`.
+
+**Kullanım koşulu.** ECB internet sitesindeki Copyright bölümüne göre bilgiler, ECB kaynak gösterilerek serbestçe kullanılabilir. Değişiklik yapıldıysa bu belirtilmeli; ücretli bir belgede alıcıya verinin ECB sitesinden ücretsiz edinilebileceği bildirilmeli. Panel bu notu gösteriyor. ECB, kurların yalnızca bilgi amaçlı olduğunu ve işlemlerde kullanılmamasını yazıyor. Burada kurlar dönüşüm için değil, yalnızca geçmiş dalgalanmayı ölçmek için kullanılıyor; dönüşümde kullanıcının girdiği kur geçerli.
+
+## 8. Kalan açık konular
+
+1. Tek işletmede kısa dönem sapması (madde 12). Pilot raporu her işletmeyi ayrıca sınıyor; gerçek veriyle izlenecek.
+2. Gerçek Türk KOBİ verisi. Bütün bu sonuçlar sentetik ya da yabancı açık veriyle; son hakem pilot.
+3. Dövizli borçlar (tedarikçi faturaları) dosyada TL olarak geliyor; kur riski yalnızca alacak tarafında ölçülüyor. Dövizli borç kur yükselişinde büyür: bu, kasayı olduğundan dolu gösterebilecek bir yön. Borç dosyasına döviz sütunu desteği sıradaki iş.
+
+## 9. Yasal uyum notu
+
+Bugünkü değişikliklerin hiçbiri yeni bir kişisel veri amacı yaratmıyor. Banka çıkışlarından kimlik bilgisi saklanmıyor (KVKK m.4/2-ç). "Güvenle harcanabilir tutar" bir karar destek göstergesi; yatırım ya da finansal danışmanlık sayılmayacak biçimde nasıl ifade edileceği avukata soruldu (MEVZUAT_KONTROLU.md, soru 22). Tanıtımda doğruluk iddiası kullanılmaması kuralı da aynı belgede (soru 21). ECB kur verisinin kullanım koşulları MEVZUAT_KONTROLU.md'ye ve LISANSLAR.md'ye işlendi.

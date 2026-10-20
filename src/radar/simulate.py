@@ -227,8 +227,13 @@ def simulate(inv: pd.DataFrame, Q: np.ndarray, as_of, opening: float, outflows: 
              cheque_p: np.ndarray | None = None, cheque_terms: np.ndarray | None = None,
              cheque_by_customer: bool = False, lag: int = 0, payday: np.ndarray | None = None,
              split_p: np.ndarray | None = None, split_frac: np.ndarray | None = None,
-             split_u: np.ndarray | None = None, outflow_level: np.ndarray | None = None) -> SimResult:
+             split_u: np.ndarray | None = None, outflow_level: np.ndarray | None = None,
+             fx_code: np.ndarray | None = None, fx_mult: np.ndarray | None = None) -> SimResult:
     """inv sütunları: customer_id, issue_date, due_date, open_amount, p_default, projected.
+
+    fx_code / fx_mult: dövizli faturalarda kur belirsizliği (bkz. radar.fx). fx_code fatura başına döviz sırası
+    (-1 = TL), fx_mult (döviz, senaryo, gün) bugünkü kura oran: para hangi gün gelirse TL tutarı o günün oranıyla
+    çarpılır.
 
     outflow_level: (blok, senaryo) gider katsayıları (bkz. pipeline.outflow_levels); 30 günlük blokta planlanan
     giderler senaryo başına bu katsayıyla çarpılır. Verilmezse giderler kesin sayılır.
@@ -326,6 +331,12 @@ def simulate(inv: pd.DataFrame, Q: np.ndarray, as_of, opening: float, outflows: 
             first_ok = splits & (first < close_day) & (first <= horizon)
             share = np.where(first_ok, 1 - split_frac[i], 1.0)
         pay_day[i, ok] = day[ok]
+        if fx_code is not None and fx_code[i] >= 0:
+            rate = fx_mult[fx_code[i]]
+            m_day = rate[sims, np.clip(day, 0, horizon)]                  # para gelen günün kur oranı
+            m_first = rate[sims, np.clip(first, 0, horizon)] if first_ok is not None else None
+        else:
+            m_day = m_first = 1.0
         if projected[i]:
             # Gelecek satışların kendisi de belirsizdir. `sales_level` verilmişse (işletmenin geçmiş satış tahmini
             # hatalarından, bkz. pipeline.sales_errors) senaryo başına ortak bir düzey katsayısı uygulanır; yoksa
@@ -335,13 +346,17 @@ def simulate(inv: pd.DataFrame, Q: np.ndarray, as_of, opening: float, outflows: 
                 weight = sales_level[min(block, len(sales_level) - 1)]
             else:
                 weight = rng.poisson(1.0, n_sims)
-            np.add.at(inflow, (sims[ok], day[ok]), amount[i] * weight[ok] * share[ok])
+            mult = weight * m_day
+            np.add.at(inflow, (sims[ok], day[ok]), amount[i] * mult[ok] * share[ok])
             if first_ok is not None:
-                np.add.at(inflow, (sims[first_ok], first[first_ok]), amount[i] * weight[first_ok] * split_frac[i][first_ok])
+                mult_f = weight * m_first
+                np.add.at(inflow, (sims[first_ok], first[first_ok]), amount[i] * mult_f[first_ok] * split_frac[i][first_ok])
         else:
-            np.add.at(inflow, (sims[ok], day[ok]), amount[i] * share[ok])
+            mult = np.broadcast_to(m_day, (n_sims,))
+            np.add.at(inflow, (sims[ok], day[ok]), amount[i] * mult[ok] * share[ok])
             if first_ok is not None:
-                np.add.at(inflow, (sims[first_ok], first[first_ok]), amount[i] * split_frac[i][first_ok])
+                mult_f = np.broadcast_to(m_first, (n_sims,))
+                np.add.at(inflow, (sims[first_ok], first[first_ok]), amount[i] * mult_f[first_ok] * split_frac[i][first_ok])
             collections += closed * amount[i]
 
     if cheques is not None and len(cheques):

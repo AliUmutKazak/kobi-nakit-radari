@@ -2,6 +2,10 @@
 
 Tarih: 14 Ekim 2026. Yeniden üretmek için: `python run_validation.py 24` (yaklaşık 3 dakika).
 
+## Kur belirsizliği: ECB kurlarıyla geçmişe dönük sınama (20 Ekim 2026)
+
+Dövizli alacağın TL karşılığı, kur sabit sayılınca 2010–2026'da 30–90 günlük dönemlerin %24–36'sında bugünkünden düşük çıktı. Tarihsel benzetimle (yalnızca geçmiş veri; TL'nin ortalama değer kaybı çıkarılmış) kötümser uç %4–7 sıklıkla aşıldı, yani ihtiyatlı. İyimser uç bilinçli olarak dar: %15–27. Ayrıntı: [HATA_AZALTMA_ANALIZI.md](HATA_AZALTMA_ANALIZI.md), bölüm 7. Yeniden üretmek için: `python tools/kur_sinamasi.py`.
+
 ## Senaryo laboratuvarı, sürüm 6 ve hata azaltma (20 Ekim 2026)
 
 Analiz: [HATA_AZALTMA_ANALIZI.md](HATA_AZALTMA_ANALIZI.md). İşaretli tutarlı banka ekstrelerinde çıkış hareketlerinin tahsilat sayılması hatası bulundu ve düzeltildi. Gider planı artık işletmenin banka geçmişiyle karşılaştırılıyor; plandan eksik kalan kısım "plan dışı ödemeler" olarak ekleniyor. Giderlerin dalgalanması kasa bandına katıldı. Giderleri dalgalanan 120 işletmede kötümser uç aşımı %13,3'ten %9,2'ye indi. Sınavda (240 işletme) kötümser uç aşımı %7, iyimser %10 çıktı; Basel yeşil, Kupiec iki uçta da geçiyor (p = 0,13 / 1,00), Spiegelhalter p = 0,96.

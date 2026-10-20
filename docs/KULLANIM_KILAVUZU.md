@@ -83,7 +83,7 @@ Biçimi görmek için panelin ilk ekranında örnek dosyaları indirebilirsiniz.
 
 **5. Pilot: takma adlı veri paketi.** Pilot çalışmasına katılıyorsanız, yüklediğiniz dosyaların paylaşılabilir kopyasını buradan hazırlarsınız. Müşteri unvanı ve vergi numarası takma adlarla değişir (aynı müşteri her ay aynı takma adı alır), e-posta ve telefon silinir, banka açıklamaları tümüyle yeniden yazılır; tutar ve tarihler aynen kalır. Takma adları üreten gizli anahtar yalnızca sizin bilgisayarınızda durur ve paylaşılmaz. Göndermeden önce zip dosyasını açıp birkaç satıra göz atın. Ayrıntılar: PILOT_PROTOKOLU.md (programla birlikte gelir).
 
-**Diğer ayarlar.** Banka eşleştirme toleransı (havale masrafı gibi küçük farklar için), vadesi yazmayan faturalar için varsayılan vade, döviz kurları (ör. `USD=41,50; EUR=48,20`; kuru girilmeyen döviz tahmine katılmaz), verilerin saklandığı dosyanın yeri, **son yüklemeyi geri alma** (yanlış dosya yüklerseniz bir önceki dosyaya döner), **şifreli yedek** (parolanızla AES-256; parolayı unutursanız açılamaz), **yedekten geri yükleme** (önce mevcut veri ayrı bir dosyaya kopyalanır) ve kayıtlı veriyi silme.
+**Diğer ayarlar.** Banka eşleştirme toleransı (havale masrafı gibi küçük farklar için), vadesi yazmayan faturalar için varsayılan vade, döviz kurları (bugünkü kur, ör. `USD=49,50; EUR=55,60`; kuru girilmeyen döviz tahmine katılmaz), verilerin saklandığı dosyanın yeri, **son yüklemeyi geri alma** (yanlış dosya yüklerseniz bir önceki dosyaya döner), **şifreli yedek** (parolanızla AES-256; parolayı unutursanız açılamaz), **yedekten geri yükleme** (önce mevcut veri ayrı bir dosyaya kopyalanır) ve kayıtlı veriyi silme.
 
 ## 4. Paneli okumak
 
@@ -99,7 +99,7 @@ Biçimi görmek için panelin ilk ekranında örnek dosyaları indirebilirsiniz.
 
 **Veri kalitesi ve kapsam.** Üst satırın altındaki bu bölüm verideki son hareketi, banka tahsilatlarının faturalarla eşleşme oranını, geçmişin uzunluğunu ve hangi yöntemin kullanıldığını gösterir. Yüklemediğiniz kaynaklar (ör. ödenecek faturalar) "kapsam dışı" diye yazılır: kasa grafiği onları içermez.
 
-**Nakit takvimi** ("Kasa tahmini" sekmesi): her gider, borç ve çek tarihiyle ve ne kadar kesin olduğuyla (kesin borç faturası, dosyadan planlı, elle girilen varsayım, olasılıklı çek). **Büyük müşteri geç öderse:** bir ya da birkaç müşteriyi seçip "X gün daha geç öderse" kasanızın ne olacağını görürsünüz. **Kur değişirse:** dövizli açık alacağınız varsa, TL'nin dövizlere karşı değişimini kendiniz girip kasaya etkisini görürsünüz (kur tahmini yapılmaz; dövizli borçlar kapsam dışıdır).
+**Nakit takvimi** ("Kasa tahmini" sekmesi): her gider, borç ve çek tarihiyle ve ne kadar kesin olduğuyla (kesin borç faturası, dosyadan planlı, elle girilen varsayım, olasılıklı çek). **Büyük müşteri geç öderse:** bir ya da birkaç müşteriyi seçip "X gün daha geç öderse" kasanızın ne olacağını görürsünüz. **Kur değişirse:** dövizli açık alacağınız varsa, TL'nin dövizlere karşı değişimini kendiniz girip kasaya etkisini görürsünüz (kur tahmini yapılmaz; dövizli borçlar kapsam dışıdır). Kasa bandı kur dalgalanmasını ayrıca zaten içerir. Para geldiği gün kur bugünkünden düşük olabilir; bu olasılık, Avrupa Merkez Bankası (ECB) referans kurlarının 2005'ten bu yana geçmişinden alınır. TL'nin değer kaybetmeye devam edeceği varsayılmaz: kur farkının kasanızı büyüteceğine güvenilmez. ECB verileri ECB internet sitesinden ücretsiz edinilebilir; USD ve diğer dövizlerin TL karşılığı ECB'nin euro bazlı kurlarından çapraz kur olarak türetilmiştir. Kur geçmişi olmayan bir döviz kullanıyorsanız panel uyarır.
 
 **"Tahsilat işleri" sekmesi.**
 - **Öncelikli tahsilat listesi:** en üstteki fatura, açığınız açısından en riskli olandır. Müşterinin sabit bir ödeme günü varsa (ör. "ayın 15'i", "her Cuma") panel ona göre iletişim tarihi önerir.
@@ -126,5 +126,5 @@ En altta **"Pilot raporunu hazırla"** düğmesi, tek sayfalık, yazdırılabili
 
 - Tahmin müşterilerinizin geçmişteki davranışına dayanır. Gecikmeler hızla artıyorsa tahmin iyimser kalabilir; panel bu durumu fark ettiğinde uyarır, o zaman kötümser çizgiyi esas alın.
 - Alacağınız birkaç müşteride toplanmışsa (panel bunu da uyarır), tek bir müşterinin gecikmesi sonucu tek başına belirler.
-- Kur değişimi, yeni kredi, beklenmedik büyük giderler tahmine dahil değildir.
+- Yeni kredi ve beklenmedik büyük giderler tahmine dahil değildir. Kur dalgalanması yalnızca dövizli alacaklar için banda girer; dövizli borçlar kapsam dışıdır.
 - Verileriniz bu bilgisayardaki şifrelenmemiş bir dosyada durur (yeri kenar çubuğunda yazar). Bilgisayarınızın Windows parolasını ve disk şifrelemesini açık tutun, dosyayı düzenli yedekleyin.

@@ -13,7 +13,7 @@ import pandas as pd  # noqa: E402
 import plotly.graph_objects as go  # noqa: E402
 import streamlit as st  # noqa: E402
 
-from radar import access, actions, anonymize, benchmark, ingest, mailer, pilot, pipeline, standards  # noqa: E402
+from radar import access, actions, anonymize, benchmark, fx, ingest, mailer, pilot, pipeline, standards  # noqa: E402
 from radar.reconcile import collection_events, reconcile, sender_key  # noqa: E402
 from radar.store import Store, create_business, encrypt_backup, list_businesses  # noqa: E402
 
@@ -850,6 +850,13 @@ with tab_cash:
         show_table(exposure.rename(columns={"currency": "Para birimi", "original": "Açık alacak (döviz)",
                                             "rate": "Girilen kur", "tl": "TL karşılığı (TL)"}),
                    width="stretch", hide_index=True)
+        fx_info = res["info"]
+        if fx_info.get("fx_currencies"):
+            st.caption("Kasa bandı kur dalgalanmasını zaten içeriyor (geçmiş kur hareketlerinden; TL'nin değer kaybetmeye "
+                       "devam edeceği varsayılmadan). Aşağıdaki kaydırıcı bunun üstüne kendi senaryonuzu ekler.")
+        if fx_info.get("fx_unknown"):
+            st.warning(f"{', '.join(fx_info['fx_unknown'])} için kur geçmişi yok: bu alacaklar girilen kurla sabit sayıldı, "
+                       "kur düşüşü kötümser çizgiye girmedi. Karar verirken bu tutarları kur riski açısından ayrıca düşünün.")
         pct = st.slider("TL'nin dövizlere karşı değişimi (%)", -30, 50, 10, step=5,
                         help="Artı: TL değer kaybeder, dövizli alacağın TL karşılığı artar. Kur tahmini değildir; "
                              "kendi senaryonuzu girersiniz. Dövizli borçlar kapsam dışıdır.")
@@ -894,6 +901,12 @@ with tab_accuracy:
         st.write(f"• Banka geçmişinize göre aylık giderleriniz dalgalanıyor (aylık toplamın ortalamaya oranı, 10 aydan 8'inde "
                  f"±%{info['outflow_spread'] * 50:.0f} aralığında). Bu belirsizlik kasa bandına katıldı; planlanan giderler "
                  "kesin sayılmadı.")
+    if info.get("fx_currencies"):
+        st.write(f"• Dövizli alacaklarda ({', '.join(info['fx_currencies'])}) kur belirsizliği kasa bandına katıldı: para "
+                 "geldiği gün kur bugünkünden farklı olabilir. Dalgalanma, kurların 2005'ten "
+                 f"{pd.Timestamp(info['fx_data_end']):%d.%m.%Y} tarihine kadarki geçmişinden alındı. TL'nin geçmişteki "
+                 "ortalama değer kaybı geleceğe taşınmadı: kur farkının kasayı büyüteceğine güvenilmez. "
+                 + fx.SOURCE)
     if info.get("installment_share"):
         st.write(f"• Son bir yılda kapanan faturaların %{info['installment_share'] * 100:.0f}'i birden çok tahsilatla "
                  "(taksitle) kapandı. Bu müşterilerin henüz ödenmemiş faturalarında ilk taksit, kendi geçmişlerindeki "

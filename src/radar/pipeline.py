@@ -6,7 +6,7 @@ import os
 import numpy as np
 import pandas as pd
 
-from . import actions
+from . import actions, fx
 from .features import build_features
 from .model import DelayModel, FallbackModel, evaluate, fit_model, training_frame
 from .simulate import (CHEQUE_BOUNCE, RECAL_GRID, pit_recalibration, PRIOR_RHO, aging_curve, censored_normal_fit, conditional_scores, correlation_from_scores,
@@ -119,6 +119,27 @@ def _split_args(habits: dict | None, inv: pd.DataFrame, n_sims: int, seed: int) 
         pick = pool[rng.integers(0, len(pool), n_sims)]
         frac[i], u[i] = pick[:, 0], pick[:, 1]
     return {"split_p": p, "split_frac": frac, "split_u": u}
+
+
+def fx_args(inv: pd.DataFrame, as_of, horizon: int, n_sims: int, seed: int) -> dict | None:
+    """Dövizli faturalar için simülasyona giden kur yolları (bkz. radar.fx). Dövizli fatura yoksa None.
+    ECB tablosunda olmayan dövizler kur sabit sayılarak kalır ve "unknown" listesinde döner (panel uyarır)."""
+    if "currency" not in inv:
+        return None
+    code = inv["currency"].fillna("TRY").astype(str).str.upper()
+    foreign = sorted(set(code) - {"TRY"})
+    if not foreign:
+        return None
+    paths = fx.fx_paths(foreign, as_of, horizon, n_sims, seed)
+    known = [c for c in foreign if c in paths]
+    out = {"currencies": known, "unknown": [c for c in foreign if c not in paths],
+           "data_end": fx.history().index.max() if fx.history() is not None else None}
+    if not known:
+        return out
+    index = {c: j for j, c in enumerate(known)}
+    out["fx_code"] = code.map(index).fillna(-1).astype(int).to_numpy()
+    out["fx_mult"] = np.stack([paths[c] for c in known])
+    return out
 
 
 OUTFLOW_BLOCK = 30
@@ -439,7 +460,7 @@ def forecast(obs: pd.DataFrame, as_of, opening: float, outflows: pd.DataFrame, h
              cheques: pd.DataFrame | None = None, calib_hook=None, cheque_aware: bool = True,
              cheque_by_customer: bool = False, payments_through=None, payday_snap: bool = False,
              events: pd.DataFrame | None = None, installment_aware: bool = True,
-             outflow_history: pd.DataFrame | None = None) -> dict:
+             outflow_history: pd.DataFrame | None = None, fx_aware: bool = True) -> dict:
     """calib_hook: kalibrasyon sözlüğünü değiştiren isteğe bağlı fonksiyon (deneyler ve pilot sırasındaki
     çevrimiçi kantil izleme için; bkz. pilot.online_adjustment).
     cheque_aware: çekle ödeyen müşterilerde paranın çek vadesinde gelmesi (cheque_habits; yalnızca deneylerde kapatılır).
@@ -447,6 +468,7 @@ def forecast(obs: pd.DataFrame, as_of, opening: float, outflows: pd.DataFrame, h
     ve gecikme eğrileri o güne göre kurulur; arada gelmiş olabilecek paralar bugünkü kasanın içinde sayılır.
     outflow_history: banka ekstresindeki geçmiş çıkışlar (date, amount); giderlerin belirsizliği buradan öğrenilir
     (outflow_levels). Yoksa giderler kesin sayılır.
+    fx_aware: dövizli faturalarda kur belirsizliği banda katılır (fx_args; yalnızca deneylerde kapatılır).
     events: tahsilat olayları (reconcile.collection_events); kısmi tahsilatlardan taksit alışkanlığı öğrenilir
     (installment_habits; installment_aware=False yalnızca deneylerde).
     payday_snap: ödemeyi müşterinin ödeme gününe oturtma (simulate.snap_to_payday). Laboratuvarda denendi, aralık
@@ -509,6 +531,9 @@ def forecast(obs: pd.DataFrame, as_of, opening: float, outflows: pd.DataFrame, h
     out_level = outflow_levels(outflow_history, as_of, horizon, n_sims, seed)
     if out_level is not None:
         ctx["cheque_args"]["outflow_level"] = out_level
+    fx_info = fx_args(sim_inv, as_of, horizon, n_sims, seed) if fx_aware else None
+    if fx_info:
+        ctx["cheque_args"] |= {"fx_code": fx_info["fx_code"], "fx_mult": fx_info["fx_mult"]}
     sim = simulate(sim_inv, ctx["Q"], as_of, opening, outflows, horizon, n_sims, seed=seed, aging=ctx["aging"],
                    cheques=cheques, sales_level=sales_level, **_sim_args(calib, sim_inv, ref), **ctx["cheque_args"])
     real = ~target["projected"].to_numpy()
@@ -532,7 +557,10 @@ def forecast(obs: pd.DataFrame, as_of, opening: float, outflows: pd.DataFrame, h
                      "installment_share": splits["overall"] if splits else None, "installment_n": splits["n"] if splits else 0,
                      "projected_share": projected_share,
                      "outflow_spread": (float(np.percentile(out_level, 90) - np.percentile(out_level, 10))
-                                        if out_level is not None else None)},
+                                        if out_level is not None else None),
+                     "fx_currencies": fx_info["currencies"] if fx_info else [],
+                     "fx_unknown": fx_info["unknown"] if fx_info else [],
+                     "fx_data_end": fx_info["data_end"] if fx_info else None},
             "disputed_total": float(obs.loc[is_open & obs["disputed"], "open_amount"].sum())}
 
 

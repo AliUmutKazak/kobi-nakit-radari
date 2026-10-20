@@ -1451,3 +1451,29 @@ def test_tax_payments_move_past_official_holidays():
     assert ingest.next_business_day("2026-10-29") == pd.Timestamp("2026-10-30")        # Cumhuriyet Bayramı
     plan = ingest.fixed_cost_plan("2026-05-01", horizon=40, kdv=1000.0)
     assert list(plan["date"]) == [pd.Timestamp("2026-06-01")]
+
+
+def test_fx_paths_use_only_past_data_and_no_drift():
+    from radar import fx
+    paths = fx.fx_paths(["USD", "EUR", "XYZ"], "2026-10-01", 90, 2000, seed=1)
+    assert set(paths) == {"USD", "EUR"}                                 # ECB tablosunda olmayan döviz eklenmez
+    assert paths["USD"].shape == (2000, 91) and np.allclose(paths["USD"][:, 0], 1.0)
+    # Sürüklenme çıkarıldı: TL'nin geçmişteki değer kaybı geleceğe taşınmaz (log ortalaması ~0).
+    assert abs(np.log(paths["USD"][:, -1]).mean()) < 0.02
+    assert np.quantile(paths["USD"][:, -1], 0.10) < 0.97                 # kötümser uçta kur düşüşü var
+    assert fx.fx_paths(["USD"], "2006-01-01", 90, 100, seed=1) == {}     # iki yıldan kısa geçmiş
+
+
+def test_fx_uncertainty_widens_pessimistic_band(full):
+    obs = observe(full, AS_OF).copy()
+    usd = obs["customer_id"].isin(obs["customer_id"].unique()[:10])
+    obs["currency"] = np.where(usd, "USD", "TRY")
+    obs["fx_rate"] = np.where(usd, 49.5, 1.0)
+    out = pd.DataFrame({"date": [], "amount": []})
+    on = pipeline.forecast(obs, AS_OF, 0.0, out, n_sims=400)
+    off = pipeline.forecast(obs, AS_OF, 0.0, out, n_sims=400, fx_aware=False)
+    assert on["info"]["fx_currencies"] == ["USD"] and on["info"]["fx_unknown"] == []
+    assert on["sim"].p10[-1] < off["sim"].p10[-1]                       # kur düşüşü kötümser uca girdi
+    assert on["sim"].p50[-1] == pytest.approx(off["sim"].p50[-1], rel=0.03)
+    # Senaryo hesapları aynı kur yollarını kullanır (satırlar hizalı kalır).
+    assert pipeline.scenario(on).p50[-1] == pytest.approx(on["sim"].p50[-1])
