@@ -382,7 +382,11 @@ with st.sidebar:
             as_of = st.date_input("Tahmin tarihi", format="DD.MM.YYYY",
                                   help="Genellikle bugün. Geçmiş bir tarih seçerseniz o güne kadarki veriyle tahmin yapılır.")
             opening = st.number_input("Kasa ve bankadaki toplam para (TL)", 0.0, value=float(store.get("opening", 0)),
-                                      step=10_000.0, help="Her kullanımda güncelleyin; tahmin bu tutardan başlar.")
+                                      step=10_000.0,
+                                      help="Her kullanımda güncelleyin; tahmin bu tutardan başlar. Yalnızca gerçekten "
+                                           "elinizde olan para: kredili mevduat (KMH), kredi kartı ya da kredi limiti, "
+                                           "blokeli tutarlar ve henüz tahsil edilmemiş çekler dahil değildir. Limiti "
+                                           "bakiye gibi yazmak kasayı olduğundan dolu gösterir.")
             if store.get("bank_balance", ""):
                 st.caption(f"Yüklenen banka ekstresinde son bakiye: {tl(float(store.get('bank_balance')))} "
                            f"({pd.Timestamp(store.get('bank_balance_date')):%d.%m.%Y}). Kasadaki nakit ve başka "
