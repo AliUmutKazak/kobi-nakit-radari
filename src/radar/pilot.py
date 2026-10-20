@@ -19,7 +19,7 @@ from .pipeline import forecast, gap_summary, naive_collections, payments_cutoff,
 from .reconcile import collection_events
 from .standards import SIGNIFICANCE, diebold_mariano, interval_report, passes as interval_passes
 
-VERSION = "2026.10.20"            # tahmin kaydına yazılır: hangi kod sürümüyle üretildiği
+VERSION = "2026.10.21"            # tahmin kaydına yazılır: hangi kod sürümüyle üretildiği
 MIN_HISTORY_DAYS = 365            # protokol 2. bölüm: en az 12 aylık fatura geçmişi; altında geri test yapılmaz
 # Aşama 0 (protokol 1.6): ileriye dönük pilotla aynı tanım, geçmişe uygulanmış hâli. Kayan başlangıç noktalı
 # değerlendirme (rolling origin; Tashman 2000, International Journal of Forecasting 16): haftada bir tahmin günü,
