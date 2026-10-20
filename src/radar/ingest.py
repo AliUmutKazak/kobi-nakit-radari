@@ -160,13 +160,19 @@ def parse_rates(text: str) -> dict[str, float]:
     return rates
 
 
+def _currency_codes(df: pd.DataFrame) -> pd.Series:
+    if "currency" not in df:
+        return pd.Series("TRY", index=df.index)
+    return (df["currency"].fillna("TRY").astype(str).str.strip().str.upper()
+            .replace({"TL": "TRY", "TRL": "TRY", "YTL": "TRY", "": "TRY", "₺": "TRY", "NAN": "TRY"}))
+
+
 def _finish_invoices(df: pd.DataFrame, default_terms: int, notes: list[str],
                      rates: dict[str, float] | None = None) -> pd.DataFrame:
     df = df.copy()
     # Dövizli fatura, kullanıcının girdiği kurla TL'ye çevrilir; kuru girilmemiş döviz TL ile
     # sessizce toplanmaz, dışarıda bırakılıp bildirilir.
-    code = (df["currency"].fillna("TRY").astype(str).str.strip().str.upper().replace({"TL": "TRY", "TRL": "TRY", "YTL": "TRY", "": "TRY", "₺": "TRY"})
-            if "currency" in df else pd.Series("TRY", index=df.index))
+    code = _currency_codes(df)
     df["currency"] = code
     rate = code.map({"TRY": 1.0} | (rates or {}))
     if rate.isna().any():
@@ -177,7 +183,7 @@ def _finish_invoices(df: pd.DataFrame, default_terms: int, notes: list[str],
     if converted.any():
         used = ", ".join(f"{c} = {rates[c]:g}" for c in sorted(code[converted].unique()))
         notes.append(f"{int(converted.sum())} dövizli fatura girilen kurla TL'ye çevrildi ({used}). "
-                     "Kur değişimi tahmin bandına dahil değildir.")
+                     "Kur dalgalanması, ECB kur geçmişinden tahmin bandına katılır.")
     for col in ("amount", "open_amount"):
         if col in df:
             df[col] = df[col] * rate
@@ -384,12 +390,15 @@ def load_payments(file, mapping: dict | None = None):
 PAYABLES_LABEL = "Ödenecek faturalar"
 
 
-def load_payables(file, default_terms: int = 30):
+def load_payables(file, default_terms: int = 30, rates: dict[str, float] | None = None):
     """Tedarikçilerden gelen, henüz ödenmemiş faturalar. Zorunlu: tutar ve vade ya da fatura tarihi.
 
-    Kalan tutar sütunu varsa o ödenir; vade yoksa fatura tarihi + `default_terms` gün varsayılır."""
+    Kalan tutar sütunu varsa o ödenir; vade yoksa fatura tarihi + `default_terms` gün varsayılır.
+    Para birimi sütunu varsa dövizli tutar girilen kurla TL'ye çevrilir. Kuru girilmemiş dövizli borç alacaklardaki
+    gibi dışarıda bırakılamaz (kasa olduğundan dolu görünür): girilen tutar TL sayılır ve kullanıcı uyarılır."""
     notes: list[str] = []
-    df = _pick(_read(file), ["invoice_id", "supplier", "due_date", "issue_date", "amount", "open_amount"], ["amount"])
+    df = _pick(_read(file), ["invoice_id", "supplier", "due_date", "issue_date", "amount", "open_amount", "currency"],
+               ["amount"])
     due = _date(df["due_date"]) if "due_date" in df else pd.Series(pd.NaT, index=df.index)
     if "issue_date" in df:
         missing = due.isna() & _date(df["issue_date"]).notna()
@@ -397,7 +406,20 @@ def load_payables(file, default_terms: int = 30):
             due[missing] = _date(df["issue_date"])[missing] + pd.Timedelta(days=default_terms)
             notes.append(f"{int(missing.sum())} borç faturasında vade yoktu; fatura tarihi + {default_terms} gün varsayıldı.")
     amount = _num(df["open_amount"]).fillna(_num(df["amount"])) if "open_amount" in df else _num(df["amount"])
-    out = pd.DataFrame({"date": due, "amount": amount, "label": PAYABLES_LABEL,
+    code = _currency_codes(df)
+    rate = code.map({"TRY": 1.0} | (rates or {}))
+    if rate.isna().any():
+        kinds = ", ".join(sorted(code[rate.isna()].unique()))
+        notes.append(f"DİKKAT: {int(rate.isna().sum())} dövizli borç faturasının ({kinds}) kuru girilmedi; tutarları "
+                     "TL sayıldı ve borç olduğundan küçük görünüyor olabilir. Kasa olduğundan dolu görünmesin diye "
+                     "\"Diğer ayarlar\" bölümünde bu dövizlerin kurunu girin.")
+        code = code.where(rate.notna(), "TRY")
+    converted = code != "TRY"
+    if converted.any():
+        notes.append(f"{int(converted.sum())} dövizli borç faturası girilen kurla TL'ye çevrildi. Ödeme günündeki kur "
+                     "belirsizliği tahmin bandına katılır (kur yükselirse borç büyür).")
+    amount = amount * rate.fillna(1.0)
+    out = pd.DataFrame({"date": due, "amount": amount, "label": PAYABLES_LABEL, "currency": code,
                         "supplier": df["supplier"] if "supplier" in df else "",
                         "invoice_id": df["invoice_id"] if "invoice_id" in df else ""})
     n = len(out)
@@ -411,7 +433,7 @@ def payables_to_outflows(payables: pd.DataFrame, as_of) -> tuple[pd.DataFrame, l
     """Borç faturalarını kasa çıkışına çevirir. Vadesi geçmiş borç ilk gün ödenecek sayılır:
     ertelenebileceği varsayımı kasayı olduğundan iyi gösterir."""
     as_of = pd.Timestamp(as_of)
-    flows = payables[["date", "amount", "label"]].copy()
+    flows = payables[["date", "amount", "label"] + (["currency"] if "currency" in payables else [])].copy()
     late = flows["date"] <= as_of
     notes = []
     if late.any():

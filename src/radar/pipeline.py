@@ -121,24 +121,36 @@ def _split_args(habits: dict | None, inv: pd.DataFrame, n_sims: int, seed: int) 
     return {"split_p": p, "split_frac": frac, "split_u": u}
 
 
-def fx_args(inv: pd.DataFrame, as_of, horizon: int, n_sims: int, seed: int) -> dict | None:
-    """Dövizli faturalar için simülasyona giden kur yolları (bkz. radar.fx). Dövizli fatura yoksa None.
+def fx_args(inv: pd.DataFrame, as_of, horizon: int, n_sims: int, seed: int,
+            outflows: pd.DataFrame | None = None) -> dict | None:
+    """Dövizli faturalar ve dövizli borçlar için simülasyona giden kur yolları (bkz. radar.fx). Döviz yoksa None.
     ECB tablosunda olmayan dövizler kur sabit sayılarak kalır ve "unknown" listesinde döner (panel uyarır)."""
-    if "currency" not in inv:
-        return None
-    code = inv["currency"].fillna("TRY").astype(str).str.upper()
-    foreign = sorted(set(code) - {"TRY"})
+    code = (inv["currency"].fillna("TRY").astype(str).str.upper() if "currency" in inv
+            else pd.Series("TRY", index=inv.index))
+    out_code = (set(outflows["currency"].fillna("TRY").astype(str).str.upper())
+                if outflows is not None and "currency" in outflows else set())
+    foreign = sorted((set(code) | out_code) - {"TRY"})
     if not foreign:
         return None
-    paths = fx.fx_paths(foreign, as_of, horizon, n_sims, seed)
+    # Net durum (ufuktaki TL karşılığı): borç alacaktan fazlaysa kur yükselişi kasayı daraltır (bkz. radar.fx).
+    receivable = inv.loc[~inv["projected"].astype(bool), "open_amount"].groupby(code).sum() if len(inv) else pd.Series(dtype=float)
+    payable = pd.Series(dtype=float)
+    if outflows is not None and "currency" in outflows and len(outflows):
+        off = (pd.to_datetime(outflows["date"]) - pd.Timestamp(as_of)).dt.days
+        within = outflows[(off >= 1) & (off <= horizon)]
+        payable = within["amount"].groupby(within["currency"].fillna("TRY").astype(str).str.upper()).sum()
+    short = [c for c in foreign if payable.get(c, 0.0) > receivable.get(c, 0.0)]
+    paths = fx.fx_paths(foreign, as_of, horizon, n_sims, seed, short=short)
     known = [c for c in foreign if c in paths]
     out = {"currencies": known, "unknown": [c for c in foreign if c not in paths],
+           "short": [c for c in short if c in paths],
            "data_end": fx.history().index.max() if fx.history() is not None else None}
     if not known:
         return out
     index = {c: j for j, c in enumerate(known)}
     out["fx_code"] = code.map(index).fillna(-1).astype(int).to_numpy()
     out["fx_mult"] = np.stack([paths[c] for c in known])
+    out["fx_names"] = known
     return out
 
 
@@ -531,9 +543,9 @@ def forecast(obs: pd.DataFrame, as_of, opening: float, outflows: pd.DataFrame, h
     out_level = outflow_levels(outflow_history, as_of, horizon, n_sims, seed)
     if out_level is not None:
         ctx["cheque_args"]["outflow_level"] = out_level
-    fx_info = fx_args(sim_inv, as_of, horizon, n_sims, seed) if fx_aware else None
-    if fx_info:
-        ctx["cheque_args"] |= {"fx_code": fx_info["fx_code"], "fx_mult": fx_info["fx_mult"]}
+    fx_info = fx_args(sim_inv, as_of, horizon, n_sims, seed, outflows) if fx_aware else None
+    if fx_info and fx_info["currencies"]:
+        ctx["cheque_args"] |= {k: fx_info[k] for k in ("fx_code", "fx_mult", "fx_names")}
     sim = simulate(sim_inv, ctx["Q"], as_of, opening, outflows, horizon, n_sims, seed=seed, aging=ctx["aging"],
                    cheques=cheques, sales_level=sales_level, **_sim_args(calib, sim_inv, ref), **ctx["cheque_args"])
     real = ~target["projected"].to_numpy()
@@ -560,6 +572,7 @@ def forecast(obs: pd.DataFrame, as_of, opening: float, outflows: pd.DataFrame, h
                                         if out_level is not None else None),
                      "fx_currencies": fx_info["currencies"] if fx_info else [],
                      "fx_unknown": fx_info["unknown"] if fx_info else [],
+                     "fx_short": fx_info["short"] if fx_info else [],
                      "fx_data_end": fx_info["data_end"] if fx_info else None},
             "disputed_total": float(obs.loc[is_open & obs["disputed"], "open_amount"].sum())}
 
@@ -673,23 +686,27 @@ def customer_delay(res: dict, customer_ids, days: int) -> dict:
 
 
 def fx_exposure(res: dict) -> pd.DataFrame:
-    """Bugün açık dövizli alacak: para birimi, orijinal tutar, girilen kur ve TL karşılığı."""
-    obs = res["obs"]
-    if "currency" not in obs:
+    """Bugün açık dövizli alacak ve ufuktaki dövizli borç: para birimi, alacak ve borcun TL karşılığı, net durum."""
+    obs, flows = res["obs"], res["outflows"]
+    rec = pd.Series(dtype=float)
+    if "currency" in obs:
+        fx = obs[(obs["open_amount"] > 0) & (obs["currency"].fillna("TRY") != "TRY")]
+        rec = fx.groupby("currency")["open_amount"].sum()
+    pay = pd.Series(dtype=float)
+    if flows is not None and len(flows) and "currency" in flows:
+        f = flows[flows["currency"].fillna("TRY") != "TRY"]
+        pay = f.groupby("currency")["amount"].sum()
+    if rec.empty and pay.empty:
         return pd.DataFrame()
-    fx = obs[(obs["open_amount"] > 0) & (obs["currency"].fillna("TRY") != "TRY")]
-    if fx.empty:
-        return pd.DataFrame()
-    rate = fx["fx_rate"] if "fx_rate" in fx else pd.Series(np.nan, index=fx.index)
-    return (fx.assign(original=fx["open_amount"] / rate, rate=rate)
-            .groupby("currency").agg(original=("original", "sum"), rate=("rate", "first"), tl=("open_amount", "sum"))
-            .reset_index())
+    out = pd.DataFrame({"receivable": rec, "payable": pay}).fillna(0.0)
+    out["net"] = out["receivable"] - out["payable"]
+    return out.rename_axis("currency").reset_index()
 
 
 def fx_shift(res: dict, pct: float) -> dict:
     """TL, dövizlere karşı `pct` kadar değer kaybederse (eksi: kazanırsa) bugün açık dövizli faturalardan gelecek
-    TL tutarı o oranda değişir; aynı senaryolarla kasa bandı. Kur tahmini değil, kullanıcının senaryosudur.
-    Dövizli borçlar (ödenecekler) dosyada TL olduğundan kapsam dışıdır."""
+    TL tutarı ve ufuktaki dövizli borçların TL tutarı o oranda değişir; aynı senaryolarla kasa bandı. Kur tahmini
+    değil, kullanıcının senaryosudur."""
     sim, inv = res["sim"], res["ctx"]["sim_inv"]
     currency = inv["currency"].fillna("TRY") if "currency" in inv else pd.Series("TRY", index=inv.index)
     hit = np.flatnonzero((currency != "TRY").to_numpy() & ~inv["projected"].to_numpy())
@@ -697,6 +714,13 @@ def fx_shift(res: dict, pct: float) -> dict:
     t = np.arange(paths.shape[1])[None, :]
     for k in hit:
         paths += float(inv["open_amount"].iloc[k]) * pct * (t >= sim.pay_day[k][:, None])
+    flows = res["outflows"]
+    if flows is not None and len(flows) and "currency" in flows:
+        f = flows[flows["currency"].fillna("TRY") != "TRY"]
+        off = (pd.to_datetime(f["date"]) - pd.Timestamp(res["as_of"])).dt.days.to_numpy()
+        for d, amt in zip(off, f["amount"].to_numpy(float)):
+            if 1 <= d < paths.shape[1]:
+                paths[:, d:] -= amt * pct
     p10, p50, p90 = np.percentile(paths, [10, 50, 90], axis=0)
     return {"p10": p10, "p50": p50, "p90": p90, "prob_any_breach": float((paths.min(axis=1) < 0).mean()),
             "p10_min": _p10_min(paths), "p10_min_before": _p10_min(sim.paths)}

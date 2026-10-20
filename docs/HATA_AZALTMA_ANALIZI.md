@@ -61,7 +61,7 @@ Ortak noktalar şunlar: fatura bazında ödeme tahmini, banka ve muhasebe verisi
 | 6 | Hiç tahsil edilemeyen alacak, müşteri yoğunlaşması | İyimser | Müşteri bazında temerrüt oranı; "en büyük müşterim geç öderse" senaryosu; tahsili zor alacaklar ayrı |
 | 7 | Eski veriyle tahmin | İyimser | Tahsilat kayıt kesimi kayıtlardan tahmin ediliyor ve uyarı veriliyor |
 | 8 | Mükerrer fatura | İyimser | Olası mükerrerler gösteriliyor |
-| 9 | Kur değişimi (dövizli alacak bugünkü kurla TL'ye çevriliyordu) | Kötümser uç için **iyimser** (TL değer kazanırsa) | **Yapıldı (20.10):** kur belirsizliği ECB kur geçmişinden banda katıldı; TL'nin geçmişteki değer kaybı geleceğe taşınmıyor. Ayrıntı bölüm 7'de |
+| 9 | Kur değişimi (dövizli alacak bugünkü kurla TL'ye çevriliyordu; dövizli borç hiç okunmuyordu) | Alacakta TL değer kazanırsa, borçta TL değer kaybederse **iyimser** | **Yapıldı (20.10):** kur belirsizliği ECB kur geçmişinden banda katıldı; borç dosyasında döviz sütunu okunuyor. Her dövizde kasa aleyhine olan taraf esas alınıyor. Ayrıntı bölüm 7'de |
 | 10 | Ödeme sözleri | Sözler tutulmazsa iyimser | Söz tarihi yeni vade sayılıyor, müşterinin gecikme alışkanlığı üstüne ekleniyor. **Yapıldı (20.10):** geçmiş sözlerin tutulma oranı ve en çok söz tutmayan müşteriler gösteriliyor |
 | 11 | Karar sayısının seçimi | Orta değere bakılırsa iyimser | **Bugün eklendi:** "güvenle harcanabilir tutar" (%10'luk uçtan); haftalık tabloda kötümser sütun öne alındı |
 | 12 | Tek tek işletmede kısa dönem sapması | İyimser olabilir | Çevrimiçi izleme ortalamada standart; pilot raporu her işletmeyi ayrıca Basel ve Kupiec ile sınıyor |
@@ -90,34 +90,37 @@ Ortak noktalar şunlar: fatura bazında ödeme tahmini, banka ve muhasebe verisi
 
 ## 7. Kur belirsizliği (20 Ekim 2026)
 
-**Sorun.** Dövizli fatura, kullanıcının girdiği bugünkü kurla TL'ye çevriliyordu ve para hangi gün gelirse gelsin o kur sayılıyordu. TL çoğu dönemde değer kaybettiği için bu genellikle ihtiyatlı görünür. Ancak her zaman öyle değil.
+**Sorun.** İki eksik vardı:
+- Dövizli fatura, kullanıcının girdiği bugünkü kurla TL'ye çevriliyordu; para hangi gün gelirse gelsin o kur sayılıyordu.
+- Borç dosyasındaki döviz bilgisi okunmuyordu: 10.000 USD'lik tedarikçi faturası 10.000 TL sayılıyordu. Kasa çok dolu görünür.
 
-**Ölçüm.** Veri: Avrupa Merkez Bankası (ECB) euro referans kurları, 2005–2026; USD/TRY çapraz kurdan türetildi. Yöntem önceden belirlendi:
-- tarihsel benzetim, yalnızca tahmin gününe kadarki veriyle (genişleyen pencere);
-- TL'nin geçmişteki ortalama değer kaybı çıkarıldı (rassal yürüyüş; Meese ve Rogoff 1983);
-- 2010'dan itibaren örtüşmeyen dönemler.
+**Ölçüm.** Veri: Avrupa Merkez Bankası (ECB) euro referans kurları, 2005–2026; USD/TRY çapraz kurdan türetildi. Her tahmin günü için yalnızca o güne kadarki kurlarla %10 ve %90 uçları kuruldu. Gerçekleşen kurun uçların dışına düşme sıklığı sayıldı. Tahmin günleri 2010'dan itibaren örtüşmeyen dönemler. Alt uç dövizli alacak için, üst uç dövizli borç için kötümser uçtur. Tam tablo, iki yarı ayrı ayrı: [lab/kur_sinamasi.md](lab/kur_sinamasi.md).
 
-| Döviz, ufuk | Dönem sayısı | Kur sabit: TL karşılığı bugünkünden düşük | Tarihsel benzetim: kötümser uç aşımı | İyimser uç aşımı |
-|---|---|---|---|---|
-| USD, 30 gün | 204 | %29 | %5,4 | %14,7 |
-| USD, 60 gün | 102 | %26 | %3,9 | %23,5 |
-| USD, 90 gün | 68 | %24 | %4,4 | %23,5 |
-| EUR, 30 gün | 204 | %36 | %4,9 | %17,2 |
-| EUR, 60 gün | 102 | %25 | %3,9 | %23,5 |
-| EUR, 90 gün | 68 | %25 | %7,4 | %26,5 |
+| Döviz, ufuk (2010–2026) | Kur sabit: TL karşılığı bugünkünden düşük | Sürüklenmesiz, bütün geçmiş: alt / üst aşım | Sürüklenmeli, son 3 yıl: alt / üst aşım |
+|---|---|---|---|
+| USD, 30 gün (204 dönem) | %29 | %5,4 / %14,7 | %6,4 / %10,8 |
+| USD, 60 gün (102) | %26 | %3,9 / %23,5 | %8,8 / %12,7 |
+| USD, 90 gün (68) | %24 | %4,4 / %23,5 | %7,4 / %11,8 |
+| EUR, 30 gün (204) | %36 | %4,9 / %17,2 | %7,4 / %11,3 |
+| EUR, 60 gün (102) | %25 | %3,9 / %23,5 | %6,9 / %14,7 |
+| EUR, 90 gün (68) | %25 | %7,4 / %26,5 | %10,3 / %13,2 |
 
 **Bulgular:**
 - Kur sabit sayılınca dövizli alacağın TL karşılığı, dönemlerin dörtte biri ile üçte birinde bugünkünden düşük çıkıyor. Bu, kötümser çizgide hiç yoktu.
-- Tarihsel benzetimde kötümser uç %4–7 sıklıkla aşılıyor (hedef %10). Yani bu uç ihtiyatlı: Kupiec testi "fazla temkinli" yönünde reddediyor.
-- İyimser uç %15–27 sıklıkla aşılıyor. Sebep, TL'nin değer kaybının geleceğe taşınmaması. Kur farkının kasayı büyüteceğine güvenmemek bilinçli bir tercih: hata yalnızca "kasa olduğundan az görünür" yönünde.
-- Değer kaybı korunsaydı kötümser uç aşımı %5–7, iyimser %12–21 olurdu. Bu da TL'nin gelecekte de aynı hızla değer kaybedeceğini varsaymak olurdu.
+- İlk denenen yöntem ("sürüklenmesiz"), TL'nin geçmişteki ortalama değer kaybını çıkarıyordu. Alacak için ihtiyatlı: alt uç %4–7 aşılıyor. Borç için iyimser: üst uç %15–27 aşılıyor. Senaryoların çoğunda TL değer kazanıyor ve dövizli borç küçülüyor. Bu, dövizli borcu olan işletmeye hayal satmak olurdu; test bunu yakaladı.
+- Borç tarafı için dört seçenek denendi. En iyisi "son 3 yılın kur hareketleri, değer kaybıyla birlikte": üst uç %11–15 aşılıyor. Seçim aynı veride yapıldığı için 2010–2017 ve 2018–2026 yarılarında ayrı ayrı bakıldı; iki yarıda da en iyi ya da en iyiyle eşit (%9–16).
+- Hiçbir seçenek borç tarafında %10'u tam tutturmuyor. Kur sıçramaları (2018, 2021) geçmişten tam öğrenilemiyor. Kötümser çizgi borç ağırlıklı dövizde hâlâ hafif iyimser olabilir; panel bunu yazıyor.
 
-**Uygulama** (`radar/fx.py`):
-- Her senaryo için geçmişten bir başlangıç günü seçiliyor. Paranın geldiği günün kur oranı, faturanın TL tutarıyla çarpılıyor.
-- Bütün dövizler için aynı gün seçiliyor, böylece dövizler arasındaki ilişki korunuyor.
-- ECB tablosunda olmayan bir döviz kur sabit sayılarak kalıyor ve panel bunu uyarıyor.
+**Uygulanan kural** (`radar/fx.py`, `pipeline.fx_args`): her dövizde ufuktaki dövizli alacak ve borç karşılaştırılıyor; kasa aleyhine olan taraf esas alınıyor.
+- **Alacak ağırlıklı:** sürüklenmesiz, bütün geçmiş. Kur farkının kasayı büyüteceğine güvenilmez.
+- **Borç ağırlıklı:** sürüklenmeli, son 3 yıl. TL'nin değer kaybının sürdüğü varsayılır; borç büyür.
+
+Uygulamanın ayrıntıları:
+- Her senaryo için geçmişten bir başlangıç günü seçiliyor. Paranın geldiği ya da ödendiği günün kur oranı TL tutarla çarpılıyor.
+- Aynı gruptaki dövizler için aynı gün seçiliyor, böylece dövizler arasındaki ilişki korunuyor.
+- ECB tablosunda olmayan bir döviz kur sabit sayılarak kalıyor; panel uyarıyor.
+- Borç dosyasında kuru girilmemiş döviz dışarıda bırakılmıyor (alacakta bırakılır, çünkü bırakmak ihtiyatlıdır). Tutar TL sayılıyor ve "DİKKAT" notu çıkıyor.
 - Laboratuvar verisinde döviz olmadığı için laboratuvar sonuçları değişmiyor.
-- Sınama yeniden üretilebilir: `python tools/kur_sinamasi.py`.
 
 **Kullanım koşulu.** ECB internet sitesindeki Copyright bölümüne göre bilgiler, ECB kaynak gösterilerek serbestçe kullanılabilir. Değişiklik yapıldıysa bu belirtilmeli; ücretli bir belgede alıcıya verinin ECB sitesinden ücretsiz edinilebileceği bildirilmeli. Panel bu notu gösteriyor. ECB, kurların yalnızca bilgi amaçlı olduğunu ve işlemlerde kullanılmamasını yazıyor. Burada kurlar dönüşüm için değil, yalnızca geçmiş dalgalanmayı ölçmek için kullanılıyor; dönüşümde kullanıcının girdiği kur geçerli.
 
@@ -125,7 +128,7 @@ Ortak noktalar şunlar: fatura bazında ödeme tahmini, banka ve muhasebe verisi
 
 1. Tek işletmede kısa dönem sapması (madde 12). Pilot raporu her işletmeyi ayrıca sınıyor; gerçek veriyle izlenecek.
 2. Gerçek Türk KOBİ verisi. Bütün bu sonuçlar sentetik ya da yabancı açık veriyle; son hakem pilot.
-3. Dövizli borçlar (tedarikçi faturaları) dosyada TL olarak geliyor; kur riski yalnızca alacak tarafında ölçülüyor. Dövizli borç kur yükselişinde büyür: bu, kasayı olduğundan dolu gösterebilecek bir yön. Borç dosyasına döviz sütunu desteği sıradaki iş.
+3. Borç ağırlıklı dövizde kötümser uç %10 yerine %11–15 sıklıkla aşılıyor (bölüm 7). Kur sıçramalarını daha iyi yakalayan bir yöntem (ör. Basel 2.5'teki stresli dönem yaklaşımı) gerçek pilot verisiyle değerlendirilecek. Elle girilen gider planındaki dövizli kalemler (ör. dövizli kira) henüz döviz olarak okunmuyor.
 
 ## 9. Yasal uyum notu
 

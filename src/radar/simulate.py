@@ -228,12 +228,14 @@ def simulate(inv: pd.DataFrame, Q: np.ndarray, as_of, opening: float, outflows: 
              cheque_by_customer: bool = False, lag: int = 0, payday: np.ndarray | None = None,
              split_p: np.ndarray | None = None, split_frac: np.ndarray | None = None,
              split_u: np.ndarray | None = None, outflow_level: np.ndarray | None = None,
-             fx_code: np.ndarray | None = None, fx_mult: np.ndarray | None = None) -> SimResult:
+             fx_code: np.ndarray | None = None, fx_mult: np.ndarray | None = None,
+             fx_names: list[str] | None = None) -> SimResult:
     """inv sütunları: customer_id, issue_date, due_date, open_amount, p_default, projected.
 
     fx_code / fx_mult: dövizli faturalarda kur belirsizliği (bkz. radar.fx). fx_code fatura başına döviz sırası
     (-1 = TL), fx_mult (döviz, senaryo, gün) bugünkü kura oran: para hangi gün gelirse TL tutarı o günün oranıyla
-    çarpılır.
+    çarpılır. fx_names: fx_mult'taki dövizlerin adları; giderlerde (outflows) "currency" sütunu varsa dövizli
+    gider de ödeme gününün kur oranıyla çarpılır (kur yükselirse borç büyür).
 
     outflow_level: (blok, senaryo) gider katsayıları (bkz. pipeline.outflow_levels); 30 günlük blokta planlanan
     giderler senaryo başına bu katsayıyla çarpılır. Verilmezse giderler kesin sayılır.
@@ -375,6 +377,15 @@ def simulate(inv: pd.DataFrame, Q: np.ndarray, as_of, opening: float, outflows: 
         # Gün başına blok: 1-30. gün 0. blok, 31-60. gün 1. blok ...; senaryo × gün gider matrisi.
         block = np.minimum((np.arange(horizon + 1) - 1).clip(min=0) // 30, len(outflow_level) - 1)
         out = out[None, :] * outflow_level[block].T
+    if fx_names and fx_mult is not None and "currency" in outflows and keep.any():
+        code = outflows["currency"].fillna("TRY").astype(str).to_numpy()
+        hit = [j for j in np.flatnonzero(keep) if code[j] in fx_names]
+        if hit:
+            out = np.broadcast_to(out, (n_sims, horizon + 1)).copy() if out.ndim == 1 else out
+            amt = outflows["amount"].to_numpy(float)
+            for j in hit:
+                rate = fx_mult[fx_names.index(code[j])][:, off[j]]
+                out[:, off[j]] += amt[j] * (rate - 1.0)          # kur farkı: ödeme günündeki kurla
     balance = opening + np.cumsum(inflow - out, axis=1)
     w_lo, w_hi = (widen, widen) if np.isscalar(widen) else widen
     if (w_lo, w_hi) != (1.0, 1.0):

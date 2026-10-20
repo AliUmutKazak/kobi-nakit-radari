@@ -72,7 +72,7 @@ Fatura listesinde en az **fatura no, müşteri, fatura tarihi, tutar** olmalı. 
 |---|---|
 | Banka ekstresi | Hangi faturanın ödendiğini otomatik bulur. Fatura listesinde ödeme bilgisi yoksa gereklidir. |
 | Planlı giderler | Maaş, kira, kredi taksidi gibi çıkışlar. Yoksa **3. Aylık sabit giderler** bölümüne tutarları yazın; panel vergi takvimine göre yerleştirir. Son gün hafta sonuna ya da resmî tatile denk gelirse ödeme izleyen ilk iş gününe kayar (VUK m.18/4). |
-| Ödenecek faturalar | Tedarikçilere borçlarınız ve vadeleri. |
+| Ödenecek faturalar | Tedarikçilere borçlarınız ve vadeleri. Dövizli borç varsa "Para birimi" sütunu ekleyin ve "Diğer ayarlar" bölümünde kurunu girin; kuru girilmeyen dövizli borç TL sayılır ve panel uyarır. |
 | Çek / senet portföyü | Elinizdeki müşteri çekleri ve vadeleri. "Durum" sütununda ciro edildi / iskonto yazanlar hesaba katılmaz. |
 
 Biçimi görmek için panelin ilk ekranında örnek dosyaları indirebilirsiniz. Yüklediğiniz her şey yalnızca bu bilgisayarda saklanır; bir sonraki açılışta yeniden yüklemeniz gerekmez.
@@ -99,7 +99,7 @@ Biçimi görmek için panelin ilk ekranında örnek dosyaları indirebilirsiniz.
 
 **Veri kalitesi ve kapsam.** Üst satırın altındaki bu bölüm verideki son hareketi, banka tahsilatlarının faturalarla eşleşme oranını, geçmişin uzunluğunu ve hangi yöntemin kullanıldığını gösterir. Yüklemediğiniz kaynaklar (ör. ödenecek faturalar) "kapsam dışı" diye yazılır: kasa grafiği onları içermez.
 
-**Nakit takvimi** ("Kasa tahmini" sekmesi): her gider, borç ve çek tarihiyle ve ne kadar kesin olduğuyla (kesin borç faturası, dosyadan planlı, elle girilen varsayım, olasılıklı çek). **Büyük müşteri geç öderse:** bir ya da birkaç müşteriyi seçip "X gün daha geç öderse" kasanızın ne olacağını görürsünüz. **Kur değişirse:** dövizli açık alacağınız varsa, TL'nin dövizlere karşı değişimini kendiniz girip kasaya etkisini görürsünüz (kur tahmini yapılmaz; dövizli borçlar kapsam dışıdır). Kasa bandı kur dalgalanmasını ayrıca zaten içerir. Para geldiği gün kur bugünkünden düşük olabilir; bu olasılık, Avrupa Merkez Bankası (ECB) referans kurlarının 2005'ten bu yana geçmişinden alınır. TL'nin değer kaybetmeye devam edeceği varsayılmaz: kur farkının kasanızı büyüteceğine güvenilmez. ECB verileri ECB internet sitesinden ücretsiz edinilebilir; USD ve diğer dövizlerin TL karşılığı ECB'nin euro bazlı kurlarından çapraz kur olarak türetilmiştir. Kur geçmişi olmayan bir döviz kullanıyorsanız panel uyarır.
+**Nakit takvimi** ("Kasa tahmini" sekmesi): her gider, borç ve çek tarihiyle ve ne kadar kesin olduğuyla (kesin borç faturası, dosyadan planlı, elle girilen varsayım, olasılıklı çek). **Büyük müşteri geç öderse:** bir ya da birkaç müşteriyi seçip "X gün daha geç öderse" kasanızın ne olacağını görürsünüz. **Kur değişirse:** dövizli açık alacağınız varsa, TL'nin dövizlere karşı değişimini kendiniz girip dövizli alacak ve borçlarınız üzerinden kasaya etkisini görürsünüz (kur tahmini yapılmaz). Kasa bandı kur dalgalanmasını ayrıca zaten içerir: para geldiği ya da ödendiği gün kur bugünkünden farklı olabilir. Bu olasılık, Avrupa Merkez Bankası (ECB) referans kurlarının geçmişinden alınır ve kasanız aleyhine olan taraf esas alınır. Alacağınız borcunuzdan fazla olan dövizde TL'nin değer kaybetmeye devam edeceği varsayılmaz. Borcunuz alacağınızdan fazla olan dövizde son 3 yılın değer kaybı hızının sürdüğü varsayılır. ECB verileri ECB internet sitesinden ücretsiz edinilebilir; USD ve diğer dövizlerin TL karşılığı ECB'nin euro bazlı kurlarından çapraz kur olarak türetilmiştir. Kur geçmişi olmayan bir döviz kullanıyorsanız panel uyarır.
 
 **"Tahsilat işleri" sekmesi.**
 - **Öncelikli tahsilat listesi:** en üstteki fatura, açığınız açısından en riskli olandır. Müşterinin sabit bir ödeme günü varsa (ör. "ayın 15'i", "her Cuma") panel ona göre iletişim tarihi önerir.
@@ -126,5 +126,5 @@ En altta **"Pilot raporunu hazırla"** düğmesi, tek sayfalık, yazdırılabili
 
 - Tahmin müşterilerinizin geçmişteki davranışına dayanır. Gecikmeler hızla artıyorsa tahmin iyimser kalabilir; panel bu durumu fark ettiğinde uyarır, o zaman kötümser çizgiyi esas alın.
 - Alacağınız birkaç müşteride toplanmışsa (panel bunu da uyarır), tek bir müşterinin gecikmesi sonucu tek başına belirler.
-- Yeni kredi ve beklenmedik büyük giderler tahmine dahil değildir. Kur dalgalanması yalnızca dövizli alacaklar için banda girer; dövizli borçlar kapsam dışıdır.
+- Yeni kredi ve beklenmedik büyük giderler tahmine dahil değildir. Kur dalgalanması dövizli alacaklar ve "Ödenecek faturalar" dosyasındaki dövizli borçlar için banda girer; elle girilen gider planındaki dövizli kalemler (ör. dövizli kira) TL sayılır.
 - Verileriniz bu bilgisayardaki şifrelenmemiş bir dosyada durur (yeri kenar çubuğunda yazar). Bilgisayarınızın Windows parolasını ve disk şifrelemesini açık tutun, dosyayı düzenli yedekleyin.

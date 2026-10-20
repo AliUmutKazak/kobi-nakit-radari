@@ -672,6 +672,12 @@ def test_dashboard_renders_demo_and_own_data_without_errors(tmp_path, monkeypatc
     store.save("invoices", ingest.load_invoices(root / "ornekler" / "faturalar.csv")[0])
     store.save("payments", ingest.load_payments(root / "ornekler" / "ekstre.csv")[0])
     store.save("outflows", ingest.load_schedule(root / "ornekler" / "giderler.csv"))
+    borc = tmp_path / "borc.csv"                                          # dövizli borç ve kuru girilmemiş döviz
+    borc.write_text("Fatura No;Tedarikçi;Vade Tarihi;Tutar;Para Birimi\n"
+                    "B1;Ithalatci;20.10.2026;2.000,00;USD\nB2;Isvicre;25.10.2026;100,00;CHF\n", encoding="utf-8")
+    pay, pay_notes = ingest.load_payables(borc, rates={"USD": 49.5})
+    store.save("payables", pay)
+    store.set("notes_payables", __import__("json").dumps(pay_notes, ensure_ascii=False))
     store.set("pilot_on", 1)                                              # pilot kayıtları bölümü de çizilsin
     store.set("sector", "46")                                             # TCMB sektör karşılaştırması da çizilsin
     store.add_pilot_record("2026-09-01", pd.DataFrame({
@@ -687,6 +693,8 @@ def test_dashboard_renders_demo_and_own_data_without_errors(tmp_path, monkeypatc
     assert len(at.dataframe) >= 1 and len(at.text_area) == 1
     assert not any("en son hareket" in e.value for e in at.error)
     assert any("Ortalama tahsil süreniz" in i.value for i in at.info)
+    assert any(w.value.startswith("DİKKAT") for w in at.warning)          # kuru girilmemiş dövizli borç
+    assert any(h.value == "Kur değişirse" for h in at.subheader)
     next(b for b in at.button if b.label == "Geri testi çalıştır").click().run()
     assert not at.exception, [e.value for e in at.exception]
     assert any("Basel Komitesi trafik ışığı" in m.value for m in at.markdown)
@@ -1058,7 +1066,8 @@ def test_fx_exposure_and_scenario(tmp_path):
     assert inv.loc[inv["currency"] == "USD", "fx_rate"].eq(40.0).all()
     res = pipeline.forecast(inv, "2026-10-01", 0.0, pd.DataFrame({"date": [], "amount": []}), n_sims=300)
     exp = pipeline.fx_exposure(res)
-    assert list(exp["currency"]) == ["USD"] and exp["tl"].iloc[0] == pytest.approx(exp["original"].iloc[0] * 40.0)
+    usd_open = inv.loc[(inv["currency"] == "USD") & (inv["open_amount"] > 0), "open_amount"].sum()
+    assert list(exp["currency"]) == ["USD"] and exp["receivable"].iloc[0] == pytest.approx(usd_open)
     up = pipeline.fx_shift(res, 0.2)
     assert up["p10_min"] >= up["p10_min_before"] - 1e-6 and (up["p50"] >= res["sim"].p50 - 1e-6).all()
 
@@ -1462,6 +1471,8 @@ def test_fx_paths_use_only_past_data_and_no_drift():
     assert abs(np.log(paths["USD"][:, -1]).mean()) < 0.02
     assert np.quantile(paths["USD"][:, -1], 0.10) < 0.97                 # kötümser uçta kur düşüşü var
     assert fx.fx_paths(["USD"], "2006-01-01", 90, 100, seed=1) == {}     # iki yıldan kısa geçmiş
+    short = fx.fx_paths(["USD"], "2026-10-01", 90, 2000, seed=1, short=["USD"])["USD"]
+    assert np.median(short[:, -1]) > 1.0                                  # borç ağırlıklı: son 3 yılın değer kaybı
 
 
 def test_fx_uncertainty_widens_pessimistic_band(full):
@@ -1477,3 +1488,25 @@ def test_fx_uncertainty_widens_pessimistic_band(full):
     assert on["sim"].p50[-1] == pytest.approx(off["sim"].p50[-1], rel=0.03)
     # Senaryo hesapları aynı kur yollarını kullanır (satırlar hizalı kalır).
     assert pipeline.scenario(on).p50[-1] == pytest.approx(on["sim"].p50[-1])
+
+
+def test_foreign_currency_payables_are_converted_and_add_fx_risk(tmp_path, full):
+    from radar import ingest
+    path = tmp_path / "borc.csv"
+    path.write_text("Fatura No;Tedarikçi;Vade Tarihi;Tutar;Para Birimi\n"
+                    "B1;Ithalatci;15.11.2026;10.000,00;USD\nB2;Yerel;20.11.2026;50.000,00;TL\n"
+                    "B3;Isvicre;25.11.2026;1.000,00;CHF\n", encoding="utf-8")
+    pay, notes = ingest.load_payables(path, rates={"USD": 49.5})
+    assert pay["amount"].tolist() == [495000.0, 50000.0, 1000.0] and pay["currency"].tolist() == ["USD", "TRY", "TRY"]
+    assert any("DİKKAT" in n and "CHF" in n for n in notes)          # kuru girilmeyen borç dışarıda bırakılmaz
+    flows, _ = ingest.payables_to_outflows(pay, AS_OF)
+    obs = observe(full, AS_OF)
+    on = pipeline.forecast(obs, AS_OF, 1e6, flows, n_sims=400)
+    off = pipeline.forecast(obs, AS_OF, 1e6, flows, n_sims=400, fx_aware=False)
+    assert on["info"]["fx_currencies"] == ["USD"] and on["info"]["fx_short"] == ["USD"]
+    assert on["sim"].p10[-1] < off["sim"].p10[-1]                    # kur yükselirse borç büyür
+    assert on["sim"].p50[-1] < off["sim"].p50[-1]                    # borç ağırlıklıda TL'nin değer kaybı sürer
+    exp = pipeline.fx_exposure(on)
+    assert exp.loc[0, "payable"] == pytest.approx(495000.0) and exp.loc[0, "net"] < 0
+    up = pipeline.fx_shift(on, 0.10)                                  # TL %10 değer kaybederse borç 49.500 TL büyür
+    assert up["p50"][-1] == pytest.approx(on["sim"].p50[-1] - 49500.0, abs=1.0)

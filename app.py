@@ -84,7 +84,8 @@ def save_upload(store: Store, name: str, uploads, parse) -> None:
     uploads = [u for u in (uploads if isinstance(uploads, list) else [uploads]) if u]
     if not uploads:
         return
-    mapping = store.get(f"map_{name}", "{}") + (store.get("rates", "") + store.get("terms", "") if name == "invoices" else "")
+    mapping = store.get(f"map_{name}", "{}") + (store.get("rates", "") + store.get("terms", "")
+                                                 if name in ("invoices", "payables") else "")
     digest = hashlib.md5(b"".join(u.getvalue() for u in uploads) + mapping.encode()).hexdigest()
     if digest == store.get(f"hash_{name}"):
         return
@@ -557,7 +558,8 @@ with st.sidebar:
                     lambda ups: parse_invoices(ups, int(terms), ingest.parse_rates(rates_text)))
         save_upload(store, "payments", uploads["payments"], lambda ups: parse_bank(ups))
         save_upload(store, "outflows", uploads["outflows"], lambda ups: (ingest.load_schedule(_open(ups[0])), []))
-        save_upload(store, "payables", uploads["payables"], lambda ups: ingest.load_payables(_open(ups[0]), int(terms)))
+        save_upload(store, "payables", uploads["payables"],
+                    lambda ups: ingest.load_payables(_open(ups[0]), int(terms), ingest.parse_rates(rates_text)))
         save_upload(store, "cheques", uploads["cheques"], lambda ups: ingest.load_cheques(_open(ups[0])))
 
 own = source == "Kendi verim"
@@ -717,6 +719,9 @@ if res["disputed_total"]:
 if m["over_60_terms"]:
     notes.append(f"{m['over_60_terms']} açık faturada vade 60 günden uzun. TTK m.1530'a göre alacaklı KOBİ ise ya da "
                  "borçlu büyük işletmeyse vade 60 günü aşamaz; bu sözleşmeleri gözden geçirin.")
+for note in notes:
+    if note.startswith("DİKKAT"):           # kasayı olduğundan dolu gösterebilecek veri sorunları gizlenmez
+        st.warning(note)
 if notes:
     with st.expander(f"Veri notları ({len(notes)})"):
         for note in notes:
@@ -847,19 +852,22 @@ with tab_cash:
     exposure = pipeline.fx_exposure(res)
     if len(exposure) and sim.paths is not None:
         st.subheader("Kur değişirse")
-        show_table(exposure.rename(columns={"currency": "Para birimi", "original": "Açık alacak (döviz)",
-                                            "rate": "Girilen kur", "tl": "TL karşılığı (TL)"}),
+        show_table(exposure.rename(columns={"currency": "Para birimi", "receivable": "Açık dövizli alacak (TL)",
+                                            "payable": "Ufuktaki dövizli borç (TL)", "net": "Net (TL)"}),
                    width="stretch", hide_index=True)
+        if (exposure["net"] < 0).any():
+            st.caption("Net eksi olan dövizde borcunuz alacağınızdan fazla: TL değer kaybederse kasa daralır.")
         fx_info = res["info"]
         if fx_info.get("fx_currencies"):
-            st.caption("Kasa bandı kur dalgalanmasını zaten içeriyor (geçmiş kur hareketlerinden; TL'nin değer kaybetmeye "
-                       "devam edeceği varsayılmadan). Aşağıdaki kaydırıcı bunun üstüne kendi senaryonuzu ekler.")
+            st.caption("Kasa bandı kur dalgalanmasını zaten içeriyor (geçmiş kur hareketlerinden, kasanız aleyhine olan "
+                       "tarafı esas alarak; ayrıntı \"Tahmin doğruluğu\" sekmesinde). Aşağıdaki kaydırıcı bunun üstüne "
+                       "kendi senaryonuzu ekler.")
         if fx_info.get("fx_unknown"):
             st.warning(f"{', '.join(fx_info['fx_unknown'])} için kur geçmişi yok: bu alacaklar girilen kurla sabit sayıldı, "
                        "kur düşüşü kötümser çizgiye girmedi. Karar verirken bu tutarları kur riski açısından ayrıca düşünün.")
         pct = st.slider("TL'nin dövizlere karşı değişimi (%)", -30, 50, 10, step=5,
-                        help="Artı: TL değer kaybeder, dövizli alacağın TL karşılığı artar. Kur tahmini değildir; "
-                             "kendi senaryonuzu girersiniz. Dövizli borçlar kapsam dışıdır.")
+                        help="Artı: TL değer kaybeder; dövizli alacağın da dövizli borcun da TL karşılığı artar. "
+                             "Kur tahmini değildir; kendi senaryonuzu girersiniz.")
         if pct:
             fxs = run_fx_shift(res_key, res, pct / 100)
             st.write(f"Kur %{pct:+d} değişirse: 90 günde eksiye düşme olasılığı **%{fxs['prob_any_breach'] * 100:.0f}** "
@@ -902,11 +910,14 @@ with tab_accuracy:
                  f"±%{info['outflow_spread'] * 50:.0f} aralığında). Bu belirsizlik kasa bandına katıldı; planlanan giderler "
                  "kesin sayılmadı.")
     if info.get("fx_currencies"):
-        st.write(f"• Dövizli alacaklarda ({', '.join(info['fx_currencies'])}) kur belirsizliği kasa bandına katıldı: para "
-                 "geldiği gün kur bugünkünden farklı olabilir. Dalgalanma, kurların 2005'ten "
-                 f"{pd.Timestamp(info['fx_data_end']):%d.%m.%Y} tarihine kadarki geçmişinden alındı. TL'nin geçmişteki "
-                 "ortalama değer kaybı geleceğe taşınmadı: kur farkının kasayı büyüteceğine güvenilmez. "
-                 + fx.SOURCE)
+        st.write(f"• Dövizli alacak ve borçlarda ({', '.join(info['fx_currencies'])}) kur belirsizliği kasa bandına "
+                 "katıldı: para geldiği ya da ödendiği gün kur bugünkünden farklı olabilir. Dalgalanma, kurların 2005'ten "
+                 f"{pd.Timestamp(info['fx_data_end']):%d.%m.%Y} tarihine kadarki geçmişinden alındı. Kur farkının "
+                 "kasayı büyüteceğine güvenilmez: alacağınız borcunuzdan fazla olan dövizde TL'nin değer kaybetmeye "
+                 "devam edeceği varsayılmadı"
+                 + (f"; borcunuz alacağınızdan fazla olan dövizde ({', '.join(info['fx_short'])}) son 3 yılın değer "
+                    "kaybı hızının süreceği varsayıldı (kur yükselirse borç büyür)" if info.get("fx_short") else "")
+                 + ". " + fx.SOURCE)
     if info.get("installment_share"):
         st.write(f"• Son bir yılda kapanan faturaların %{info['installment_share'] * 100:.0f}'i birden çok tahsilatla "
                  "(taksitle) kapandı. Bu müşterilerin henüz ödenmemiş faturalarında ilk taksit, kendi geçmişlerindeki "
