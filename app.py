@@ -291,10 +291,11 @@ def run_backtest(obs, as_of):
 
 
 @st.cache_data(show_spinner="Pilot raporu hazırlanıyor; geçmiş tarihlerde test de yapıldığı için yarım dakika kadar sürer...")
-def run_pilot(key, _res, label, hide):
+def run_pilot(key, _res, label, hide, retro_json=""):
     secret = secret_key(store) if hide else None
+    retro = pd.read_json(io.StringIO(retro_json), orient="records") if retro_json else None
     r = pilot.build(_res["obs"], _res["as_of"], res=_res, label=label, key=secret,
-                    unmatched=_res.get("unmatched"), n_payments=_res.get("n_payments"))
+                    unmatched=_res.get("unmatched"), n_payments=_res.get("n_payments"), retro=retro)
     return pilot.render(r).encode("utf-8")
 
 
@@ -775,6 +776,14 @@ if res["disputed_total"]:
 if m["over_60_terms"]:
     notes.append(f"{m['over_60_terms']} açık faturada vade 60 günden uzun. TTK m.1530'a göre alacaklı KOBİ ise ya da "
                  "borçlu büyük işletmeyse vade 60 günü aşamaz; bu sözleşmeleri gözden geçirin.")
+if own and store.get("retro_result", ""):
+    _retro = pd.read_json(io.StringIO(store.get("retro_result")), orient="records")
+    _behind = _retro.loc[_retro["dm_sonuc"] == "geride", "ufuk_gun"].tolist() if "dm_sonuc" in _retro else []
+    if _behind:
+        st.warning(f"Aşama 0 geriye dönük testinde model bu işletmede {', '.join(f'{int(h)}' for h in _behind)} günlük "
+                   "ufukta basit bir yöntemin istatistiksel olarak gerisinde kaldı (Diebold-Mariano, %5). Bu ufuklarda "
+                   "tahsilat için pilot raporundaki \"İleriye dönük kayıt\" tablosunda en iyi basit yöntemin sayısını "
+                   "esas alın; kasa grafiğine temkinli yaklaşın.")
 for note in notes:
     if note.startswith("DİKKAT"):           # kasayı olduğundan dolu gösterebilecek veri sorunları gizlenmez
         st.warning(note)
@@ -1028,14 +1037,56 @@ with tab_accuracy:
                 "err_due_pct": "Vade yöntemi sapma (%)", "err_median_pct": "Medyan yöntemi sapma (%)",
                 "naive_rate": "Oran yöntemi (TL)", "err_rate_pct": "Oran yöntemi sapma (%)"}).assign(**{"Tahmin tarihi": lambda d: pd.to_datetime(d["Tahmin tarihi"])}),
                 width="stretch", hide_index=True)
+    retro_json = ""
+    if own:
+        st.divider()
+        st.write("**Aşama 0: geriye dönük pilot testi** (pilot protokolü 1.6). Son bir yılda her hafta için, o gün "
+                 "eldeki bilgiyle 14 ve 30 günlük tahsilat tahmin edilir ve gerçekleşenle karşılaştırılır. Ölçütler "
+                 "ileriye dönük pilottakilerle aynıdır; sonuç pilotun başında işletmeyle konuşulur.")
+        n_retro = pilot.retro_origins(res["obs"], res["as_of"])
+        # Hangi verilerle yapıldığı: yüklenen dosyaların özeti ve tahmin tarihi (ayar değişiklikleri sayılmaz).
+        data_key = "|".join([store.get(f"hash_{n}", "") for n in ("invoices", "payments")] + [str(res["as_of"])[:10]])
+        saved = json.loads(store.get("retro_meta", "{}"))
+        if n_retro < pilot.RETRO_MIN_ORIGINS:
+            st.caption(f"Yeterli geçmiş yok: her tahmin gününden önce en az {pilot.RETRO_MIN_TRAIN_DAYS} günlük geçmiş ve "
+                       f"en az {pilot.RETRO_MIN_ORIGINS} haftalık tahmin günü gerekir (yaklaşık 8 aylık veri).")
+        elif st.button(f"Aşama 0 testini çalıştır ({n_retro} hafta; bilgisayara göre birkaç dakika sürer)"):
+            bar = st.progress(0.0, text="Geçmiş haftalar tek tek tahmin ediliyor...")
+            retro = pilot.retrospective(res["obs"], res["as_of"],
+                                        progress=lambda f: bar.progress(f, text=f"Geçmiş haftalar: %{f * 100:.0f}"))
+            bar.empty()
+            store.set("retro_result", retro.to_json(orient="records", force_ascii=False))
+            saved = {"data": data_key, "n": n_retro, "ran": f"{pd.Timestamp.now():%d.%m.%Y %H:%M}"}
+            store.set("retro_meta", json.dumps(saved))
+            store.audit("Aşama 0 geri testi", f"{n_retro} hafta")
+        if saved and store.get("retro_result", ""):
+            retro = pd.read_json(io.StringIO(store.get("retro_result")), orient="records")
+            if saved.get("data") != data_key:
+                st.caption(f"Son Aşama 0 testi {saved.get('ran')} tarihinde, o günkü verilerle yapıldı. Veriler değiştiyse "
+                           "yeniden çalıştırın.")
+            verdict = {True: "geçti", False: "kaldı", None: "değerlendirilemedi"}
+            show_table(retro.assign(**{c: retro[c].map(lambda v: verdict.get(v if isinstance(v, bool) else None, "–"))
+                                       for c in ("B1", "B2") if c in retro}).rename(columns={
+                "ufuk_gun": "Ufuk (gün)", "tahmin_tarihi_sayisi": "Tahmin günü", "sapma_model_%": "Model (%)",
+                "sapma_medyan_%": "Müşteri medyanı (%)", "sapma_vade_%": "Vadesinde öder (%)",
+                "sapma_oran_%": "Tahsilat oranı (%)", "bant_ici": "Bant içinde", "bant_genisligi_%": "Bant genişliği (%)",
+                "aralik_skoru_%": "Aralık skoru (%)", "dm_sonuc": "İsabet testi (Diebold-Mariano)",
+                "dm_kiyas": "Kıyaslanan yöntem", "alt_asim": "Kötümserin altı (adet)", "ust_asim": "İyimserin üstü (adet)",
+                "basel_alt": "Basel bölgesi (alt uç)", "kupiec_p": "Kupiec p değeri", "B1": "B1 (isabet)",
+                "B2": "B2 (aralık)"}), width="stretch", hide_index=True)
+            st.caption("Haftalık tahmin günlerinin ufukları üst üste biner; isabet testi bunu hesaba katar. Geriye dönük "
+                       "test geçmiş kayıtlara sonradan bakar (ör. sonradan düzeltilen kayıtlar); bu yüzden ileriye dönük "
+                       "pilotun kararının yerine geçmez. Model bir ufukta \"geride\" çıkarsa, protokole göre o işletmede "
+                       "ileriye dönük dönemde en iyi basit yöntem esas alınır.")
+            retro_json = store.get("retro_result")
     st.divider()
     st.write("**Pilot raporu.** Tek sayfalık, yazdırılabilir özet: kasa bandı, 13 haftalık plan, öncelikli tahsilat ve "
-             "tahminin bu işletmenin geçmişinde basit yöntemlere karşı ne kadar tuttuğu.")
+             "tahminin bu işletmenin geçmişinde basit yöntemlere karşı ne kadar tuttuğu (Aşama 0 yapıldıysa onun sonucu).")
     hide = st.checkbox("Müşteri ve işletme adlarını gizle (rapor paylaşılacaksa)", True)
     if st.button("Pilot raporunu hazırla"):
         seller_name = (store.get("seller", "") if own else "Demo şirket") or "İşletme"
         label = anonymize.firm_alias(secret_key(store), seller_name) if hide and own else seller_name
-        page = run_pilot(res_key, res, label, hide)
+        page = run_pilot(res_key, res, label, hide, retro_json)
         store.audit("pilot raporu hazırlandı", "adlar gizli" if hide else "adlar açık")
         st.download_button("Raporu indir (HTML; tarayıcıda açıp yazdırabilirsiniz)", page,
                            f"pilot_raporu_{pd.Timestamp(res['as_of']):%Y%m%d}.html", "text/html")

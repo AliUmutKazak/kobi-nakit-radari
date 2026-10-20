@@ -50,9 +50,15 @@ Hedef: farklı sektörlerden 5–10 işletme. Mali müşavir aracılığıyla ul
 
 ## 5. Önceden kayıtlı ölçütler
 
-**Aşama 0: geriye dönük test (1.6).** İleriye dönük kayıtlar başlamadan önce her işletmenin son 12–24 aylık verisiyle panelin geri testi ("Tahmin doğruluğu" sekmesi, "Geri testi çalıştır") yapılır. Bu test geçmiş tarihlerde yalnızca o güne kadarki veriyle tahmin kurar. Modeli aynı basit yöntemlerle karşılaştırır (Diebold-Mariano) ve bandı Basel trafik ışığı ile Kupiec testiyle sınar. Sonuç günler içinde alınır ve işletmeye ilk görüşmede gösterilir.
+**Aşama 0: geriye dönük test (1.6).** İleriye dönük kayıtlar başlamadan önce her işletmenin son 12–24 aylık verisiyle geriye dönük test yapılır ("Tahmin doğruluğu" sekmesi, "Aşama 0 testini çalıştır"). Tanım ileriye dönük kayıtlarla aynıdır, yalnızca geçmişe uygulanır. Bu kayan başlangıç noktalı değerlendirmedir (rolling origin; Tashman 2000, International Journal of Forecasting 16):
+- son 52 haftanın her biri bir tahmin günüdür;
+- her tahmin günü yalnızca o güne kadarki veriyi kullanır ve öncesinde en az 180 günlük geçmiş ister;
+- o gün açık faturalardan 14 ve 30 günde gelecek tahsilat tahmin edilir;
+- B1 (Diebold-Mariano, üst üste binen ufuklar hesaba katılarak) ve B2 (Basel, Kupiec) aynı kodla hesaplanır (`pilot.retrospective`).
+
+Sonuç kaydedilir, pilot raporuna girer ve işletmeyle ilk görüşmede konuşulur. En az 4 haftalık tahmin günü kurulamıyorsa (yaklaşık 8 aydan kısa veri) Aşama 0 yapılmaz.
 - Aşama 0 sonucu B1/B2 kararının yerine geçmez. Geri testte geçmiş veriye sonradan bakma riski vardır (ör. sonradan düzeltilmiş kayıtlar). Bu yüzden ayrıca raporlanır.
-- Aşama 0'da bir işletmede model "geride" çıkarsa, o işletmede ileriye dönük dönemde varsayılan gösterim en iyi basit yöntemdir. Model yine kaydedilir ve B1'de ölçülür.
+- Aşama 0'da bir işletmede model bir ufukta "geride" çıkarsa, panel bunu sonuç sayfasının üstünde uyarı olarak gösterir. O ufukta karar için ileriye dönük kayıttaki en iyi basit yöntemin sayısı esas alınır. Model yine kaydedilir ve B1'de ölçülür.
 - Aşama 0'da hiçbir parametre değiştirilmez.
 
 **Dondurma ve kabul kuralı (1.6).** Pilot bitene kadar modele, senaryo laboratuvarına ve istatistik çerçevesine yeni sürüm ya da test eklenmez. İstisna, sonucu yalnızca daha ihtiyatlı yapan güvenlik düzeltmeleridir. Bir uç Basel yeşil bölgesinde ve Kupiec testi geçiyorsa (p ≥ 0,05) o sonuç kabul edilir ve ayar yapılmaz. Yeşil bölgenin sınırı gözlem sayısına bağlıdır: 100 gözlemde 14 aşıma (%14), 240 gözlemde 31 aşıma (%12,9) kadar.
@@ -217,6 +223,6 @@ Ek A imzalandıktan sonra veriyi hazırlayacak mali müşavire ya da ön muhaseb
 - Paketi 7-Zip (AES-256) ile parolalayın ya da uçtan uca şifreli bir kanaldan gönderin; parolayı başka bir kanaldan (telefon, SMS) iletin. Şifresiz e-posta eki kullanmayın.
 - %LOCALAPPDATA%\KobiRadar\anonim_anahtar.txt dosyasını paylaşmayın ve silmeyin: sonraki aylarda aynı müşterinin aynı takma adı alması bu dosyaya bağlıdır. Bilgisayar değişecekse dosyayı güvenli biçimde taşıyın.
 
-**3. İlk gün: geriye dönük test (Aşama 0).** Dosyalar en az 12, mümkünse 24 aylık geçmişi kapsamalı. Yüklemeden sonra "Tahmin doğruluğu" sekmesinde "Geri testi çalıştır" düğmesine basın ve pilot raporunu indirin; sonuç işletmeyle ilk görüşmede konuşulur. Şunları not edin: dosyaların hangi programdan alındığı, ilk yüklemeden ilk kasa grafiğine kadar geçen süre, sütun eşleştirmesi ya da başka bir yardım gerekip gerekmediği.
+**3. İlk gün: geriye dönük test (Aşama 0).** Dosyalar en az 12, mümkünse 24 aylık geçmişi kapsamalı. Yüklemeden sonra "Tahmin doğruluğu" sekmesinde "Aşama 0 testini çalıştır" düğmesine basın (birkaç dakika sürer), sonra pilot raporunu indirin; sonuç işletmeyle ilk görüşmede konuşulur. Şunları not edin: dosyaların hangi programdan alındığı, ilk yüklemeden ilk kasa grafiğine kadar geçen süre, sütun eşleştirmesi ya da başka bir yardım gerekip gerekmediği.
 
 **4. Her hafta (13 hafta).** Pazartesi güncel fatura ve banka dosyalarını yükleyin ve tahmin tarihini bugün bırakarak paneli açın; haftalık kayıt kendiliğinden alınır. "Tahmin doğruluğu" sekmesinden pilot raporunu indirip saklayın; Ek B'deki iki soruyu cevaplayın.

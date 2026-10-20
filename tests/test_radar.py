@@ -666,6 +666,8 @@ def test_dashboard_renders_demo_and_own_data_without_errors(tmp_path, monkeypatc
 
     root = Path(__file__).parents[1]
     monkeypatch.chdir(root)
+    from radar import pilot as pilot_mod
+    monkeypatch.setattr(pilot_mod, "RETRO_MAX_ORIGINS", 4)               # Aşama 0: testte 52 yerine 4 hafta
     db = tmp_path / "panel.db"
     monkeypatch.setenv("RADAR_DB", str(db))
     store = Store(db)
@@ -701,6 +703,9 @@ def test_dashboard_renders_demo_and_own_data_without_errors(tmp_path, monkeypatc
     monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))                   # anonimleştirme anahtarı testte buraya
     next(b for b in at.sidebar.button if b.label == "Takma adlı paketi hazırla").click().run()
     assert not at.exception, [e.value for e in at.exception]
+    next(b for b in at.button if b.label.startswith("Aşama 0 testini çalıştır")).click().run()
+    assert not at.exception, [e.value for e in at.exception]
+    assert Store(db).get("retro_result") and "Aşama 0" in Store(db).audit_log()["action"].str.cat()
     next(b for b in at.button if b.label == "Pilot raporunu hazırla").click().run()
     assert not at.exception, [e.value for e in at.exception]
     assert (tmp_path / "KobiRadar" / "anonim_anahtar.txt").exists()
@@ -1596,3 +1601,17 @@ def test_cheques_marked_risky_are_not_counted(tmp_path):
     chq, notes = ingest.load_cheques(tmp_path / "cek.csv")
     assert chq["amount"].tolist() == [10000.0]
     assert any(n.startswith("DİKKAT") and "2 çek" in n for n in notes)
+
+
+def test_retrospective_phase_uses_weekly_origins_and_reports_progress(full):
+    from radar import pilot
+    obs = observe(full, AS_OF)
+    n = pilot.retro_origins(obs, AS_OF)
+    assert 4 <= n <= pilot.RETRO_MAX_ORIGINS
+    assert pilot.retrospective(obs[obs["issue_date"] >= "2026-03-01"], AS_OF) is None     # 7 aydan kısa geçmiş
+    seen = []
+    summary = pilot.cash_backtest(obs, AS_OF, origins=4, step=pilot.RETRO_STEP, progress=seen.append)
+    assert seen == [0.25, 0.5, 0.75, 1.0] and set(summary["tahmin_tarihi_sayisi"]) == {4}
+    r = pilot.build(obs, AS_OF, retro=summary)
+    page = pilot.render(r)
+    assert r["retro"] and "Aşama 0" in page and "Kupiec p" in page

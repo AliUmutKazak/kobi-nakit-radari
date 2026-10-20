@@ -21,6 +21,13 @@ from .standards import SIGNIFICANCE, diebold_mariano, interval_report, passes as
 
 VERSION = "2026.10.20"            # tahmin kaydına yazılır: hangi kod sürümüyle üretildiği
 MIN_HISTORY_DAYS = 365            # protokol 2. bölüm: en az 12 aylık fatura geçmişi; altında geri test yapılmaz
+# Aşama 0 (protokol 1.6): ileriye dönük pilotla aynı tanım, geçmişe uygulanmış hâli. Kayan başlangıç noktalı
+# değerlendirme (rolling origin; Tashman 2000, International Journal of Forecasting 16): haftada bir tahmin günü,
+# her biri yalnızca o güne kadarki veriyle; en fazla son 52 hafta; her tahmin gününden önce en az 180 günlük geçmiş.
+RETRO_STEP = 7
+RETRO_MAX_ORIGINS = 52
+RETRO_MIN_TRAIN_DAYS = 180
+RETRO_MIN_ORIGINS = 4              # Diebold-Mariano testi için en az kayıt (accuracy_test)
 MIN_MATCH_RATE = 0.80             # banka tahsilatlarının bu oranın altında eşleştiği kayıt uyarılıdır, B1'e girmez
 ALPHA = 0.2                       # P10–P90 aralığı: %80 merkezi aralık
 
@@ -67,7 +74,8 @@ def _band_svg(sim, width: int = 720, height: int = 220) -> str:
 
 def build(obs: pd.DataFrame, as_of, opening: float = 0.0, outflows: pd.DataFrame | None = None,
           label: str = "İşletme", cheques: pd.DataFrame | None = None, unmatched: pd.DataFrame | None = None,
-          n_payments: int | None = None, res: dict | None = None, key: str | None = None) -> dict:
+          n_payments: int | None = None, res: dict | None = None, key: str | None = None,
+          retro: pd.DataFrame | None = None) -> dict:
     """Raporun bütün sayılarını hesaplar (HTML'den bağımsız; testlerde de kullanılır).
 
     `res` verilirse (panelde zaten hesaplanmış tahmin) kasa yeniden simüle edilmez. `key` verilirse
@@ -91,14 +99,40 @@ def build(obs: pd.DataFrame, as_of, opening: float = 0.0, outflows: pd.DataFrame
     delays = delay_study(obs, origins=4, step=60) if history_days >= MIN_HISTORY_DAYS else pd.DataFrame()
     # Veri tahmin tarihinden eskiyse, son hareketten sonraki ödemeler bilinmez; geri test orada biter.
     cash = cash_backtest(obs, min(as_of, last)) if history_days >= MIN_HISTORY_DAYS else pd.DataFrame()
+    if retro is not None and len(retro):          # Aşama 0 yapılmışsa kısa geri testin yerine o raporlanır
+        cash = retro
     return {"label": label, "as_of": as_of, "res": res, "quality": quality, "delays": delays, "cash": cash,
+            "retro": retro is not None and len(retro) > 0,
             "gap": gap_summary(res), "weeks": weekly_table(res), "top": _top(res, key, obs),
             "record": forward_record(obs, as_of, events=res.get("events") if isinstance(res, dict) else None,
                                      payments_through=res["info"].get("payments_through")), "cash_record": cash_record(res)}
 
 
+def data_end(obs: pd.DataFrame, as_of) -> pd.Timestamp:
+    """Verideki son hareket (tahmin tarihinden sonrası sayılmaz): geri testin ufukları bu günden önce biter."""
+    last = max(obs["issue_date"].max(), obs["paid_date"].max() if obs["paid_date"].notna().any() else obs["issue_date"].max())
+    return min(pd.Timestamp(as_of), last)
+
+
+def retro_origins(obs: pd.DataFrame, as_of, horizons=(14, 30)) -> int:
+    """Aşama 0'da kaç haftalık tahmin günü kurulabilir (0: yetersiz geçmiş)."""
+    span = (data_end(obs, as_of) - obs["issue_date"].min()).days - max(horizons) - RETRO_MIN_TRAIN_DAYS
+    return int(max(0, min(RETRO_MAX_ORIGINS, span // RETRO_STEP + 1)))
+
+
+def retrospective(obs: pd.DataFrame, as_of, progress=None) -> pd.DataFrame | None:
+    """Aşama 0: geriye dönük pilot testi. Sonuç, ileriye dönük B1/B2 ile aynı ölçütlerle (Diebold-Mariano,
+    Basel trafik ışığı, Kupiec) ufuk başına özet tablodur; yeterli geçmiş yoksa None. Haftalık tahmin günlerinin
+    ufukları üst üste biner: Diebold-Mariano bunu hesaba katar, Basel ve Kupiec katmaz (ileriye dönük pilottaki
+    haftalık kayıtlarla aynı); bu yüzden sonuç B1/B2 kararının yerine geçmez."""
+    n = retro_origins(obs, as_of)
+    if n < RETRO_MIN_ORIGINS:
+        return None
+    return cash_backtest(obs, data_end(obs, as_of), origins=n, step=RETRO_STEP, progress=progress)
+
+
 def cash_backtest(obs: pd.DataFrame, as_of, horizons=(14, 30), origins: int = 4, step: int = 21,
-                  n_sims: int = 500) -> pd.DataFrame:
+                  n_sims: int = 500, progress=None) -> pd.DataFrame:
     """Kasa düzeyinde geri test: geçmiş tarihlerde, o gün açık faturalardan 14 ve 30 günde tahsil edilen tutar.
 
     open_data.cash_study ile aynı ölçüt; farkı, her tahmin tarihinde tek simülasyondan iki ufkun birden
@@ -119,6 +153,8 @@ def cash_backtest(obs: pd.DataFrame, as_of, horizons=(14, 30), origins: int = 4,
             rows.append({"h": h, "actual": full.loc[was_open & (full["true_paid_date"] <= end), "amount"].sum(),
                          "p10": sim.p10[h], "p50": sim.p50[h], "p90": sim.p90[h],
                          **naive_collections(past, full[was_open], t, end)})
+        if progress is not None:
+            progress((k + 1) / origins)
     return summarize_backtest(pd.DataFrame(rows), step)
 
 
@@ -323,6 +359,10 @@ def render(r: dict) -> str:
             "Fatura gecikmesi, ort. hata (gün)": [f"{d[c].mean():.1f}" for c in ("mae_model", "mae_medyan", "mae_son4", "mae_vade")]}))
     if not r["cash"].empty:
         c = r["cash"]
+        if r.get("retro"):
+            accuracy += (f"<p class=\"note\">Aşama 0, geriye dönük pilot testi: {int(c['tahmin_tarihi_sayisi'].max())} "
+                         "haftalık tahmin günü, her biri yalnızca o güne kadarki veriyle (pilot protokolü 1.6). "
+                         "İleriye dönük pilotun B1/B2 kararının yerine geçmez.</p>")
         accuracy += _table(pd.DataFrame({
             "Ufuk": [f"{h} gün" for h in c["ufuk_gun"]],
             "Model sapması": [f"%{v:.1f}" for v in c["sapma_model_%"]],
@@ -331,6 +371,8 @@ def render(r: dict) -> str:
             "Tahsilat oranı sapması": [f"%{v:.1f}" for v in c["sapma_oran_%"]],
             "İsabet testi (Diebold-Mariano)": list(c.get("dm_sonuc", pd.Series(["–"] * len(c)))),
             "Basel (kötümser uç)": list(c.get("basel_alt", pd.Series(["–"] * len(c)))),
+            "Kupiec p": [f"{v:.2f}" if v == v else "–" for v in c.get("kupiec_p", pd.Series([float("nan")] * len(c)))],
+            "Tahmin günü": [str(int(v)) for v in c["tahmin_tarihi_sayisi"]],
             "Bant içinde kalan tarih": [_pct(v) for v in c["bant_ici"]]}))
     risk_line = (f"Kötümser senaryoda kasa {sim.breach_day}. günde ({sim.dates[sim.breach_day]:%d.%m.%Y}) eksiye düşüyor; "
                  f"en derin açık {_tl(gap['gap'])}." if sim.breach_day is not None
