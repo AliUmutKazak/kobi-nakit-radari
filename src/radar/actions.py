@@ -26,6 +26,29 @@ DOUBTFUL_MIN_OVERDUE = 90
 DOUBTFUL_MAX_COLLECT_PROB = 0.15
 
 
+def promise_reliability(events: pd.DataFrame | None, obs: pd.DataFrame, as_of) -> dict | None:
+    """Geçmiş ödeme sözlerinin ne kadarının tutulduğu: tarihi geçmiş her söz için fatura söz tarihinde ya da
+    öncesinde ödendiyse tutulmuş sayılır. Girişimciler ve onların müşterileri iyimserdir (Cooper, Woo ve Dunkelberg
+    1988); sözün tek başına güvence olmadığını kullanıcıya göstermek için. Dönen: n, tutulan, oran ve müşteri
+    bazında tutulmayan söz sayısı; tarihi geçmiş söz yoksa None."""
+    if events is None or not len(events):
+        return None
+    pr = events[events["kind"] == "promise"].copy()
+    if not len(pr):
+        return None
+    pr["promised"] = pd.to_datetime(pr["value"], errors="coerce")
+    pr = pr.dropna(subset=["promised"])
+    pr = pr[pr["promised"] < pd.Timestamp(as_of)]
+    if not len(pr):
+        return None
+    inv = obs.set_index(obs["invoice_id"].astype(str))
+    paid = pr["invoice_id"].astype(str).map(inv["paid_date"])
+    cust = pr["invoice_id"].astype(str).map(inv["customer_name"])
+    kept = paid.notna() & (paid <= pr["promised"])
+    broken = cust[~kept].value_counts()
+    return {"n": int(len(pr)), "kept": int(kept.sum()), "rate": float(kept.mean()), "broken_by_customer": broken.to_dict()}
+
+
 def metrics(obs: pd.DataFrame, as_of) -> dict:
     as_of = pd.Timestamp(as_of)
     open_inv = obs[obs["open_amount"] > 0]

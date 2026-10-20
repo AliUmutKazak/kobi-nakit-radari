@@ -19,7 +19,7 @@ from .pipeline import forecast, gap_summary, naive_collections, payments_cutoff,
 from .reconcile import collection_events
 from .standards import SIGNIFICANCE, diebold_mariano, interval_report, passes as interval_passes
 
-VERSION = "2026.10.18"            # tahmin kaydına yazılır: hangi kod sürümüyle üretildiği
+VERSION = "2026.10.20"            # tahmin kaydına yazılır: hangi kod sürümüyle üretildiği
 MIN_HISTORY_DAYS = 365            # protokol 2. bölüm: en az 12 aylık fatura geçmişi; altında geri test yapılmaz
 MIN_MATCH_RATE = 0.80             # banka tahsilatlarının bu oranın altında eşleştiği kayıt uyarılıdır, B1'e girmez
 ALPHA = 0.2                       # P10–P90 aralığı: %80 merkezi aralık
@@ -181,6 +181,56 @@ def cash_record(res: dict, horizons=(7, 14, 28)) -> pd.DataFrame:
     return pd.DataFrame([{"target": "kasa", "horizon": h, "until": f"{as_of + pd.Timedelta(days=h):%Y-%m-%d}",
                           "p10": round(sim.p10[h]), "p50": round(sim.p50[h]), "p90": round(sim.p90[h]),
                           "naive_flat": round(float(res["opening"]))} for h in horizons if h < len(sim.p50)])
+
+
+def cash_components(res: dict, horizons=(7, 14, 28)) -> dict:
+    """Kasa kaydının kalemleri (AFP: tahmin ile gerçekleşen kalem bazında karşılaştırılır). Ufuk başına beklenen
+    (senaryo ortalaması) tutarlar: açık faturalardan ve elde olan çeklerden tahsilat, yeni satışlardan tahsilat,
+    planlanan giderler (plan dışı tahmin dahil). Kasa ıskaladığında hatanın hangi kalemden geldiğini gösterir."""
+    sim, ctx, as_of = res["sim"], res["ctx"], pd.Timestamp(res["as_of"])
+    inv = ctx["sim_inv"]
+    amount = inv["open_amount"].to_numpy(float)
+    proj = inv["projected"].to_numpy(bool)
+    out = res["outflows"]
+    out_off = (pd.to_datetime(out["date"]) - as_of).dt.days.to_numpy() if len(out) else np.array([])
+    cheques = ctx.get("cheques")
+    c_off = (pd.to_datetime(cheques["date"]) - as_of).dt.days.to_numpy() if cheques is not None and len(cheques) else None
+    comp = {}
+    for h in horizons:
+        got = (sim.pay_day <= h).mean(axis=1) * amount
+        chq = float(cheques["amount"].to_numpy(float)[(c_off >= 1) & (c_off <= h)].sum()) if c_off is not None else 0.0
+        comp[str(h)] = {"acik": round(float(got[~proj].sum()) + chq), "yeni": round(float(got[proj].sum())),
+                        "gider": round(float(out["amount"].to_numpy(float)[(out_off >= 1) & (out_off <= h)].sum()) if len(out) else 0.0)}
+    return comp
+
+
+def component_variance(records: pd.DataFrame, obs: pd.DataFrame, events: pd.DataFrame,
+                       bank_outflows: pd.DataFrame | None = None) -> pd.DataFrame:
+    """Ufku dolmuş kasa kayıtlarında kalem bazında beklenen ile gerçekleşen. Gerçekleşen: açık faturalardan ve
+    yeni satışlardan tahsilat olaylardan (fatura kesim gününe göre ayrılır), giderler banka çıkışlarından (yoksa boş)."""
+    import json
+    if records is None or not len(records):
+        return pd.DataFrame()
+    rec = records[records["target"] == "kasa"]
+    issued = obs.set_index(obs["invoice_id"].astype(str))["issue_date"]
+    ev = events.assign(issue=events["invoice_id"].astype(str).map(issued))
+    data_end = max(obs["issue_date"].max(), events["date"].max() if len(events) else obs["issue_date"].max())
+    rows = []
+    for r in rec.itertuples():
+        comp = json.loads(r.meta or "{}").get("bilesenler", {}).get(str(int(r.horizon)))
+        a, u = pd.Timestamp(r.as_of), pd.Timestamp(r.until)
+        if not comp or u > data_end:
+            continue
+        win = (ev["date"] > a) & (ev["date"] <= u)
+        actual = {"acik": float(ev.loc[win & (ev["issue"] <= a), "amount"].sum()),
+                  "yeni": float(ev.loc[win & (ev["issue"] > a), "amount"].sum()),
+                  "gider": (float(bank_outflows.loc[(bank_outflows["date"] > a) & (bank_outflows["date"] <= u), "amount"].sum())
+                            if bank_outflows is not None and len(bank_outflows) else None)}
+        for k, label in (("acik", "Açık faturalardan tahsilat"), ("yeni", "Yeni satışlardan tahsilat"), ("gider", "Giderler")):
+            rows.append({"hafta": r.as_of, "ufuk": int(r.horizon), "kalem": label, "beklenen": comp[k],
+                         "gerceklesen": actual[k],
+                         "fark": None if actual[k] is None else actual[k] - comp[k]})
+    return pd.DataFrame(rows)
 
 
 def _top(res: dict, key: str | None, obs: pd.DataFrame) -> pd.DataFrame:

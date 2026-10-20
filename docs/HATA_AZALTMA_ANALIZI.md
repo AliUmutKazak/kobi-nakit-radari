@@ -55,17 +55,17 @@ Ortak noktalar şunlar: fatura bazında ödeme tahmini, banka ve muhasebe verisi
 |---|---|---|---|
 | 1 | **Banka ekstresinde çıkışların tahsilat sayılması** (işaretli tutarlı ekstrelerde "−15.000" kira ödemesi 15.000 tahsilat oluyordu) | **İyimser, çok tehlikeli** | **Bugün bulundu ve düzeltildi.** Yön, sırasıyla B/A sütunundan, Borç/Alacak sütunlarından, eksi işaretten ve bakiye değişiminden çıkarılıyor; hiçbiri yoksa uyarı veriliyor |
 | 2 | **Gider planının eksik olması** (unutulan vergi, SGK, kredi taksidi, tedarikçi) | **İyimser** | **Bugün eklendi.** Son 90 günün gerçek banka çıkışları planla karşılaştırılıyor; plan geçmişin altındaysa fark "plan dışı ödemeler (tahmini)" olarak kasaya ekleniyor (ayardan kapatılabilir) |
-| 3 | Giderlerin kendi belirsizliği (bant giderleri kesin sayıyor) | İyimser uç dar | **Açık.** Sıradaki iş: banka geçmişindeki aylık gider dalgalanmasının banda katılması |
-| 4 | Henüz kesilmemiş satışlar | Satış düşerse iyimser | Ayrı sütunda, işletmenin kendi geçmiş satış hatalarından belirsizlikle; laboratuvarda kalibre; kapatılabilir. Ek iş: tahsilatın ne kadarının kesilmemiş satıştan geldiğinin üstte gösterilmesi |
+| 3 | Giderlerin kendi belirsizliği (bant giderleri kesin sayıyordu) | **İyimser** (kötümser çizgi güvensiz) | **Yapıldı (20.10).** Banka geçmişindeki 30 günlük gider toplamlarının dalgalanması banda katılıyor. Giderleri dalgalanan 120 işletmede kötümser uç aşımı %13,3'ten %9,2'ye, iyimser uç %16,7'den %10,8'e indi; Kupiec iki uçta da geçiyor |
+| 4 | Henüz kesilmemiş satışlar | Satış düşerse iyimser | Ayrı sütunda, işletmenin kendi geçmiş satış hatalarından gelen belirsizlikle; laboratuvarda kalibre; kapatılabilir. **Yapıldı (20.10):** beklenen tahsilatın ne kadarının kesilmemiş satıştan geldiği açıkça yazılıyor |
 | 5 | Geç tahsilat (müşterinin gerçek ödeme alışkanlığı) | İyimser | Fatura ve müşteri bazında model; çek vadesi, taksit, kayıt gecikmesi öğreniliyor; laboratuvarda Basel yeşil |
 | 6 | Hiç tahsil edilemeyen alacak, müşteri yoğunlaşması | İyimser | Müşteri bazında temerrüt oranı; "en büyük müşterim geç öderse" senaryosu; tahsili zor alacaklar ayrı |
 | 7 | Eski veriyle tahmin | İyimser | Tahsilat kayıt kesimi kayıtlardan tahmin ediliyor ve uyarı veriliyor |
 | 8 | Mükerrer fatura | İyimser | Olası mükerrerler gösteriliyor |
 | 9 | Kur değişimi | İki yönlü | Kur senaryosu var; kur belirsizliği banda girmiyor (açık) |
-| 10 | Ödeme sözleri | Sözler tutulmazsa iyimser | Söz tarihi yeni vade sayılıyor, müşterinin gecikme alışkanlığı üstüne ekleniyor. Ek iş: tutulmayan sözlerin oranının izlenmesi |
+| 10 | Ödeme sözleri | Sözler tutulmazsa iyimser | Söz tarihi yeni vade sayılıyor, müşterinin gecikme alışkanlığı üstüne ekleniyor. **Yapıldı (20.10):** geçmiş sözlerin tutulma oranı ve en çok söz tutmayan müşteriler gösteriliyor |
 | 11 | Karar sayısının seçimi | Orta değere bakılırsa iyimser | **Bugün eklendi:** "güvenle harcanabilir tutar" (%10'luk uçtan); haftalık tabloda kötümser sütun öne alındı |
 | 12 | Tek tek işletmede kısa dönem sapması | İyimser olabilir | Çevrimiçi izleme ortalamada standart; pilot raporu her işletmeyi ayrıca Basel ve Kupiec ile sınıyor |
-| 13 | Tahmin ile gerçekleşenin kalem bazında karşılaştırılması (AFP) | — | **Açık:** pilotta toplam düzeyde var, kalem bazında yok |
+| 13 | Tahmin ile gerçekleşenin kalem bazında karşılaştırılması (AFP) | — | **Yapıldı (20.10):** her kasa kaydında açık faturalardan, yeni satışlardan beklenen tahsilat ve planlanan giderler ayrı saklanıyor; ufuk dolunca gerçekleşenle kalem kalem karşılaştırılıyor |
 | 14 | Pazarlama iddiaları | Hukuki risk | Kural konuldu: gerçek veride bağımsız ölçüm olmadan doğruluk iddiası yok |
 
 ## 5. Bugün yapılanlar
@@ -75,13 +75,18 @@ Ortak noktalar şunlar: fatura bazında ödeme tahmini, banka ve muhasebe verisi
 3. **"Güvenle harcanabilir" göstergesi eklendi** (madde 11): bugün bundan fazlası harcanırsa, 90 günde kasanın eksiye düşmesi 10 benzer durumun 1'inden sık olur. Haftalık tabloda kötümser sütun orta değerin önünde.
 4. **Mevzuat kontrolüne eklendi:** reklam iddialarının ispat yükü (Yönetmelik m.9) ve iki yeni avukat sorusu.
 
-## 6. Sıradaki işler (öncelik sırasıyla)
+## 6. 20 Ekim'in ikinci yarısında yapılanlar
 
-1. **Gider belirsizliğinin banda katılması** (madde 3). Banka geçmişindeki aylık çıkış dalgalanması, plan dışı ödemelerin belirsizliği olarak simülasyona girecek.
-2. **"Kötü durumda ortalama açık" göstergesi** (Basel FRTB'deki beklenen açık mantığı). Eksiye düşme olasılığının yanında, düşülürse ne kadar derin olacağı gösterilecek.
-3. **Kalem bazında tahmin–gerçekleşen karşılaştırması** (AFP). Pilot kayıtlarında açık faturalar, yeni satışlar ve giderler ayrı izlenecek.
-4. **Tahsilatın kesilmemiş satıştan gelen payının üstte gösterilmesi** ve tutulmayan ödeme sözlerinin oranının izlenmesi.
+1. **Gider belirsizliği** (madde 3). 30 günlük blok oranları, işletmenin kendi banka çıkışlarından öğreniliyor (en az 90 günlük geçmiş gerekir). Ortalama gider değişmez; yalnızca belirsizliği banda girer. Laboratuvara "aylık gider dalgalanması" boyutu eklendi (sürüm 6).
+2. **Kötü durumda ortalama açık** (Basel FRTB'deki beklenen açık mantığı). En kötü 10 senaryonun ortalamasında kasanın ne kadar eksiye düştüğü, hazır tutulması gereken ek kaynağın bir ölçüsü olarak gösteriliyor.
+3. **Yeni satış payı, ödeme sözü güvenilirliği, kalem bazında tahmin–gerçekleşen** (madde 4, 10, 13).
 
-## 7. Yasal uyum notu
+## 7. Kalan açık konular
+
+1. Kur değişiminin belirsizliği banda girmiyor (madde 9). Kur senaryosu var.
+2. Tek işletmede kısa dönem sapması (madde 12). Pilot raporu her işletmeyi ayrıca sınıyor; gerçek veriyle izlenecek.
+3. Gerçek Türk KOBİ verisi. Bütün bu sonuçlar sentetik ya da yabancı açık veriyle; son hakem pilot.
+
+## 8. Yasal uyum notu
 
 Bugünkü değişikliklerin hiçbiri yeni bir kişisel veri amacı yaratmıyor. Banka çıkışlarından kimlik bilgisi saklanmıyor (KVKK m.4/2-ç). "Güvenle harcanabilir tutar" bir karar destek göstergesi; yatırım ya da finansal danışmanlık sayılmayacak biçimde nasıl ifade edileceği avukata soruldu (MEVZUAT_KONTROLU.md, soru 22). Tanıtımda doğruluk iddiası kullanılmaması kuralı da aynı belgede (soru 21).

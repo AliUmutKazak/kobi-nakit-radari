@@ -1392,3 +1392,47 @@ def test_safe_to_spend_keeps_breach_probability_at_ten_percent():
     sim2 = SimResult(dates=None, p10=None, p50=None, p90=None, prob_negative=None, prob_any_breach=None,
                      min_balance=mins - 300_000, breach_day=None, pay_day=None, collections=None, paths=None)
     assert pipeline.safe_to_spend(sim2) == 0.0
+
+
+def test_outflow_levels_and_expected_shortfall():
+    from radar.simulate import SimResult
+    as_of = pd.Timestamp("2026-10-01")
+    days = pd.date_range(as_of - pd.Timedelta(days=179), as_of)
+    rng = np.random.default_rng(0)
+    hist = pd.DataFrame({"date": days, "amount": np.repeat(rng.lognormal(0, 0.3, 6), 30) * 1000})
+    lv = pipeline.outflow_levels(hist, as_of, 90, 500, seed=1)
+    assert lv.shape == (3, 500) and np.allclose(lv.mean(axis=1), 1.0) and lv.std() > 0.1
+    assert pipeline.outflow_levels(hist.tail(60), as_of, 90, 500, seed=1) is None        # 90 günden kısa geçmiş
+    mins = np.linspace(-100, 900, 1000)
+    sim = SimResult(dates=None, p10=None, p50=None, p90=None, prob_negative=None, prob_any_breach=None,
+                    min_balance=mins, breach_day=None, pay_day=None, collections=None, paths=None)
+    assert pipeline.expected_shortfall(sim) == pytest.approx(mins[:100].mean())
+
+
+def test_promise_reliability_counts_kept_promises():
+    from radar import actions
+    obs = pd.DataFrame({"invoice_id": ["A", "B", "C"], "customer_name": ["X", "Y", "Y"],
+                        "paid_date": pd.to_datetime(["2026-09-05", "2026-09-20", None])})
+    ev = pd.DataFrame({"invoice_id": ["A", "B", "C", "A"], "kind": ["promise"] * 3 + ["message"],
+                       "value": ["2026-09-06", "2026-09-10", "2026-09-15", ""],
+                       "ts": pd.to_datetime(["2026-09-01"] * 4)})
+    r = actions.promise_reliability(ev, obs, "2026-10-01")
+    assert r["n"] == 3 and r["kept"] == 1 and r["broken_by_customer"] == {"Y": 2}
+    assert actions.promise_reliability(ev, obs, "2026-09-01") is None              # tarihi geçmiş söz yok
+
+
+def test_cash_components_and_component_variance():
+    import json
+    from radar import pilot
+    res = pipeline.demo(seed=3, as_of=AS_OF, n_sims=200)
+    comp = pilot.cash_components(res)
+    assert set(comp) == {"7", "14", "28"} and comp["28"]["acik"] >= comp["7"]["acik"] >= 0
+    rec = pd.DataFrame([{"as_of": "2026-09-01", "target": "kasa", "horizon": 28, "until": "2026-09-25",
+                         "meta": json.dumps({"bilesenler": {"28": {"acik": 1000, "yeni": 500, "gider": 800}}})}])
+    obs = pd.DataFrame({"invoice_id": ["A", "B"], "issue_date": pd.to_datetime(["2026-08-01", "2026-09-10"]),
+                        "paid_date": pd.to_datetime(["2026-09-05", "2026-09-25"])})
+    ev = pd.DataFrame({"date": pd.to_datetime(["2026-09-05", "2026-09-25"]), "invoice_id": ["A", "B"], "amount": [900.0, 300.0]})
+    bank = pd.DataFrame({"date": pd.to_datetime(["2026-09-10"]), "amount": [1000.0]})
+    v = pilot.component_variance(rec, obs, ev, bank).set_index("kalem")
+    assert v.loc["Açık faturalardan tahsilat", "fark"] == -100 and v.loc["Yeni satışlardan tahsilat", "gerceklesen"] == 300
+    assert v.loc["Giderler", "fark"] == 200

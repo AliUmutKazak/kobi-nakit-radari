@@ -121,6 +121,38 @@ def _split_args(habits: dict | None, inv: pd.DataFrame, n_sims: int, seed: int) 
     return {"split_p": p, "split_frac": frac, "split_u": u}
 
 
+OUTFLOW_BLOCK = 30
+
+
+def outflow_levels(history: pd.DataFrame | None, as_of, horizon: int, n_sims: int, seed: int,
+                   min_blocks: int = 3) -> np.ndarray | None:
+    """Giderlerin belirsizliği, işletmenin kendi banka çıkışlarından öğrenilir.
+
+    Kasa simülasyonu planlanan giderleri kesin sayarsa, aylık giderler dalgalanan işletmede kötümser uç dar kalır
+    (kasa olduğundan güvenli görünür). Son kayıttan geriye doğru 30 günlük blokların gider toplamları alınır;
+    her blok ortalamaya oranlanır (ortalama 1). Simülasyonda her 30 günlük ufuk bloğu için bu oranlardan biri
+    seçilir (yeniden örnekleme; satış belirsizliğindeki konformal yaklaşımla aynı) ve planlanan giderler onunla
+    çarpılır: ortalama gider değişmez, yalnızca belirsizliği banda girer. En az `min_blocks` tam blok (90 gün)
+    yoksa None döner ve giderler kesin sayılır. Dönen: (ufuk bloğu, senaryo) katsayılar."""
+    if history is None or not len(history):
+        return None
+    hist = history[pd.to_datetime(history["date"]) <= pd.Timestamp(as_of)]
+    if not len(hist):
+        return None
+    end = pd.to_datetime(hist["date"]).max()
+    k = ((end - pd.to_datetime(hist["date"])).dt.days // OUTFLOW_BLOCK).to_numpy()
+    n_full = int((end - pd.to_datetime(hist["date"]).min()).days + 1) // OUTFLOW_BLOCK
+    if n_full < min_blocks:
+        return None
+    totals = np.bincount(k[k < n_full], weights=hist["amount"].to_numpy(float)[k < n_full], minlength=n_full)
+    if totals.mean() <= 0:
+        return None
+    ratios = totals / totals.mean()
+    n_blocks = int(np.ceil(horizon / OUTFLOW_BLOCK))
+    level = np.random.default_rng(seed + 41).choice(ratios, (n_blocks, n_sims), replace=True)
+    return level / level.mean(axis=1, keepdims=True)
+
+
 def unplanned_outflows(bank_out: pd.DataFrame | None, planned: pd.DataFrame | None, as_of, horizon: int = 90,
                        window_days: int = 90, min_history_days: int = 60) -> tuple[pd.DataFrame, dict | None]:
     """Gider planının eksiksizliği, işletmenin kendi banka çıkışlarıyla karşılaştırılır.
@@ -406,12 +438,15 @@ def forecast(obs: pd.DataFrame, as_of, opening: float, outflows: pd.DataFrame, h
              n_sims: int = 2000, include_projected: bool = True, seed: int = 0,
              cheques: pd.DataFrame | None = None, calib_hook=None, cheque_aware: bool = True,
              cheque_by_customer: bool = False, payments_through=None, payday_snap: bool = False,
-             events: pd.DataFrame | None = None, installment_aware: bool = True) -> dict:
+             events: pd.DataFrame | None = None, installment_aware: bool = True,
+             outflow_history: pd.DataFrame | None = None) -> dict:
     """calib_hook: kalibrasyon sözlüğünü değiştiren isteğe bağlı fonksiyon (deneyler ve pilot sırasındaki
     çevrimiçi kantil izleme için; bkz. pilot.online_adjustment).
     cheque_aware: çekle ödeyen müşterilerde paranın çek vadesinde gelmesi (cheque_habits; yalnızca deneylerde kapatılır).
     payments_through: tahsilatların kayda işlendiği son gün (bkz. payments_cutoff). Daha eskiyse model, kalibrasyon
     ve gecikme eğrileri o güne göre kurulur; arada gelmiş olabilecek paralar bugünkü kasanın içinde sayılır.
+    outflow_history: banka ekstresindeki geçmiş çıkışlar (date, amount); giderlerin belirsizliği buradan öğrenilir
+    (outflow_levels). Yoksa giderler kesin sayılır.
     events: tahsilat olayları (reconcile.collection_events); kısmi tahsilatlardan taksit alışkanlığı öğrenilir
     (installment_habits; installment_aware=False yalnızca deneylerde).
     payday_snap: ödemeyi müşterinin ödeme gününe oturtma (simulate.snap_to_payday). Laboratuvarda denendi, aralık
@@ -471,9 +506,15 @@ def forecast(obs: pd.DataFrame, as_of, opening: float, outflows: pd.DataFrame, h
                          .fillna(0).astype(int).to_numpy()} if payday_snap else {}),
            "payments_through": ref, "lag": lag}
     ctx["cheque_args"] |= _split_args(splits, sim_inv, n_sims, seed)        # simülasyona giden ek ayarlar
+    out_level = outflow_levels(outflow_history, as_of, horizon, n_sims, seed)
+    if out_level is not None:
+        ctx["cheque_args"]["outflow_level"] = out_level
     sim = simulate(sim_inv, ctx["Q"], as_of, opening, outflows, horizon, n_sims, seed=seed, aging=ctx["aging"],
                    cheques=cheques, sales_level=sales_level, **_sim_args(calib, sim_inv, ref), **ctx["cheque_args"])
     real = ~target["projected"].to_numpy()
+    # Beklenen tahsilatın henüz kesilmemiş satışlardan gelen payı (ihtiyatlılık: gerçekleşmemiş gelir ayrı görünür).
+    got = (sim.pay_day <= horizon).mean(axis=1) * sim_inv["open_amount"].to_numpy(float)
+    projected_share = float(got[~real].sum() / got.sum()) if got.sum() > 0 else 0.0
     gap_day = sim.breach_day if sim.breach_day is not None else horizon
     ranked = actions.prioritize(target[real], sim.pay_day[real], as_of, gap_day, actions.payment_habits(obs), horizon)
     return {"as_of": as_of, "model": model, "simple_model": isinstance(model, FallbackModel), "n_train": len(X),
@@ -488,7 +529,10 @@ def forecast(obs: pd.DataFrame, as_of, opening: float, outflows: pd.DataFrame, h
                      "cheque_share": habits["overall"] if habits else None, "cheque_n": habits["n"] if habits else 0,
                      "cheque_median_term": habits["median_term"] if habits else None,
                      "payments_through": ref, "payments_lag": lag,
-                     "installment_share": splits["overall"] if splits else None, "installment_n": splits["n"] if splits else 0},
+                     "installment_share": splits["overall"] if splits else None, "installment_n": splits["n"] if splits else 0,
+                     "projected_share": projected_share,
+                     "outflow_spread": (float(np.percentile(out_level, 90) - np.percentile(out_level, 10))
+                                        if out_level is not None else None)},
             "disputed_total": float(obs.loc[is_open & obs["disputed"], "open_amount"].sum())}
 
 
@@ -538,6 +582,19 @@ def safe_to_spend(sim, level: float = SAFE_LEVEL) -> float:
     karşılık gelir. Bant dürüst (kalibre) kalır, karar kötümser uçtan verilir (KGK Kavramsal Çerçeve md. 142:
     ihtiyatlılık, gelirlerin olduğundan yüksek gösterilmemesi; ama kasıtlı olarak düşük gösterilmesi de değil)."""
     return float(max(0.0, np.quantile(sim.min_balance, level)))
+
+
+def expected_shortfall(sim, level: float = SAFE_LEVEL) -> float:
+    """Kötü durumda ortalama en düşük kasa: senaryoların en kötü `level` kadarındaki (en düşük kasaya göre)
+    en düşük kasanın ortalaması.
+
+    Eksiye düşme olasılığı açığın ne kadar derin olacağını söylemez. Basel Komitesi piyasa riski çerçevesinde
+    (FRTB, 2016) tek bir yüzdelik (riske maruz değer) yerine uçtaki ortalama kayba (beklenen açık) geçti, çünkü
+    yüzdelik uçtaki kaybın büyüklüğünü görmez. Aynı mantık: eksi çıkarsa, en kötü %10'luk durumda ortalama ne
+    kadar eksiye düşülür."""
+    m = np.sort(np.asarray(sim.min_balance, float))
+    k = max(1, int(np.ceil(level * len(m))))
+    return float(m[:k].mean())
 
 
 def _p10_min(paths: np.ndarray) -> float:

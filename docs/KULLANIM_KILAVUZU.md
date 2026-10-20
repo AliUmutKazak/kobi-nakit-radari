@@ -44,6 +44,12 @@ Sol menüde **"Kendi verim"**i seçin. Ayarlar dört bölümde toplanmıştır.
 
 **Banka ekstresi ve plan dışı ödemeler.** Ekstredeki çıkış hareketleri tahsilat sayılmaz. Yön, sırayla B/A sütunundan, Borç/Alacak sütunlarından, eksi işaretli tutardan ya da bakiye değişiminden anlaşılır; hiçbiri yoksa panel uyarır. Panel son 90 günde bankadan çıkan ödemeleri, önümüzdeki 90 gün için planladığınız giderlerle karşılaştırır. Plan geçmişin altındaysa fark "plan dışı ödemeler (tahmini)" olarak kasaya eklenir: unutulan bir gider kasayı olduğundan dolu gösterir. Fark tek seferlik bir ödemeden (ör. yatırım, kendi hesaplarınız arası aktarım) geliyorsa "Diğer ayarlar"dan kapatabilirsiniz. Çıkışların yalnızca tarihi ve tutarı saklanır.
 
+**Giderlerin dalgalanması.** Banka ekstresinde en az 90 günlük çıkış varsa panel, aylık giderlerinizin ne kadar dalgalandığını öğrenir ve bunu kasa bandına katar; planladığınız giderler kesin sayılmaz.
+
+**Kötü durumda ortalama açık.** Kasa bazı senaryolarda eksiye düşüyorsa panel, en kötü 10 senaryonun ortalamasında açığın ne kadar derin olduğunu yazar. Bu tutar, hazır tutmanız gereken ek kaynak (kredi limiti, erteleme, erken tahsilat) için bir ölçüdür.
+
+**Ödeme sözleri ve tahmin doğruluğu.** Veri notlarında geçmiş ödeme sözlerinin ne kadarının tutulduğu yazar. "Tahmin doğruluğu" sekmesinde pilot kayıtları biriktikçe, kasa tahmininin kalem kalem (açık faturalar, yeni satışlar, giderler) gerçekleşenle karşılaştırması görünür.
+
 **Olası mükerrer faturalar.** Aynı fatura numarası yüklemede bir kez sayılır. Aynı müşteriye aynı gün aynı tutarla, ama farklı numarayla kesilmiş faturalar varsa panel veri notlarında bunları gösterir. Aynı fatura iki kez girildiyse (ör. elle ve e-faturadan) dosyadan birini çıkarın; aksi hâlde alacak iki kez sayılır. Gerçekten ayrı faturalarsa bir şey yapmanız gerekmez; panel hiçbir kaydı kendiliğinden silmez.
 
 **Taksitle ödeyen müşteriler.** Bir fatura birden çok tahsilatla kapanmışsa (banka ekstresindeki eşleşmelerden ya da cari hesap ekstresindeki alacak satırlarından), panel bu müşterinin taksit alışkanlığını öğrenir: faturaların ne kadarını taksitle kapattığı, ilk taksidin tutarın ne kadarı olduğu ve ne zaman geldiği. Henüz hiç ödenmemiş faturalarında ilk taksit, kapanıştan önce kasaya sayılır. Kısmen ödenmiş faturalarda yalnızca kalan tutar beklenir.

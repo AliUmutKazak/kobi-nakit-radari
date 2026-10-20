@@ -195,6 +195,12 @@ def run_own(path: str, rev: int, as_of: str, include_projected: bool):
         outflows = flows if outflows is None else pd.concat([outflows, flows], ignore_index=True)
     if cheques is not None:
         notes.append(f"Çek/senet portföyü: {len(cheques)} adet, {tl(cheques['amount'].sum())}.")
+    promises = actions.promise_reliability(store.events(), obs, as_of)
+    if promises:
+        worst = ", ".join(f"{c} ({k})" for c, k in list(promises["broken_by_customer"].items())[:3])
+        notes.append(f"Tarihi geçmiş {promises['n']} ödeme sözünün {promises['kept']} tanesi (%{promises['rate'] * 100:.0f}) söz "
+                     "tarihinde ya da öncesinde tutuldu." + (f" En çok söz tutmayan: {worst}." if worst else "")
+                     + " Tahmin, sözü yeni vade sayar ama müşterinin gerçek gecikme alışkanlığını da uygular.")
     # Gider planı, işletmenin kendi banka çıkışlarıyla karşılaştırılır; eksikse fark tahmini olarak eklenir.
     extra, gap = pipeline.unplanned_outflows(store.load("bank_outflows"), outflows, as_of)
     if gap is not None:
@@ -226,7 +232,7 @@ def run_own(path: str, rev: int, as_of: str, include_projected: bool):
     res = pipeline.forecast(obs.reset_index(drop=True), as_of, float(store.get("opening", 0)),
                             outflows if outflows is not None else pd.DataFrame({"date": [], "amount": []}),
                             include_projected=include_projected, cheques=cheques, calib_hook=hook,
-                            payments_through=through, events=events)
+                            payments_through=through, events=events, outflow_history=store.load("bank_outflows"))
     # Verideki son hareket: bundan sonraki ödemeler bilinmez, ödenmemiş görünür.
     dates = [obs["issue_date"].max(), obs["paid_date"].max()] + ([payments["date"].max()] if payments is not None else [])
     last = max(d for d in dates if pd.notna(d))
@@ -632,7 +638,8 @@ if own and store.get("pilot_on", "0") == "1" and pilot.record_due(store.pilot_re
             "yontem": "müşteri medyanı (basit)" if res["simple_model"] else "LightGBM + müşteri medyanı birleşimi",
             "eslesme_orani": res.get("match_rate"), "kapsam": res.get("scope", {}),
             "acilis_guncel": store.get("opening_date") == f"{pd.Timestamp(res['as_of']):%Y-%m-%d}",
-            "cevrimici_ayar": res["ctx"]["calib"].get("online"), "genisletme": res["info"].get("widen")}
+            "cevrimici_ayar": res["ctx"]["calib"].get("online"), "genisletme": res["info"].get("widen"),
+            "bilesenler": pilot.cash_components(res)}
     if store.add_pilot_record(res["as_of"], weekly, opening=res["opening"], meta=meta):
         st.toast("Bu haftanın pilot kaydı alındı.")
     if res.get("match_rate") is not None and res["match_rate"] < pilot.MIN_MATCH_RATE:
@@ -667,6 +674,11 @@ if own and store.get("sector"):
     if line:
         st.info(line + " Tanımlar yakın ama aynı değil: TCMB oranı yıllık ortalama alacağa, buradaki süre bugünkü "
                 "açık alacağa dayanır.")
+shortfall = pipeline.expected_shortfall(sim)
+if shortfall < 0:
+    st.warning(f"Kötü durumda ortalama açık: en kötü 10 senaryonun ortalamasında kasa en derin noktasında "
+               f"{tl(-shortfall)} eksiye düşüyor. Eksiye düşme olasılığı açığın derinliğini göstermez; bu tutar, "
+               "hazır tutulması gereken ek kaynak (kredi limiti, erteleme, erken tahsilat) için bir ölçüdür.")
 if sim.prob_any_breach >= 0.5:
     st.error(f"Eksiye düşme riski yüksek (%{sim.prob_any_breach * 100:.0f}). Bağımsız doğrulamada %80 gösterilen "
              "durumlarda gerçekleşme %92 oldu: yüksek riskte gerçek risk gösterilenden daha yüksek olabilir. "
@@ -836,6 +848,10 @@ with tab_accuracy:
     st.write(f"• Tahmin aralığının genişliği, sistemin geçmiş dört çeyrekte {info['n_calibration']} faturada yaptığı "
              "ileriye dönük tahminlerin hatasından ayarlandı."
              + (" Bu sayı az; aralıklar varsayılan değerlere yakın." if info["n_calibration"] < 100 else ""))
+    if info.get("sales_method") and info.get("projected_share"):
+        st.write(f"• Önümüzdeki 90 günde beklenen tahsilatın %{info['projected_share'] * 100:.0f}'i henüz kesilmemiş "
+                 "satışlardan geliyor. Bu kısım satışlar geçmişteki gibi giderse gelir; satışlar düşerse kasa bu kadar dolu "
+                 "olmaz. Yalnızca kesinleşmiş kalemlerle görmek için \"Gelecek satışları hesaba kat\" seçeneğini kapatın.")
     if info.get("sales_method"):
         spread = info.get("sales_error_spread")
         st.write("• Yeni satışlar: " + ("geçen yılın aynı dönemi esas alındı (işletmenizin geçmişinde son dönemin hızından "
@@ -853,6 +869,10 @@ with tab_accuracy:
         st.write(f"• Son bir yılda faturaların %{info['cheque_share'] * 100:.0f}'i çekle kapandı (ortanca çek vadesi "
                  f"{info['cheque_median_term']:.0f} gün). Bu müşterilerin açık faturaları ve yeni satışları için para, "
                  "fatura kapandığı gün değil çek vadesinde ve karşılıksız çıkma olasılığıyla kasaya sayıldı.")
+    if info.get("outflow_spread"):
+        st.write(f"• Banka geçmişinize göre aylık giderleriniz dalgalanıyor (aylık toplamın ortalamaya oranı, 10 aydan 8'inde "
+                 f"±%{info['outflow_spread'] * 50:.0f} aralığında). Bu belirsizlik kasa bandına katıldı; planlanan giderler "
+                 "kesin sayılmadı.")
     if info.get("installment_share"):
         st.write(f"• Son bir yılda kapanan faturaların %{info['installment_share'] * 100:.0f}'i birden çok tahsilatla "
                  "(taksitle) kapandı. Bu müşterilerin henüz ödenmemiş faturalarında ilk taksit, kendi geçmişlerindeki "
@@ -917,6 +937,13 @@ with tab_accuracy:
             if reason:
                 st.caption(reason)
             detail, summary = pilot.score(pilot.records_from_table(records), res["obs"], events=res.get("events"))
+            parts = pilot.component_variance(records, res["obs"], res.get("events"), store.load("bank_outflows"))
+            if len(parts):
+                st.write("Kasa kayıtlarında kalem bazında beklenen ve gerçekleşen (AFP önerisi: kasa ıskaladığında hatanın "
+                         "hangi kalemden geldiğini gösterir). Giderlerin gerçekleşeni banka ekstresindeki çıkışlardır.")
+                show_table(parts.rename(columns={"hafta": "Kayıt haftası", "ufuk": "Ufuk (gün)", "kalem": "Kalem",
+                                                 "beklenen": "Beklenen (TL)", "gerceklesen": "Gerçekleşen (TL)",
+                                                 "fark": "Fark (TL)"}), width="stretch", hide_index=True)
             if len(summary):
                 st.write("Süresi dolan kayıtlarda tahmin ile gerçekleşen (sapma ve aralık skoru: düşük iyi). "
                          "Tahsilat: açık faturalardan gelen para, kısmi ödemeler dahil. Kasa: o gün girdiğiniz "

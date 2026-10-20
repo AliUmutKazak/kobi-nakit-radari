@@ -63,6 +63,7 @@ RANGES = {
     "record_lag": ((0, 14), (14, 31), "VUK m.219: kayıt en geç 10 gün, fişe dayanan kayıtta 45 gün; aralık varsayım"),
     "partial_share": ((0.0, 0.40), (0.40, 0.70), "varsayım: faturalarını iki taksitte kapatan müşteri payı"),
     "missing_due": ((0.0, 0.30), (0.30, 0.60), "veri kalitesi: vadesi girilmemiş fatura payı (TTK m.1530/4-a: 30 gün)"),
+    "outflow_sigma": ((0.0, 0.30), (0.30, 0.50), "varsayım: aylık giderlerin dalgalanması (log ölçekte sapma)"),
     "as_of_day": ((0, 364), (0, 364), "tahmin günü: 2026 içinde yılın günü (ayın başı, ortası, sonu)"),
 }
 DSO_LIMITS = (15.0, 180.0)        # üreticinin ulaşabildiği aralık; dışı kırpılır ve raporlanır
@@ -112,7 +113,7 @@ def _gen(row, delay_scale: float = 1.0) -> dict:
             "size_sigma": float(row["size_sigma"]), "delay_scale": delay_scale, "terms_scale": min(1.0, delay_scale),
             "cheque_share": float(row["cheque_share"]), "cheque_term": float(row["cheque_term"]),
             "cheque_bounce": float(row["cheque_bounce"]), "record_lag": int(row["record_lag"]),
-            **{k: float(row[k]) for k in ("partial_share", "missing_due") if k in row}}
+            **{k: float(row[k]) for k in ("partial_share", "missing_due", "outflow_sigma") if k in row}}
 
 
 def dso(obs: pd.DataFrame, as_of, doubtful_days: int = 180) -> float:
@@ -130,7 +131,7 @@ def fit_delay_scale(row, iters: int = 8) -> tuple[float, float]:
     artar. Dönen: (ölçek, ulaşılan tahsil süresi, gün)."""
     def measure(scale):
         gen = _gen(row, scale)
-        gen.pop("record_lag"); gen.pop("missing_due", None)
+        gen.pop("record_lag"); gen.pop("missing_due", None); gen.pop("outflow_sigma", None)
         as_of = pd.Timestamp(row["as_of"])
         full = generate(seed=int(row["seed"]), n_customers=int(row["customers"]), as_of=as_of,
                         trend=float(row["trend"]), shock=float(row["shock"]), **gen)

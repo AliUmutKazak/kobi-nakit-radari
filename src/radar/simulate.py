@@ -227,8 +227,11 @@ def simulate(inv: pd.DataFrame, Q: np.ndarray, as_of, opening: float, outflows: 
              cheque_p: np.ndarray | None = None, cheque_terms: np.ndarray | None = None,
              cheque_by_customer: bool = False, lag: int = 0, payday: np.ndarray | None = None,
              split_p: np.ndarray | None = None, split_frac: np.ndarray | None = None,
-             split_u: np.ndarray | None = None) -> SimResult:
+             split_u: np.ndarray | None = None, outflow_level: np.ndarray | None = None) -> SimResult:
     """inv sütunları: customer_id, issue_date, due_date, open_amount, p_default, projected.
+
+    outflow_level: (blok, senaryo) gider katsayıları (bkz. pipeline.outflow_levels); 30 günlük blokta planlanan
+    giderler senaryo başına bu katsayıyla çarpılır. Verilmezse giderler kesin sayılır.
 
     split_p / split_frac / split_u: taksitle ödeme (bkz. pipeline.installment_habits). Fatura başına ilk taksitle
     ödenme olasılığı, senaryo başına ilk taksidin tutar oranı ve zamanı (fatura günüyle kapanış günü arasındaki
@@ -353,6 +356,10 @@ def simulate(inv: pd.DataFrame, Q: np.ndarray, as_of, opening: float, outflows: 
     off = (pd.to_datetime(outflows["date"]) - as_of).dt.days.to_numpy()
     keep = (off >= 1) & (off <= horizon)
     np.add.at(out, off[keep], outflows["amount"].to_numpy(float)[keep])
+    if outflow_level is not None:
+        # Gün başına blok: 1-30. gün 0. blok, 31-60. gün 1. blok ...; senaryo × gün gider matrisi.
+        block = np.minimum((np.arange(horizon + 1) - 1).clip(min=0) // 30, len(outflow_level) - 1)
+        out = out[None, :] * outflow_level[block].T
     balance = opening + np.cumsum(inflow - out, axis=1)
     w_lo, w_hi = (widen, widen) if np.isscalar(widen) else widen
     if (w_lo, w_hi) != (1.0, 1.0):

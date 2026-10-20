@@ -1,6 +1,35 @@
 # Senaryo Laboratuvarı
 
-Tarih: 18 Ekim 2026. Kod: `src/radar/lab.py`. Güncel sürüm 5 (16 boyut; taksit alışkanlığı öğreniliyor). Ayrıntılı tablolar: sürüm 5 [geliştirme](lab/gelistirme_v5.md), [sınav](lab/sinav_v5.md); sürüm 4 [geliştirme](lab/gelistirme_v4.md), [sınav](lab/sinav_v4.md); sürüm 3 [geliştirme](lab/gelistirme_v3.md), [geliştirme, kesim düzeltmesi kapalı](lab/gelistirme_v3_kesim_duzeltmesi_kapali.md), [sınav](lab/sinav_v3.md); sürüm 2 [geliştirme](lab/gelistirme_v2.md), [geliştirme, çek düzeltmesi kapalı](lab/gelistirme_v2_cek_duzeltmesi_kapali.md), [sınav](lab/sinav_v2.md); sürüm 1 [geliştirme](lab/gelistirme_v1.md), [sınav](lab/sinav_v1.md). Sınav koşuları kaydı: [lab/sinav_kaydi.csv](lab/sinav_kaydi.csv) (tohum 0: sürüm 1; tohum 1: sürüm 2; tohum 2: sürüm 3; tohum 3: sürüm 4; tohum 4: sürüm 5).
+Tarih: 18 Ekim 2026. Kod: `src/radar/lab.py`. Güncel sürüm 6 (17 boyut; aylık gider dalgalanması eklendi). Ayrıntılı tablolar: sürüm 6 [geliştirme](lab/gelistirme_v6.md), [sınav](lab/sinav_v6.md); sürüm 5 [geliştirme](lab/gelistirme_v5.md), [sınav](lab/sinav_v5.md); sürüm 4 [geliştirme](lab/gelistirme_v4.md), [sınav](lab/sinav_v4.md); sürüm 3 [geliştirme](lab/gelistirme_v3.md), [geliştirme, kesim düzeltmesi kapalı](lab/gelistirme_v3_kesim_duzeltmesi_kapali.md), [sınav](lab/sinav_v3.md); sürüm 2 [geliştirme](lab/gelistirme_v2.md), [geliştirme, çek düzeltmesi kapalı](lab/gelistirme_v2_cek_duzeltmesi_kapali.md), [sınav](lab/sinav_v2.md); sürüm 1 [geliştirme](lab/gelistirme_v1.md), [sınav](lab/sinav_v1.md). Sınav koşuları kaydı: [lab/sinav_kaydi.csv](lab/sinav_kaydi.csv) (tohum 0: sürüm 1; tohum 1: sürüm 2; tohum 2: sürüm 3; tohum 3: sürüm 4; tohum 4: sürüm 5; tohum 5: sıralı laboratuvar sınavı (40 işletme); tohum 6: sürüm 6).
+
+## Sürüm 6: giderlerin belirsizliği (20 Ekim 2026)
+
+**Laboratuvarın bulduğu kusur.** Kasa simülasyonu planlanan giderleri kesin sayıyordu. Laboratuvarda da giderler kesindi, bu yüzden kusur görünmüyordu. Gerçekte aylık giderler dalgalanır. Laboratuvara "aylık gider dalgalanması" boyutu eklendi: giderler 30 günlük bloklarda log-normal dalgalanıyor ve ortalaması plana eşit. Banka geçmişi aynı süreçten üretiliyor; tahmin planı ve geçmişi görüyor, gerçekleşen kasa dalgalanan giderlerle hesaplanıyor.
+
+**Çözüm** (`pipeline.outflow_levels`). İşletmenin kendi banka çıkışlarından 30 günlük blok toplamlarının ortalamaya oranları öğreniliyor; en az 90 gün gerekiyor. Simülasyonda her blok için bu oranlardan biri yeniden örneklenip planlanan giderlerle çarpılıyor. Ortalama gider değişmiyor, yalnızca belirsizlik banda giriyor.
+
+Gider dalgalanması %5–35 olan 120 işletmede eşleştirilmiş ölçüm:
+
+| | Kötümser uç aşımı | İyimser uç aşımı | Kupiec alt / üst p | Aralık skoru |
+|---|---|---|---|---|
+| Giderler kesin sayılırsa | **%13,3** | %16,7 | 0,29 / 0,032 | 2,53 |
+| Gider belirsizliği bantta | **%9,2** | %10,8 | 0,77 / 0,88 | 2,44 |
+
+Giderleri kesin saymak kötümser çizgiyi güvensiz yapıyordu: gerçek kasa, kötümser çizginin altına %10 yerine %13 sıklıkla düştü.
+
+**Sınav (sürüm 6, tohum 6, 240 işletme, bir kez koşuldu):**
+- Kötümser uç aşımı %7, iyimser %10; Basel yeşil, Kupiec iki uçta da geçiyor (p = 0,13 / 1,00), Spiegelhalter p = 0,96. Geliştirmede (tohum 2): %5 / %10.
+- İki kesit Basel sarı çıktı: saklı rejimdeki aşırı enflasyon (12 işletme) ve 10–14 günlük tahsilat kayıt gecikmesi (77 işletme, alt %16).
+- Kayıt gecikmesi kesiti, geliştirme tarafında yeni tohumlarla 120 işletmede yeniden incelendi: alt aşım %4,2, Basel yeşil. Sınavdaki değer örneklem dalgalanmasıydı.
+
+**Aynı gün eklenen karar destek göstergeleri** (laboratuvar ölçütünü değiştirmez):
+- "güvenle harcanabilir tutar" (%10'luk uçtan);
+- "kötü durumda ortalama açık" (en kötü %10 senaryonun ortalaması; Basel FRTB'deki beklenen açık mantığı);
+- beklenen tahsilatın henüz kesilmemiş satışlardan gelen payı;
+- ödeme sözü güvenilirliği;
+- kalem bazında tahmin–gerçekleşen karşılaştırması.
+
+Ayrıntı: [HATA_AZALTMA_ANALIZI.md](HATA_AZALTMA_ANALIZI.md).
 
 ## Sıralı laboratuvar: pilot sırasındaki çevrimiçi izleme (18 Ekim 2026)
 
@@ -175,6 +204,7 @@ Sistem dört katmandan oluşur:
 | Tahmin günü (sürüm 3) | 2026'nın herhangi bir günü | | tasarım: ayın başı, ortası, sonu |
 | Kısmi ödeme yapan müşteri payı (sürüm 4) | %0–40 | %40–70 | varsayım |
 | Vadesi girilmemiş fatura payı (sürüm 4) | %0–30 | %30–60 | varsayım; panel 30 gün verir (TTK m.1530/4-a) |
+| Aylık gider dalgalanması (sürüm 6) | 0–0,30 | 0,30–0,50 | varsayım; ürün kendi banka geçmişinden öğrenir |
 
 Örnekleme Latin hiperküp yöntemiyle yapılır; her boyut kendi aralığında eşit kaplanır.
 

@@ -46,6 +46,7 @@ def run_case(seed: int, customers: int, trend: float, shock: float, as_of="2026-
     gen = dict(gen or {})
     record_lag = int(gen.pop("record_lag", 0))
     missing_due = float(gen.pop("missing_due", 0.0))
+    outflow_sigma = float(gen.pop("outflow_sigma", 0.0))
     full = generate(seed=seed, n_customers=customers, as_of=end, trend=trend, shock=shock, **gen)
     obs = observe(full, as_of, record_lag)
     if missing_due:
@@ -53,7 +54,22 @@ def run_case(seed: int, customers: int, trend: float, shock: float, as_of="2026-
         miss = np.random.default_rng(seed + 20_000).random(len(obs)) < missing_due
         obs.loc[miss, "due_date"] = obs.loc[miss, "issue_date"] + pd.Timedelta(days=30)
     _, outflows = cash_plan(obs, as_of, horizon)
+    realized, history = outflows, None
     kw = dict(forecast_kwargs or {})
+    outflow_aware = kw.pop("outflow_aware", True)
+    if outflow_sigma:
+        # Giderler 30 günlük bloklarda dalgalanır (log-normal, ortalaması plana eşit). Banka geçmişi aynı süreçten:
+        # tahmin planı ve geçmişi görür, gerçekleşen kasa dalgalanan giderlerle hesaplanır.
+        rng = np.random.default_rng(seed + 50_000)
+        def noisy(plan, start):
+            block = ((plan["date"] - start).dt.days.clip(lower=1) - 1) // 30
+            f = rng.lognormal(-outflow_sigma ** 2 / 2, outflow_sigma, int(block.max()) + 1)
+            return plan.assign(amount=plan["amount"] * f[block.to_numpy()])
+        past_start = as_of - pd.Timedelta(days=180)
+        history = noisy(cash_plan(obs, past_start, 180)[1], past_start)[["date", "amount"]]
+        realized = noisy(outflows, as_of)
+    if outflow_aware and history is not None:
+        kw["outflow_history"] = history
     mode = kw.pop("cutoff", "auto")
     through = {"auto": payments_cutoff(obs, as_of), "true": as_of - pd.Timedelta(days=record_lag), "none": None}[mode]
     res = forecast(obs, as_of, 0.0, outflows, horizon, n_sims, seed=seed, calib_hook=calib_hook,
@@ -72,7 +88,7 @@ def run_case(seed: int, customers: int, trend: float, shock: float, as_of="2026-
         first = full[(full["true_partial_date"] > as_of) & (full["true_partial_date"] <= end)]
         np.add.at(flow, (first["true_partial_date"] - as_of).dt.days.to_numpy(),
                   (first["amount"] * first["partial_frac"]).to_numpy())
-    np.add.at(flow, (outflows["date"] - as_of).dt.days.to_numpy(), -outflows["amount"].to_numpy())
+    np.add.at(flow, (realized["date"] - as_of).dt.days.to_numpy(), -realized["amount"].to_numpy())
     truth = np.cumsum(flow)
 
     monthly = obs.loc[obs["issue_date"] > as_of - pd.Timedelta(days=180), "amount"].sum() / 6

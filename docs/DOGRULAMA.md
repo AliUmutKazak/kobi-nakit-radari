@@ -2,6 +2,10 @@
 
 Tarih: 14 Ekim 2026. Yeniden üretmek için: `python run_validation.py 24` (yaklaşık 3 dakika).
 
+## Senaryo laboratuvarı, sürüm 6 ve hata azaltma (20 Ekim 2026)
+
+Analiz: [HATA_AZALTMA_ANALIZI.md](HATA_AZALTMA_ANALIZI.md). İşaretli tutarlı banka ekstrelerinde çıkış hareketlerinin tahsilat sayılması hatası bulundu ve düzeltildi. Gider planı artık işletmenin banka geçmişiyle karşılaştırılıyor; plandan eksik kalan kısım "plan dışı ödemeler" olarak ekleniyor. Giderlerin dalgalanması kasa bandına katıldı. Giderleri dalgalanan 120 işletmede kötümser uç aşımı %13,3'ten %9,2'ye indi. Sınavda (240 işletme) kötümser uç aşımı %7, iyimser %10 çıktı; Basel yeşil, Kupiec iki uçta da geçiyor (p = 0,13 / 1,00), Spiegelhalter p = 0,96.
+
 ## Sıralı laboratuvar: pilot çevrimiçi izleme (18 Ekim 2026)
 
 Her sentetik işletme 52 hafta boyunca haftalık pilot tahsilat kaydı üretti. Çevrimiçi izlemede iki kusur bulundu ve düzeltildi. Birincisi, aşım ayarlanmamış banda göre ölçülüyordu; bu yüzden geri besleme kopuktu. İkincisi, tahsilat kaydı ölçüldüğü tanımla hesaplanmıyordu: çekte kapanış günü ve taksitler hesaba katılmıyordu. Ayrıca kaynağa dayanmayan katsayı sınırları kaldırıldı. Sınavda (40 yeni işletme, 1.000 kayıt) kötümser uç aşımı %10,7, iyimser %8,9 çıktı. Basel yeşil, Kupiec iki uçta da geçiyor (p = 0,49 / 0,25). Eski kuralda kötümser uç aşımı %7,8'di (Kupiec p = 0,018). Protokol 1.5. Ayrıntı: [LAB_RAPORU.md](LAB_RAPORU.md).
