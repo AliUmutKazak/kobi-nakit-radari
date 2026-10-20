@@ -12,22 +12,16 @@ import sys
 import zipfile
 from pathlib import Path
 
-import pandas as pd
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
+from radar import fx  # noqa: E402
 
-CURRENCIES = ("USD", "GBP", "CHF", "CNY")
-OUT = Path(__file__).resolve().parents[1] / "src" / "radar" / "data" / "ecb_try_kurlari.csv"
+OUT = fx.DATA
 
 
 def main(path: str) -> None:
-    z = zipfile.ZipFile(path)
-    df = pd.read_csv(z.open(z.namelist()[0]), parse_dates=["Date"])
-    df = df.dropna(subset=["TRY"]).sort_values("Date").set_index("Date")
-    df = df[df.index >= "2005-01-01"]                  # 1 Ocak 2005: Yeni Türk Lirası
-    out = pd.DataFrame({"EUR": df["TRY"]})
-    for c in CURRENCIES:
-        out[c] = df["TRY"] / df[c]
-    out.index.name = "date"
-    out.round(6).to_csv(OUT, float_format="%.6g")
+    out = fx.build_table(zipfile.ZipFile(path))
+    fx.validate(out)
+    out.to_csv(OUT, float_format="%.6g")
     print(f"{OUT.name}: {out.index.min():%Y-%m-%d} - {out.index.max():%Y-%m-%d}, {len(out)} gün")
 
 

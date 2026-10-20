@@ -112,6 +112,26 @@ Ortak noktalar şunlar: fatura bazında ödeme tahmini, banka ve muhasebe verisi
 - Borç tarafı için dört seçenek denendi. En iyisi "son 3 yılın kur hareketleri, değer kaybıyla birlikte": üst uç %11–15 aşılıyor. Seçim aynı veride yapıldığı için 2010–2017 ve 2018–2026 yarılarında ayrı ayrı bakıldı; iki yarıda da en iyi ya da en iyiyle eşit (%9–16).
 - Hiçbir seçenek borç tarafında %10'u tam tutturmuyor. Kur sıçramaları (2018, 2021) geçmişten tam öğrenilemiyor. Kötümser çizgi borç ağırlıklı dövizde hâlâ hafif iyimser olabilir; panel bunu yazıyor.
 
+**İkinci adım: borç tarafındaki fazlalığın giderilmesi.** İki yöntem önceden belirlenen bir kuralla sınandı. Seçim 2010–2017 verisiyle yapıldı; 2018–2026 sınav dönemine yalnızca bir kez bakıldı.
+1. *Oynaklığa göre ölçekleme* (Hull ve White 1998; oynaklık RiskMetrics 1996, λ = 0,94). Seçim döneminde borç tarafında en kötü aşım %24,5 çıktı, mevcut yöntemde %16,3. Reddedildi. TL'deki risk oynaklığın kümelenmesinden çok ani sıçramalardan geliyor.
+2. *Konformal genişletme* (Vovk, Gammerman ve Shafer 2005; ana kasa modelindeki `aggregate_widen` ile aynı mantık). Her tahmin gününde, 2007'den beri sonucu belli olmuş geçmiş tahminlerin aşım oranı hesaplanıyor. Bant, bu oran %10'u geçmeyecek kadar açılıyor. Yalnızca geçmiş veri kullanılıyor.
+
+Konformal genişletmenin sınav dönemi (2018–2026) sonucu:
+
+| Döviz, ufuk | Dönem | Borç tarafı aşımı, önce | Sonra | Ortalama katsayı |
+|---|---|---|---|---|
+| USD, 30 gün | 107 | %10,3 | %9,3 | 1,13 |
+| USD, 60 gün | 53 | %13,2 | %7,5 | 1,13 |
+| USD, 90 gün | 35 | %11,4 | %11,4 | 1,10 |
+| EUR, 30 gün | 107 | %11,2 | %10,3 | 1,21 |
+| EUR, 60 gün | 53 | %13,2 | %9,4 | 1,09 |
+| EUR, 90 gün | 35 | %11,4 | %8,6 | 1,25 |
+| **Toplam** | **390** | **%12,1** | **%9,5** | |
+
+Alacak tarafı değişmedi (%2,9–5,7). Seçim döneminde katsayı ≈1 çıktı, çünkü 2007–2016'da aşımlar zaten %10'un altındaydı. Yöntem, risk arttığında kendini açıyor. Hiçbir ayar sınav verisine bakılarak yapılmadı. Yeniden üretmek için: `python tools/kur_konformal_sinamasi.py sinav`.
+
+**Neden %0 değil, neden tam %10 değil?** Kötümser çizgi tanım gereği "10 durumun 1'inde altına inilen" çizgidir; %0 aşım, bandın gereksiz geniş, yani işe yaramaz olduğu anlamına gelir. 35 dönemde 4 aşım (%11,4), gerçek oran %10 olsa da sık görülür; bu sonucun %10'dan farklı olma olasılığı istatistiksel olarak anlamlı değil (tek yönlü binom testi p ≈ 0,47). Bu oranlar yalnızca kur bileşenine aittir: kasa tahmininin yüzde hatası değildir.
+
 **Uygulanan kural** (`radar/fx.py`, `pipeline.fx_args`): her dövizde ufuktaki dövizli alacak ve borç karşılaştırılıyor; kasa aleyhine olan taraf esas alınıyor.
 - **Alacak ağırlıklı:** sürüklenmesiz, bütün geçmiş. Kur farkının kasayı büyüteceğine güvenilmez.
 - **Borç ağırlıklı:** sürüklenmeli, son 3 yıl. TL'nin değer kaybının sürdüğü varsayılır; borç büyür.
@@ -123,6 +143,8 @@ Uygulamanın ayrıntıları:
 - Borç dosyasında kuru girilmemiş döviz dışarıda bırakılmıyor (alacakta bırakılır, çünkü bırakmak ihtiyatlıdır). Tutar TL sayılıyor ve "DİKKAT" notu çıkıyor.
 - Aynı kural gider dosyasındaki dövizli kalemlere ve döviz çeklerine de uygulanıyor. Kuru girilmemiş dövizli gider TL sayılıp uyarılıyor; kuru girilmemiş döviz çeki, bir giriş olduğu için tahmine katılmıyor. Net durum hesabında döviz çekleri alacak tarafında sayılıyor.
 - Laboratuvar verisinde döviz olmadığı için laboratuvar sonuçları değişmiyor.
+- **Kurların internetten güncellenmesi.** Panelde "Kurları ECB'den güncelle" düğmesi var. Yalnızca kullanıcı basınca çalışıyor ve yalnızca ECB'nin resmî adresine gidiyor; işletme verisi gönderilmiyor. İndirilen dosya kullanılmadan önce denetleniyor: biçim, uzunluk, pozitif değerler, tarih sırası, %40'tan büyük günlük sıçrama yok, paketteki tablodan eski değil. Sorun varsa paketteki kurlarla devam ediliyor.
+- **Eski kur uyarısı.** Girilen kur ECB'nin son kurundan, son 3 yılda kurun bir ayda gösterdiği olağan hareketten (%90'lık değişim, bugün yaklaşık %2,7) fazla farklıysa panel uyarıyor. "ECB kurlarını alana yaz" düğmesi son kurları alana yazıyor; kullanıcı bankasının kuruyla değiştirebiliyor.
 
 **Kullanım koşulu.** ECB internet sitesindeki Copyright bölümüne göre bilgiler, ECB kaynak gösterilerek serbestçe kullanılabilir. Değişiklik yapıldıysa bu belirtilmeli; ücretli bir belgede alıcıya verinin ECB sitesinden ücretsiz edinilebileceği bildirilmeli. Panel bu notu gösteriyor. ECB, kurların yalnızca bilgi amaçlı olduğunu ve işlemlerde kullanılmamasını yazıyor. Burada kurlar dönüşüm için değil, yalnızca geçmiş dalgalanmayı ölçmek için kullanılıyor; dönüşümde kullanıcının girdiği kur geçerli.
 
@@ -130,7 +152,7 @@ Uygulamanın ayrıntıları:
 
 1. Tek işletmede kısa dönem sapması (madde 12). Pilot raporu her işletmeyi ayrıca sınıyor; gerçek veriyle izlenecek.
 2. Gerçek Türk KOBİ verisi. Bütün bu sonuçlar sentetik ya da yabancı açık veriyle; son hakem pilot.
-3. Borç ağırlıklı dövizde kötümser uç %10 yerine %11–15 sıklıkla aşılıyor (bölüm 7). Kur sıçramalarını daha iyi yakalayan bir yöntem (ör. Basel 2.5'teki stresli dönem yaklaşımı) gerçek pilot verisiyle değerlendirilecek.
+3. Kur: borç tarafı konformal genişletmeden sonra sınav döneminde %9,5 (bölüm 7). ECB'nin yayımlamadığı dövizler (ör. AED, SAR, RUB) için kur geçmişi yok; bunlar sabit kurla sayılıyor ve panel uyarıyor. TCMB'nin günlük kurları resmî kur olarak daha uygun olurdu, ama ticari kullanım TCMB'nin yazılı iznine bağlı; izin alınırsa eklenebilir.
 
 ## 9. Yasal uyum notu
 

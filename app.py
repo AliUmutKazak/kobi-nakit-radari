@@ -477,9 +477,40 @@ with st.sidebar:
             store.set("match_tol", match_tol)
             terms = st.number_input("Vadesi yazmayan faturalar için vade (gün)", 0, 365, int(store.get("terms", 30)),
                                     help="TTK m.1530: vade yazmıyorsa borçlu, faturayı aldıktan 30 gün sonra temerrüde düşer.")
-            rates_text = st.text_input("Döviz kurları (dövizli fatura varsa)", store.get("rates", ""),
-                                       placeholder="USD=41,50; EUR=48,20",
-                                       help="Dövizli faturalar bu kurla TL'ye çevrilir. Kur girilmeyen döviz tahmine katılmaz.")
+            rates_key = f"rates_text::{store.path}"            # işletme değişince kendi kurları gelsin
+            if rates_key not in st.session_state:
+                st.session_state[rates_key] = store.get("rates", "")
+            rates_text = st.text_input("Döviz kurları (dövizli fatura, çek, borç ya da gider varsa)", key=rates_key,
+                                       placeholder="USD=49,50; EUR=55,60",
+                                       help="Dövizli tutarlar bu kurla TL'ye çevrilir. Kuru girilmeyen dövizli alacak ve çek "
+                                            "tahmine katılmaz; kuru girilmeyen dövizli borç ve gider TL sayılır ve uyarılır.")
+            ecb = fx.latest()
+            if ecb:
+                ecb_day, ecb_rates = ecb
+                st.caption(f"Avrupa Merkez Bankası (ECB) referans kurları, {ecb_day:%d.%m.%Y}: "
+                           + "; ".join(f"{c} = {v:,.4f}".replace(",", "X").replace(".", ",").replace("X", ".")
+                                       for c, v in ecb_rates.items())
+                           + ". Bilgi amaçlıdır: bankanızın ve TCMB'nin kuru farklı olabilir; vergi ve muhasebe "
+                             "değerlemesinde ECB kuru kullanılmaz. Veriler ECB internet sitesinden ücretsiz edinilebilir.")
+
+                def use_ecb_rates(key=rates_key, rates=ecb_rates):
+                    st.session_state[key] = "; ".join(f"{c}={v:.4f}".replace(".", ",") for c, v in rates.items())
+
+                b1, b2 = st.columns(2)
+                b2.button("ECB kurlarını alana yaz", on_click=use_ecb_rates,
+                          help="Döviz kurları alanına ECB'nin son kurlarını yazar; dilerseniz bankanızın kuruyla değiştirin.")
+            else:
+                b1 = st
+            if b1.button("Kurları ECB'den güncelle (internet)",
+                         help="Avrupa Merkez Bankası'nın kur geçmişini indirir (yaklaşık 0,7 MB, ecb.europa.eu). ECB'ye "
+                              "işletme verisi gönderilmez; giden tek bilgi indirme isteğidir. İndirilen dosya denetlenir; "
+                              "sorun varsa kullanılmaz ve paketteki kurlarla devam edilir."):
+                try:
+                    day = fx.update_from_ecb()
+                    store.audit("ECB kurları güncellendi", f"{day:%Y-%m-%d}")
+                    st.success(f"Kurlar güncellendi: son kur günü {day:%d.%m.%Y}.")
+                except Exception as err:          # ağ yok, site değişti, dosya denetimden geçmedi
+                    st.error(f"Kurlar güncellenemedi ({err}). Paketteki kurlar kullanılmaya devam ediyor.")
             st.caption(f"Verilerin saklandığı dosya: {store.path}")
             undoable = [n for n in ("invoices", "payments", "outflows", "payables", "cheques") if store.can_undo(n)]
             if undoable:
@@ -731,6 +762,14 @@ if m["over_60_terms"]:
 for note in notes:
     if note.startswith("DİKKAT"):           # kasayı olduğundan dolu gösterebilecek veri sorunları gizlenmez
         st.warning(note)
+if own:
+    for cur, given, ref, diff in fx.stale_rates(ingest.parse_rates(store.get("rates", ""))):
+        st.warning(f"Girdiğiniz {cur} kuru ({given:,.2f}) ECB'nin {fx.latest()[0]:%d.%m.%Y} kurundan ({ref:,.2f}) "
+                   f"%{abs(diff) * 100:.0f} {'düşük' if diff < 0 else 'yüksek'}; bu fark, son 3 yılda kurun bir ayda "
+                   "gösterdiği olağan hareketten büyük. Kur eskiyse dövizli tutarlar yanlış çevrilir. \"Diğer ayarlar\" "
+                   "bölümünde güncelleyin ve dövizli tutar içeren dosyaları yeniden yükleyin (kayıtlı dosyalar yüklendikleri "
+                   "günkü kurla çevrilmiş olarak saklanır)."
+                   .replace(",", "X").replace(".", ",").replace("X", "."))
 if notes:
     with st.expander(f"Veri notları ({len(notes)})"):
         for note in notes:

@@ -1530,3 +1530,55 @@ def test_foreign_currency_schedule_and_cheques(tmp_path, full):
     assert sorted(on["info"]["fx_currencies"]) == ["EUR", "USD"] and on["info"]["fx_short"] == ["USD"]
     exp = pipeline.fx_exposure(on).set_index("currency")
     assert exp.loc["EUR", "receivable"] == pytest.approx(111200.0) and exp.loc["USD", "payable"] == pytest.approx(49500.0)
+
+
+def test_ecb_update_is_validated_and_stored_locally(tmp_path, monkeypatch):
+    import io
+    import zipfile
+
+    from radar import fx
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
+    fx.clear_cache()
+    try:
+        tab = pd.read_csv(fx.DATA, parse_dates=["date"]).set_index("date")
+        fx.validate(tab)                                                   # paketteki tablo denetimden geçer
+        bad = tab.copy()
+        bad.iloc[-1, bad.columns.get_loc("USD")] *= 2                      # tek günde kur ikiye katlanmış
+        with pytest.raises(ValueError):
+            fx.validate(bad)
+        # ECB biçiminde (euro bazlı) sahte bir dosya: bir gün sonrası eklenmiş
+        ecb = pd.DataFrame({"Date": tab.index.strftime("%Y-%m-%d"), "TRY": tab["EUR"]})
+        for c in fx.CURRENCIES:
+            ecb[c] = tab["EUR"] / tab[c]
+        extra = ecb.iloc[[-1]].copy()
+        extra["Date"] = (tab.index.max() + pd.Timedelta(days=1)).strftime("%Y-%m-%d")
+        ecb = pd.concat([ecb, extra])
+        buf = io.BytesIO()
+        with zipfile.ZipFile(buf, "w") as z:
+            z.writestr("eurofxref-hist.csv", ecb.to_csv(index=False))
+
+        class Fake:
+            def __enter__(self): return self
+            def __exit__(self, *a): return False
+            def raise_for_status(self): pass
+            def iter_content(self, n): yield buf.getvalue()
+
+        import requests
+        seen = {}
+        monkeypatch.setattr(requests, "get", lambda url, **kw: (seen.setdefault("url", url), Fake())[1])
+        day = fx.update_from_ecb()
+        assert seen["url"] == fx.ECB_URL and day == tab.index.max() + pd.Timedelta(days=1)
+        assert fx.local_path().exists() and fx.latest()[0] == day          # yerel tablo artık kullanılıyor
+        assert fx.stale_rates({"USD": fx.latest()[1]["USD"] * 0.8}) and not fx.stale_rates({"USD": fx.latest()[1]["USD"]})
+    finally:
+        fx.clear_cache()
+
+
+def test_fx_conformal_widening_only_widens():
+    from radar import fx
+    for short in (False, True):
+        for side in ("lo", "up"):
+            k = fx.conformal_k("USD", "2026-10-01", 60, side, short)
+            assert 1.0 <= k <= 3.0
+    # Borç tarafında son yıllarda kur sıçramaları %10'dan sık aştığı için bant açıldı.
+    assert fx.conformal_k("USD", "2026-10-01", 60, "up", False) > 1.0

@@ -4,7 +4,7 @@ Tarih: 14 Ekim 2026. Yeniden üretmek için: `python run_validation.py 24` (yakl
 
 ## Kur belirsizliği: ECB kurlarıyla geçmişe dönük sınama (20 Ekim 2026)
 
-Dövizli alacağın TL karşılığı, kur sabit sayılınca 2010–2026'da 30–90 günlük dönemlerin %24–36'sında bugünkünden düşük çıktı. Alacak ağırlıklı dövizde (TL'nin ortalama değer kaybı çıkarılmış tarihsel benzetim) kötümser uç %4–7 aşıldı. Borç ağırlıklı dövizde aynı yöntem iyimser kalıyordu (üst uç %15–27). Bu yüzden son 3 yılın kur hareketleri değer kaybıyla birlikte kullanılıyor: üst uç %11–15 aşılıyor (hedef %10, hafif iyimser). Ayrıntı: [HATA_AZALTMA_ANALIZI.md](HATA_AZALTMA_ANALIZI.md), bölüm 7. Yeniden üretmek için: `python tools/kur_sinamasi.py`.
+Dövizli alacağın TL karşılığı, kur sabit sayılınca 2010–2026'da 30–90 günlük dönemlerin %24–36'sında bugünkünden düşük çıktı. Alacak ağırlıklı dövizde (TL'nin ortalama değer kaybı çıkarılmış tarihsel benzetim) kötümser uç %4–7 aşıldı. Borç ağırlıklı dövizde aynı yöntem iyimser kalıyordu (üst uç %15–27). Bu yüzden son 3 yılın kur hareketleri değer kaybıyla birlikte kullanılıyor ve bant konformal olarak genişletiliyor. Seçim 2010–2017, sınav 2018–2026 (bir kez): borç tarafında aşım %12,1'den %9,5'e indi (390 dönem). Ayrıntı: [HATA_AZALTMA_ANALIZI.md](HATA_AZALTMA_ANALIZI.md), bölüm 7. Yeniden üretmek için: `python tools/kur_sinamasi.py`.
 
 ## Senaryo laboratuvarı, sürüm 6 ve hata azaltma (20 Ekim 2026)
 
