@@ -19,6 +19,7 @@ Tarih: 14 Ekim 2026. Kapsam: panelin bu bilgisayarda tek kullanıcıyla çalış
 
 - **E-posta parolası:** yalnızca açık oturumun belleğinde tutuluyor, veritabanına ya da diske yazılmıyor. Bağlantı TLS ile kuruluyor (465 portunda doğrudan, diğerlerinde STARTTLS), sertifika doğrulaması açık.
 - **SQL:** değerler parametreyle geçiyor; tablo adları sabit bir listeden.
+- **ECB kur güncellemesi (21.10.2026):** yalnızca kullanıcı düğmeye basınca, yalnızca sabit ECB adresinden (HTTPS) indirme yapılır. Dosya boyutu sınırlıdır (5 MB); arşivde tek CSV beklenir; tablo kullanılmadan önce biçim, uzunluk, pozitif değer, tarih sırası ve olağan dışı sıçrama bakımından denetlenir; sorun varsa paketteki kurlarla devam edilir. İşletme verisi gönderilmez.
 - **WhatsApp bağlantısı:** telefon numarası yalnızca rakamlardan oluşacak şekilde temizleniyor, metin URL kodlamasından geçiyor. Gönderme işini kullanıcı kendi WhatsApp'ında yapıyor; panel hiçbir şey göndermiyor.
 - **Ekranda gösterilen dosya içeriği:** HTML olarak işlenmiyor (Streamlit tabloları ve metin bileşenleri kaçış uyguluyor; `unsafe_allow_html` kullanılmıyor).
 - **Silme:** yüklenen tabloları silmek için ayrıca "Eminim" onayı gerekiyor; olay günlüğü silinmiyor.
