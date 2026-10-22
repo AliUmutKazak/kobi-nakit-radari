@@ -255,8 +255,8 @@ def simulate(inv: pd.DataFrame, Q: np.ndarray, as_of, opening: float, outflows: 
     (gün; bkz. pipeline.cheque_habits). Çekle kapanan faturanın parası vadede gelir ve çek portföydeki çekler
     gibi karşılıksız çıkabilir. pay_day paranın kasaya girdiği gündür; collections kapanan faturalardır.
 
-    cheques (date, amount): portföydeki çek/senetler vade gününde kasaya girer; her biri
-    `cheque_bounce` olasılıkla karşılıksız çıkar (varsayılan: TBB Risk Merkezi Ağustos 2026
+    cheques (date, amount[, pay_prob]): portföydeki çek/senetler vade gününde kasaya girer; her biri
+    `cheque_bounce` olasılıkla (ya da pay_prob girilmişse 1 - pay_prob olasılıkla) karşılıksız çıkar (varsayılan: TBB Risk Merkezi Ağustos 2026
     tutar bazlı oranı) ve karşılıksızlık piyasa faktörüyle birlikte artar."""
     rng = np.random.default_rng(seed)
     as_of = pd.Timestamp(as_of)
@@ -365,7 +365,11 @@ def simulate(inv: pd.DataFrame, Q: np.ndarray, as_of, opening: float, outflows: 
         c_off = (pd.to_datetime(cheques["date"]) - as_of).dt.days.to_numpy()
         c_amt = cheques["amount"].to_numpy(float)
         z = np.sqrt(rho_market) * zm + np.sqrt(1 - rho_market) * rng.standard_normal((len(c_off), n_sims))
-        cleared = ndtr(z) <= 1 - cheque_bounce
+        # Çek başına ödenme olasılığı: kullanıcı Findeks oranını girdiyse o (ingest.findeks_probability), yoksa ülke
+        # geneli karşılıksızlık oranının tümleyeni (TBB). Piyasa faktörüyle ilişki ikisinde de korunur.
+        pay = (cheques["pay_prob"].to_numpy(float) if "pay_prob" in cheques else np.full(len(c_off), np.nan))
+        pay = np.where(np.isfinite(pay), pay, 1 - cheque_bounce)
+        cleared = ndtr(z) <= pay[:, None]
         c_code = (cheques["currency"].fillna("TRY").astype(str).to_numpy() if "currency" in cheques
                   else np.full(len(c_off), "TRY"))
         for j in np.flatnonzero((c_off >= 1) & (c_off <= horizon)):

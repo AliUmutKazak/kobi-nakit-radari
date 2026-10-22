@@ -12,7 +12,7 @@ import re
 import numpy as np
 import pandas as pd
 
-from .ubl import parse_invoice
+from .ubl import document_kind, parse_application_response, parse_invoice
 
 _TR = str.maketrans("çğıöşüÇĞİÖŞÜ", "cgiosuCGIOSU")
 
@@ -41,6 +41,8 @@ ALIASES = {
     "description": ["aciklama", "islem aciklamasi", "aciklama islem turu", "detay", "islem turu"],
     "label": ["kalem", "gider", "aciklama", "tur"],
     "drawer": ["kesideci", "cek sahibi", "borclu", "musteri", "cari"],
+    "pay_prob": ["findeks", "findeks olasilik", "findeks odeme olasiligi", "findeks yuzde", "odeme olasiligi",
+                 "cek odeme olasiligi", "vadesinde odeme olasiligi", "vadesinde odeme beklentisi"],
     "supplier": ["tedarikci", "satici", "tedarikci unvan", "cari", "cari unvan", "firma", "unvan"],
 }
 
@@ -284,6 +286,8 @@ def _finish_invoices(df: pd.DataFrame, default_terms: int, notes: list[str],
             "open_amount", "disputed", "promised_date", "currency", "fx_rate", "email", "phone"]
     if "cheque_due" in df and df["cheque_due"].notna().any():
         cols.append("cheque_due")                 # çekle kapanan faturalarda çek vadesi (cari hesap ekstresinden)
+    if "scenario" in df and df["scenario"].notna().any():
+        cols.append("scenario")                   # e-fatura senaryosu (TICARIFATURA'da alıcı kabul/red yanıtı verebilir)
     return df[cols].sort_values("issue_date").reset_index(drop=True)
 
 
@@ -323,19 +327,87 @@ def load_invoices(file, default_terms: int = 30, mapping: dict | None = None, ra
     return _finish_invoices(df, default_terms, notes, rates), notes
 
 
-def load_ubl(files, default_terms: int = 30, rates: dict | None = None):
-    """UBL-TR XML dosyaları (dosya nesneleri veya bayt dizileri)."""
-    notes, rows = [], []
+def read_xml(files) -> tuple[list[bytes], list[bytes], list[str]]:
+    """XML dosyalarını faturalar ve uygulama yanıtları olarak ayırır."""
+    invoices, responses, notes = [], [], []
     for f in files:
+        data = f.read() if hasattr(f, "read") else f
         try:
-            rows.append(parse_invoice(f.read() if hasattr(f, "read") else f))
+            kind = document_kind(data)
         except Exception:
-            notes.append(f"{getattr(f, 'name', 'XML')} okunamadı.")
+            kind = None
+        if kind == "invoice":
+            invoices.append(data)
+        elif kind == "response":
+            responses.append(data)
+        else:
+            notes.append(f"{getattr(f, 'name', 'XML')} okunamadı (e-fatura ya da uygulama yanıtı değil).")
+    return invoices, responses, notes
+
+
+def load_ubl(files, default_terms: int = 30, rates: dict | None = None):
+    """UBL-TR XML dosyaları (dosya nesneleri veya bayt dizileri). Aralarındaki uygulama yanıtları (KABUL, RED, IADE)
+    faturalara işlenir (apply_responses)."""
+    invoices, responses, notes = read_xml(files)
+    rows = []
+    for data in invoices:
+        try:
+            rows.append(parse_invoice(data))
+        except Exception:
+            notes.append("Bir e-fatura dosyası okunamadı.")
     df = pd.DataFrame(rows).drop(columns=["due_source"], errors="ignore")
     if df.empty:
         return df, notes
     df["due_date"] = pd.to_datetime(df["due_date"])
-    return _finish_invoices(df, default_terms, notes, rates), notes
+    df = _finish_invoices(df, default_terms, notes, rates)
+    return apply_responses(df, parse_responses(responses, notes), notes), notes
+
+
+def parse_responses(responses: list[bytes], notes: list[str]) -> pd.DataFrame:
+    rows = []
+    for data in responses:
+        try:
+            rows += parse_application_response(data)
+        except Exception:
+            notes.append("Bir uygulama yanıtı dosyası okunamadı.")
+    return pd.DataFrame(rows, columns=["invoice_id", "response", "response_date"])
+
+
+def apply_responses(df: pd.DataFrame, responses: pd.DataFrame, notes: list[str]) -> pd.DataFrame:
+    """Alıcının e-fatura uygulama yanıtlarını faturalara işler. Bir faturaya birden çok yanıt varsa en son tarihli
+    geçerlidir. RED: fatura itirazlı sayılır; tahmine, tahsilat önceliğine ve hatırlatmalara girmez (kullanıcı
+    itirazı panelden kaldırabilir). KABUL: işaretlenir. IADE: iade faturası ayrıca işlenir; burada not düşülür.
+    Ticari fatura senaryosunda yanıtı gelmemiş açık faturaların sayısı da bildirilir."""
+    df = df.copy()
+    if "disputed" not in df:
+        df["disputed"] = False
+    if len(responses):
+        last = (responses.sort_values("response_date").groupby(responses["invoice_id"].astype(str)).last())
+        code = df["invoice_id"].astype(str).map(last["response"])
+        df["efatura_yanit"] = code
+        red = code.eq("RED")
+        if red.any():
+            df.loc[red, "disputed"] = True
+            notes.append(f"{int(red.sum())} fatura alıcı tarafından e-fatura uygulama yanıtıyla REDDEDİLDİ "
+                         f"({df.loc[red, 'amount'].sum():,.0f} TL); itirazlı sayıldı, tahmine ve hatırlatmalara "
+                         "katılmadı. Yeni fatura düzenlendiyse onu yükleyin.")
+        if code.eq("KABUL").any():
+            notes.append(f"{int(code.eq('KABUL').sum())} fatura alıcı tarafından e-fatura uygulama yanıtıyla kabul edildi.")
+        if code.eq("IADE").any():
+            notes.append(f"{int(code.eq('IADE').sum())} faturaya IADE yanıtı geldi; iade faturası yüklendiyse müşterinin "
+                         "açık faturalarından düşülür.")
+        unmatched = ~last.index.isin(df["invoice_id"].astype(str))
+        if unmatched.any():
+            notes.append(f"{int(unmatched.sum())} uygulama yanıtının ait olduğu fatura yüklenen dosyalarda yok.")
+    if "scenario" in df:
+        waiting = df["scenario"].eq("TICARIFATURA") & (df["open_amount"] > 0)
+        if "efatura_yanit" in df:
+            waiting &= df["efatura_yanit"].isna()
+        if waiting.any():
+            notes.append(f"Ticari fatura senaryosundaki {int(waiting.sum())} açık faturaya henüz kabul ya da red yanıtı "
+                         "yüklenmedi. Yanıtlar entegratörünüzün panelinden XML olarak alınıp fatura dosyalarıyla "
+                         "birlikte yüklenebilir.")
+    return df
 
 
 def _direction_from_balance(amount: pd.Series, balance: pd.Series) -> pd.Series | None:
@@ -563,11 +635,29 @@ CHEQUE_EXCLUDED = ("ciro", "iskonto", "faktoring", "tahsil edildi", "odendi", "k
 CHEQUE_RISKY = ("riskli", "supheli", "sorunlu", "takipte", "protesto")
 
 
+def findeks_probability(values: pd.Series, notes: list[str]) -> pd.Series:
+    """Findeks Karekodlu Çek Raporu'ndaki oran: "bu skor seviyesinde yer alan keşidecilerin %X'inin çeklerinin
+    tamamını vadesinde ödemesi beklenmektedir" (gelecek 9 ay). %88 ya da 0,88 biçiminde girilebilir. Keşideci
+    çeklerinin tamamını öderse bu çek de ödenir; bu yüzden 1 - X, tek bir çekin karşılıksız çıkma olasılığı için
+    ihtiyatlı bir üst sınırdır. Geçersiz değer (0'dan küçük, 100'den büyük) kullanılmaz."""
+    raw = _num(values.astype(str).str.replace("%", "", regex=False))
+    prob = raw.where(raw <= 1, raw / 100)
+    bad = raw.notna() & ~prob.between(0, 1)
+    if bad.any():
+        notes.append(f"{int(bad.sum())} çekte Findeks değeri okunamadı (0–100 arasında olmalı); ülke ortalaması kullanıldı.")
+    prob = prob.where(~bad)
+    if prob.notna().any():
+        notes.append(f"{int(prob.notna().sum())} çekte, karşılıksız çıkma olasılığı için ülke ortalaması yerine Findeks "
+                     "Karekodlu Çek Raporu'ndaki oran kullanıldı. Bu oran keşidecinin çeklerinin tamamını 9 ay içinde "
+                     "vadesinde ödeme beklentisidir; tek bir çek için ihtiyatlı bir tahmindir.")
+    return prob
+
+
 def load_cheques(file, rates: dict | None = None):
     """Alınan çek/senet portföyü. Durum sütunu varsa cirolanmış, iskontoya/faktoringe verilmiş ya da
     sonuçlanmış evrak kasaya giriş sayılmaz: ciro edilen çekin parası bize değil tedarikçiye gelir.
     Para birimi sütunu varsa döviz çeki girilen kurla TL'ye çevrilir; kuru girilmemişse tahmine katılmaz."""
-    df = _pick(_read(file), ["due_date", "issue_date", "amount", "drawer", "status", "currency"], ["amount"])
+    df = _pick(_read(file), ["due_date", "issue_date", "amount", "drawer", "status", "currency", "pay_prob"], ["amount"])
     date = df["due_date"] if "due_date" in df else df.get("issue_date")
     if date is None:
         raise ValueError("Eksik sütun: tarih veya vade.")
@@ -580,6 +670,8 @@ def load_cheques(file, rates: dict | None = None):
                         "status": df["status"].fillna("") if "status" in df else ""})
     if "currency" in df:
         out["currency"] = code
+    if "pay_prob" in df:
+        out["pay_prob"] = findeks_probability(df["pay_prob"], notes)
     out = out.dropna(subset=["date", "amount"]).query("amount > 0")
     risky = out["status"].map(_key).map(lambda s: any(w in s for w in CHEQUE_RISKY))
     if risky.any():

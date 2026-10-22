@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 
 import numpy as np
@@ -722,12 +723,17 @@ def test_dashboard_renders_demo_and_own_data_without_errors(tmp_path, monkeypatc
     assert not at.exception, [e.value for e in at.exception]
     assert (tmp_path / "KobiRadar" / "anonim_anahtar.txt").exists()
     # Mali müşavir modu: yeni işletme eklenince boş bir işletmeye geçilir; eskisine dönülünce veri yerinde.
+    assert json.loads(Store(db).get("portfolio_summary"))["ozet"]["risk"] >= 0          # portföy özeti yazıldı
+    rev = Store(db).rev
+    at.run()
+    assert Store(db).rev == rev                                                        # özet önbelleği bozmaz
     at.sidebar.text_input(key="new_business").set_value("Deneme Ltd.").run()
     next(b for b in at.sidebar.button if b.label == "Ekle").click().run()
     assert not at.exception, [e.value for e in at.exception]
     assert at.session_state["active_business"] == "Deneme Ltd." and len(at.metric) == 0
     at.sidebar.selectbox[0].set_value("İşletmem").run()
     assert not at.exception and len(at.metric) == 10             # 6 özet + 4 veri kalitesi
+    assert any(e.label.startswith("Mali müşavir görünümü") for e in at.expander)  # iki işletme: portföy tablosu
     # Tanıtım için örnek işletme: bugünün tarihli uydurma veriyle dolu, eski veri uyarısı yok.
     next(b for b in at.sidebar.button if b.label == "Tanıtım için örnek işletme ekle").click().run()
     assert not at.exception, [e.value for e in at.exception]
@@ -1699,3 +1705,61 @@ def test_pooled_b1_replaces_vote_counting():
     assert re1["k"] == 1 and re1["ci"] == pytest.approx((2 - 1.959964, 2 + 1.959964), abs=1e-4)
     same = standards.random_effects([1.0, 1.0, 1.0], [1.0, 1.0, 1.0])
     assert same["tau2"] == 0 and same["ci"][1] - same["ci"][0] > 2 * 1.96 / np.sqrt(3)
+
+
+APP_RESPONSE = """<?xml version="1.0" encoding="UTF-8"?>
+<ApplicationResponse xmlns="urn:oasis:names:specification:ubl:schema:xsd:ApplicationResponse-2"
+  xmlns:cac="urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2"
+  xmlns:cbc="urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2">
+  <cbc:ProfileID>TICARIFATURA</cbc:ProfileID><cbc:ID>YNT2026000000001</cbc:ID><cbc:IssueDate>{date}</cbc:IssueDate>
+  <cbc:Note>Fiyat sözleşmeye aykırı</cbc:Note>
+  <cac:DocumentResponse>
+    <cac:Response><cbc:ReferenceID>1</cbc:ReferenceID><cbc:ResponseCode>{code}</cbc:ResponseCode></cac:Response>
+    <cac:DocumentReference><cbc:ID>{invoice}</cbc:ID><cbc:DocumentTypeCode>FATURA</cbc:DocumentTypeCode></cac:DocumentReference>
+  </cac:DocumentResponse>
+</ApplicationResponse>"""
+
+
+def test_efatura_application_response_marks_rejected_invoices_disputed(full):
+    """GİB UBL-TR Ticari Fatura Senaryosu: alıcı faturayı KABUL, RED ya da IADE yanıtıyla cevaplar. RED alan fatura
+    itirazlı sayılır ve tahmine girmez; red nedeni metni saklanmaz."""
+    from radar import ingest, ubl
+    obs = observe(full, AS_OF)
+    rows = obs[obs["open_amount"] > 0].head(3)
+    invoices = [to_ubl_xml(r).replace("<cbc:ID>", "<cbc:ProfileID>TICARIFATURA</cbc:ProfileID><cbc:ID>", 1).encode()
+                for _, r in rows.iterrows()]
+    ids = list(rows["invoice_id"])
+    responses = [APP_RESPONSE.format(date="2026-09-20", code="RED", invoice=ids[0]).encode(),
+                 APP_RESPONSE.format(date="2026-09-21", code="KABUL", invoice=ids[1]).encode(),
+                 APP_RESPONSE.format(date="2026-09-22", code="KABUL", invoice="YOK-000").encode()]
+    assert ubl.document_kind(responses[0]) == "response" and ubl.document_kind(invoices[0]) == "invoice"
+    assert ubl.parse_application_response(responses[0]) == [
+        {"invoice_id": ids[0], "response": "RED", "response_date": pd.Timestamp("2026-09-20")}]
+    df, notes = ingest.load_ubl(invoices + responses, 30)
+    by_id = df.set_index("invoice_id")
+    assert by_id.at[ids[0], "disputed"] and not by_id.at[ids[1], "disputed"]
+    assert by_id.at[ids[1], "efatura_yanit"] == "KABUL" and pd.isna(by_id.at[ids[2], "efatura_yanit"])
+    assert any("REDDEDİLDİ" in n for n in notes) and any("1 uygulama yanıtının ait olduğu fatura" in n for n in notes)
+    assert any("henüz kabul ya da red yanıtı" in n for n in notes)                    # ids[2] yanıt bekliyor
+    assert "Fiyat sözleşmeye aykırı" not in df.to_csv()                              # red nedeni saklanmaz
+    # Sonra gelen yanıt öncekinin yerine geçer.
+    later = APP_RESPONSE.format(date="2026-09-25", code="KABUL", invoice=ids[0]).encode()
+    df2, _ = ingest.load_ubl(invoices + responses + [later], 30)
+    assert not df2.set_index("invoice_id").at[ids[0], "disputed"]
+
+
+def test_findeks_probability_replaces_country_average_for_that_cheque(full):
+    from radar import ingest
+    import io
+    csv = ("Vade;Tutar;Keşideci;Findeks ödeme olasılığı\n20.10.2026;100.000,00;A;%60\n"
+           "25.10.2026;100.000,00;B;\n27.10.2026;50.000,00;C;140\n")
+    chq, notes = ingest.load_cheques(io.BytesIO(csv.encode("utf-8")))
+    assert chq["pay_prob"].iloc[0] == pytest.approx(0.60) and chq["pay_prob"].iloc[1:].isna().all()
+    assert any("Findeks" in n and "1 çekte, karşılıksız" in n for n in notes) and any("okunamadı" in n for n in notes)
+    obs = observe(full, AS_OF)
+    out = pd.DataFrame({"date": [], "amount": []})
+    base = pipeline.forecast(obs, AS_OF, 0.0, out, n_sims=400, cheques=chq.drop(columns="pay_prob"))
+    risky = pipeline.forecast(obs, AS_OF, 0.0, out, n_sims=400, cheques=chq)
+    # Ülke ortalaması (%3,4 karşılıksızlık) yerine %40: A çekinin beklenen katkısı yaklaşık 36.600 TL azalır.
+    drop = base["sim"].paths[:, -1].mean() - risky["sim"].paths[:, -1].mean()
+    assert 25_000 < drop < 50_000

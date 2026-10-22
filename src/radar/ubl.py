@@ -45,6 +45,7 @@ def parse_invoice(xml: str | bytes, default_terms_days: int | None = None) -> di
     return {
         "invoice_id": _text(root, "cbc:ID"),
         "invoice_type": _text(root, "cbc:InvoiceTypeCode"),
+        "scenario": (_text(root, "cbc:ProfileID") or "").upper() or None,     # TEMELFATURA, TICARIFATURA ...
         "issue_date": issue,
         "due_date": due,
         "due_source": source,
@@ -53,3 +54,31 @@ def parse_invoice(xml: str | bytes, default_terms_days: int | None = None) -> di
         "amount": float(amount_el.text) if amount_el is not None else None,
         "currency": amount_el.get("currencyID") if amount_el is not None else None,
     }
+
+
+# Uygulama yanıtı (GİB, "UBL-TR Uygulama Yanıtı" kılavuzu v0.2 ve "UBL-TR Ticari Fatura Senaryosu" v0.3, UBL-TR 1.2.1
+# paketi): ticari fatura senaryosunda alıcı faturayı KABUL, RED ya da IADE yanıtıyla cevaplar. Yanıt
+# cac:DocumentResponse altında cac:Response/cbc:ResponseCode ve yanıtlanan faturanın numarası
+# cac:DocumentReference/cbc:ID olarak yer alır. RED: fatura "eksik, yanlış, hatalı veya satış anlaşması ile ilgili
+# nedenlerden dolayı" reddedilmiştir. Yanıtın açıklama metni (red nedeni) okunmaz ve saklanmaz (KVKK m.4/2-ç).
+RESPONSE_CODES = ("KABUL", "RED", "IADE")
+
+
+def document_kind(xml: str | bytes) -> str | None:
+    """'invoice', 'response' ya da tanınmayan belge için None."""
+    tag = ET.fromstring(xml).tag
+    name = tag.rsplit("}", 1)[-1]
+    return {"Invoice": "invoice", "ApplicationResponse": "response"}.get(name)
+
+
+def parse_application_response(xml: str | bytes) -> list[dict]:
+    """Uygulama yanıtındaki her belge yanıtı: yanıtlanan fatura numarası, yanıt kodu, yanıt tarihi."""
+    root = ET.fromstring(xml)
+    issued = _text(root, "cbc:IssueDate")
+    out = []
+    for doc in root.findall("cac:DocumentResponse", NS):
+        code = (_text(doc, "cac:Response/cbc:ResponseCode") or "").upper()
+        ref = _text(doc, "cac:DocumentReference/cbc:ID")
+        if ref and code in RESPONSE_CODES:
+            out.append({"invoice_id": ref, "response": code, "response_date": pd.Timestamp(issued) if issued else pd.NaT})
+    return out

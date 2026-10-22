@@ -161,10 +161,15 @@ def parse_invoices(uploads, terms, rates):
             df, n = ingest.load_invoices(_open(u), terms, json.loads(store.get("map_invoices", "{}")), rates)
             frames.append(df)
             notes += n
+    responses = pd.DataFrame(columns=["invoice_id", "response", "response_date"])
     if xml:
-        df, n = ingest.load_ubl(xml, terms, rates)
-        frames.append(df)
+        inv_xml, resp_xml, n = ingest.read_xml(xml)
         notes += n
+        responses = ingest.parse_responses(resp_xml, notes)
+        if inv_xml:
+            df, n = ingest.load_ubl(inv_xml, terms, rates)
+            frames.append(df)
+            notes += n
     frames = [f for f in frames if len(f)]
     if not frames:
         raise ValueError("Yüklenen dosyalardan okunabilen fatura çıkmadı.")
@@ -175,6 +180,9 @@ def parse_invoices(uploads, terms, rates):
     store.save("ledger_events", pd.concat(ledger_events, ignore_index=True) if ledger_events
                else pd.DataFrame(columns=["date", "invoice_id", "amount"]))
     combined = pd.concat(frames, ignore_index=True).drop_duplicates("invoice_id")
+    # e-Fatura uygulama yanıtları (KABUL, RED, IADE) hangi dosyadan gelirse gelsin faturalara işlenir.
+    if len(responses) or "scenario" in combined:
+        combined = ingest.apply_responses(combined, responses, notes)
     dup = ingest.possible_duplicates(combined)
     if len(dup):
         first = dup.iloc[0]
@@ -690,6 +698,11 @@ else:
     res_key = ("own", str(store.path), store.rev, str(as_of), include_projected)
 
 sim, m = res["sim"], res["metrics"]
+if own:
+    # Portföy görünümü için son özet; tahmin önbelleğini bozmamak için sürüm artırılmadan yazılır.
+    _summary = pipeline.portfolio_summary(res)
+    if json.loads(store.get("portfolio_summary", "{}")).get("ozet") != _summary:
+        store.set_quiet("portfolio_summary", json.dumps({"ozet": _summary, "hesap": f"{pd.Timestamp.now():%Y-%m-%d %H:%M}"}))
 
 
 def record(invoice_id, kind, value=""):
@@ -755,6 +768,27 @@ if own:
     elif pd.Timestamp(opened) < as_of_day:
         st.info(f"Kasa tutarı en son {pd.Timestamp(opened):%d.%m.%Y} tarihinde değiştirildi; tahmin "
                 f"{as_of_day:%d.%m.%Y} günü bu tutarla başlıyor. Bugünkü toplam farklıysa güncelleyin.")
+
+if own and len(BUSINESSES) > 1:
+    with st.expander(f"Mali müşavir görünümü: bu bilgisayardaki {len(BUSINESSES)} işletme, kasa riskine göre"):
+        rows = []
+        for name, path in BUSINESSES.items():
+            saved = json.loads(get_store(str(path)).get("portfolio_summary", "{}"))
+            o = saved.get("ozet")
+            rows.append({"İşletme": name, **({
+                "Eksiye düşme riski": o["risk"], "Kötümser en düşük kasa (TL)": o["p10_min"],
+                "Kötümserde eksiye düştüğü gün": pd.Timestamp(o["breach_date"]).strftime("%d.%m.%Y") if o["breach_date"] else "–",
+                "Güvenle harcanabilir (TL)": o["safe"], "Vadesi geçmiş alacak (TL)": o["overdue_ar"],
+                "Tahmin tarihi": pd.Timestamp(o["as_of"]).strftime("%d.%m.%Y"), "Son hesap": saved.get("hesap", "")}
+                if o else {"Eksiye düşme riski": float("nan"), "Son hesap": "henüz hesaplanmadı"})})
+        table = pd.DataFrame(rows).sort_values("Eksiye düşme riski", ascending=False, na_position="last")
+        show_table(table.assign(**{"Eksiye düşme riski": table["Eksiye düşme riski"].map(
+            lambda v: "–" if v != v else (f"en az %{v * 100:.0f}" if v >= HIGH_RISK else f"%{v * 100:.0f}"))}),
+            width="stretch", hide_index=True)
+        st.caption("Her satır, o işletme panelde en son açıldığında hesaplanan özettir; güncel görmek için işletmeyi "
+                   "seçip açın. Yalnızca bu bilgisayarda kayıtlı işletmeler gösterilir ve hiçbir veri başka yere "
+                   "gönderilmez. Tabloda müşteri adı ya da fatura bilgisi yoktur. Her işletme için işletmeyle yapılan "
+                   "sözleşme ve mali müşavirin sır saklama yükümlülüğü (3568 sayılı Kanun) geçerlidir.")
 
 c = st.columns(6)
 c[0].metric("Kasa ve banka", tl(res["opening"], compact=True), help="Bugün kasada ve bankada olan toplam para.")

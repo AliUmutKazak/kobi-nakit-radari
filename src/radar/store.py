@@ -186,6 +186,15 @@ class Store:
                         (key, str(value)))
         self._bump()
 
+    def set_quiet(self, key: str, value) -> None:
+        """Sürüm numarasını artırmadan yazar: tahminin önbelleğini bozmaması gereken türetilmiş değerler için
+        (ör. mali müşavir portföy görünümü için son tahmin özeti)."""
+        if str(value) == str(self.get(key)):
+            return
+        self.db.execute("INSERT INTO settings VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+                        (key, str(value)))
+        self.db.commit()
+
     @staticmethod
     def _check(name: str) -> None:
         if name not in TABLES:          # tablo adı SQL'e yazıldığı için yalnızca bilinen adlar

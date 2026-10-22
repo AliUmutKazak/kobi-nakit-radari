@@ -632,6 +632,18 @@ def safe_to_spend(sim, level: float = SAFE_LEVEL) -> float:
     return float(max(0.0, np.quantile(sim.min_balance, level)))
 
 
+def portfolio_summary(res: dict) -> dict:
+    """Mali müşavir portföy görünümü için bir işletmenin son tahmininin özeti (yalnızca toplu sayılar; müşteri adı,
+    fatura ya da kişisel veri içermez)."""
+    sim, m = res["sim"], res["metrics"]
+    breach = sim.breach_day
+    return {"as_of": f"{pd.Timestamp(res['as_of']):%Y-%m-%d}", "risk": round(float(sim.prob_any_breach), 4),
+            "p10_min": round(float(np.min(sim.p10)), 0), "breach_date": (f"{sim.dates[breach]:%Y-%m-%d}" if breach is not None
+                                                                         else None),
+            "safe": round(float(safe_to_spend(sim)), 0), "opening": round(float(res["opening"]), 0),
+            "open_ar": round(float(m["open_ar"]), 0), "overdue_ar": round(float(m["overdue_ar"]), 0)}
+
+
 def expected_shortfall(sim, level: float = SAFE_LEVEL) -> float:
     """Kötü durumda ortalama en düşük kasa: senaryoların en kötü `level` kadarındaki (en düşük kasaya göre)
     en düşük kasanın ortalaması.

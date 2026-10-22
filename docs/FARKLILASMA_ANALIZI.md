@@ -38,12 +38,14 @@ Her biri için: pazarda durum, bizim için anlamı, ön koşul ve pilot öncesi 
 - **Ön koşul:** Pilot verisi ve bağımsız hesaplayan kişi. Yeni kod gerekmez.
 
 ### 2.2 Keşideci bazlı çek riski (Findeks karekodlu çek skoru)
+- **Durum (22.10.2026): yapıldı** (proje sahibinin kararıyla dondurma istisnası).
 - **Pazarda:** KKB'nin karekodlu çek raporunda keşidecinin gelecek 9 ayda çeklerini ödeme olasılığı (Karekodlu Çek Skoru), son 5 yılın ödenmeyen çekleri ve çek endeksi var. Rapor bugün Findeks mobil uygulamasında karekod okutularak alınıyor. Bu skoru kasa tahminine girdi yapan bir ürün görülmedi.
 - **Bizim için:** İlk adım entegrasyon değil, çek portföyüne isteğe bağlı "Findeks ödeme olasılığı" sütunu. Kullanıcı skoru kendi Findeks uygulamasından okur; panel TBB ortalaması yerine bu olasılığı kullanır.
 - **Ön koşul:** Kullanım koşullarının ve KVKK'nın avukatla değerlendirilmesi (keşideci bilgisi); kurumsal entegrasyon için KKB ile sözleşme.
 - **Hipotez H7:** Çekle çalışan işletmeler Findeks çek raporunu zaten kullanıyor ve skoru dosyaya girmeye razı.
 
 ### 2.3 e-Fatura kabul ve ret yanıtı: itirazın resmî sinyali
+- **Durum (22.10.2026): yapıldı** (proje sahibinin kararıyla dondurma istisnası).
 - **Pazarda:** Ticari faturada alıcı faturayı kabul, ret ya da iade edebiliyor. Yanıt UBL-TR'de "uygulama yanıtı" olarak iletiliyor. 8 gün içinde itiraz edilmeyen fatura kabul edilmiş sayılır (TTK m.21/2). Bu sinyali tahsilat tahminine katan ürün görülmedi.
 - **Bizim için:** Reddedilen fatura itirazlı sayılır ve tahminden çıkar; kabul edilen ticari fatura "itiraz riski düşük" işaretlenir. İtiraz bugün elle giriliyor.
 - **Ön koşul:** GİB'in UBL-TR uygulama yanıtı belgesinin birincil kaynaktan okunması; entegratör dışa aktarımlarında yanıtın bulunup bulunmadığı (pilot işletmesinin dosyasıyla).
@@ -56,6 +58,7 @@ Her biri için: pazarda durum, bizim için anlamı, ön koşul ve pilot öncesi 
 - **Hipotez H9:** İşletmeler son bir yılda nakit açığını faktoring, kredi ya da erken ödeme iskontosuyla kapattı ve seçeneklerin maliyetini karşılaştırmakta zorlandı.
 
 ### 2.5 Mali müşavir portföy görünümü
+- **Durum (22.10.2026): yapıldı** (proje sahibinin kararıyla dondurma istisnası).
 - **Pazarda:** KOBİ'ler muhasebecisini "güvenilen ortak" olarak görüyor (Blackburn, Carey ve Tanewski). 10–49 çalışanlı Türk işletmelerinin yalnızca %23,6'sı ERP kullanıyor (TÜİK 2025, ikincil aktarım). Müşavire, müşterilerinin hepsinin kasa riskini tek ekranda sıralayan bir araç görülmedi.
 - **Bizim için:** Panelde birden çok işletme desteği zaten var. Bunun üstüne "müşterilerim: önümüzdeki 90 günde kasası en riskli olanlar" listesi kurulabilir. Müşavire yeni bir danışmanlık hizmeti, bize de dağıtım kanalı sağlar.
 - **Ön koşul:** Her müşteri için Ek A ve müşavirin sır saklama yükümlülüğünün avukatla değerlendirilmesi (soru 13).

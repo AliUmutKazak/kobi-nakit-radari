@@ -53,6 +53,8 @@ Sol menüde **"Kendi verim"**i seçin. Ayarlar dört bölümde toplanmıştır.
 
 **Ödeme sözleri ve tahmin doğruluğu.** Veri notlarında geçmiş ödeme sözlerinin ne kadarının tutulduğu yazar. "Tahmin doğruluğu" sekmesinde pilot kayıtları biriktikçe, kasa tahmininin kalem kalem (açık faturalar, yeni satışlar, giderler) gerçekleşenle karşılaştırması görünür.
 
+**Mali müşavir görünümü.** Bu bilgisayarda birden çok işletme kayıtlıysa, sonuç sayfasının üstündeki "Mali müşavir görünümü" bölümü bütün işletmeleri eksiye düşme riskine göre sıralar: kötümser en düşük kasa, eksiye düştüğü gün, güvenle harcanabilir tutar ve vadesi geçmiş alacak. Her satır o işletme en son açıldığında hesaplanan özettir. Tabloda müşteri adı ya da fatura bilgisi yoktur ve hiçbir veri bilgisayardan çıkmaz.
+
 **Olası mükerrer faturalar.** Aynı fatura numarası yüklemede bir kez sayılır. Aynı müşteriye aynı gün aynı tutarla, ama farklı numarayla kesilmiş faturalar varsa panel veri notlarında bunları gösterir. Aynı fatura iki kez girildiyse (ör. elle ve e-faturadan) dosyadan birini çıkarın; aksi hâlde alacak iki kez sayılır. Gerçekten ayrı faturalarsa bir şey yapmanız gerekmez; panel hiçbir kaydı kendiliğinden silmez.
 
 **Taksitle ödeyen müşteriler.** Bir fatura birden çok tahsilatla kapanmışsa (banka ekstresindeki eşleşmelerden ya da cari hesap ekstresindeki alacak satırlarından), panel bu müşterinin taksit alışkanlığını öğrenir: faturaların ne kadarını taksitle kapattığı, ilk taksidin tutarın ne kadarı olduğu ve ne zaman geldiği. Henüz hiç ödenmemiş faturalarında ilk taksit, kapanıştan önce kasaya sayılır. Kısmen ödenmiş faturalarda yalnızca kalan tutar beklenir.
@@ -65,7 +67,7 @@ Sol menüde **"Kendi verim"**i seçin. Ayarlar dört bölümde toplanmıştır.
 |---|---|
 | Satış faturası listesi | Programınızın satış faturaları ekranında "Excel'e aktar" |
 | Cari hesap ekstresi / cari hareket föyü / muavin defter | Borç ve Alacak sütunlu ekstre; faturalar ve tahsilatlar tek dosyada gelir |
-| e-Fatura XML dosyaları | Entegratörünüzün portalından indirilen XML'ler |
+| e-Fatura XML dosyaları | Entegratörünüzün portalından indirilen XML'ler. Ticari fatura senaryosunda müşterinin verdiği kabul ve red yanıtlarını (uygulama yanıtı XML'leri) da aynı yere yükleyebilirsiniz: reddedilen fatura itirazlı sayılır, tahmine ve hatırlatmalara girmez. Yanlışsa panelden itirazı kaldırabilirsiniz. |
 
 Fatura listesinde en az **fatura no, müşteri, fatura tarihi, tutar** olmalı. Vade tarihi, VKN, kalan tutar, e-posta ve telefon sütunları varsa kullanılır. Panel sütun adlarını tanıyamazsa her alan için dosyanızdaki karşılığını sorar; seçiminizi hatırlar.
 
@@ -76,7 +78,7 @@ Fatura listesinde en az **fatura no, müşteri, fatura tarihi, tutar** olmalı. 
 | Banka ekstresi | Hangi faturanın ödendiğini otomatik bulur. Fatura listesinde ödeme bilgisi yoksa gereklidir. |
 | Planlı giderler | Maaş, kira, kredi taksidi gibi çıkışlar. Yoksa **3. Aylık sabit giderler** bölümüne tutarları yazın; panel vergi takvimine göre yerleştirir. Son gün hafta sonuna ya da resmî tatile denk gelirse ödeme izleyen ilk iş gününe kayar (VUK m.18/4). Dövizli ödeme (ör. ithalat ya da yurt dışından alınan yazılım lisansı) varsa "Para birimi" sütunu ekleyin ve kurunu girin; kuru girilmeyen dövizli gider TL sayılır ve panel uyarır. |
 | Ödenecek faturalar | Tedarikçilere borçlarınız ve vadeleri. Dövizli borç varsa "Para birimi" sütunu ekleyin ve "Diğer ayarlar" bölümünde kurunu girin; kuru girilmeyen dövizli borç TL sayılır ve panel uyarır. |
-| Çek / senet portföyü | Elinizdeki müşteri çekleri ve vadeleri. "Durum" sütununda ciro edildi / iskonto yazanlar hesaba katılmaz. Keşidecisinden şüphelendiğiniz çeke "riskli" (ya da "şüpheli", "protestolu") yazın: kasaya sayılmaz, panel tutarını ayrıca gösterir. Döviz çeki varsa "Para birimi" sütunu ekleyin; kuru girilmeyen döviz çeki hesaba katılmaz. |
+| Çek / senet portföyü | Elinizdeki müşteri çekleri ve vadeleri. "Durum" sütununda ciro edildi / iskonto yazanlar hesaba katılmaz. Keşidecisinden şüphelendiğiniz çeke "riskli" (ya da "şüpheli", "protestolu") yazın: kasaya sayılmaz, panel tutarını ayrıca gösterir. Döviz çeki varsa "Para birimi" sütunu ekleyin; kuru girilmeyen döviz çeki hesaba katılmaz. Çeki Findeks karekodlu çek raporuyla sorguladıysanız raporda yazan "çeklerin tamamını vadesinde ödeme" oranını "Findeks ödeme olasılığı" sütununa yazın (ör. %88): panel o çek için ülke ortalaması yerine bu oranı kullanır. Bu değer yalnızca sizin bilgisayarınızda kalır. |
 
 Biçimi görmek için panelin ilk ekranında örnek dosyaları indirebilirsiniz. Yüklediğiniz her şey yalnızca bu bilgisayarda saklanır; bir sonraki açılışta yeniden yüklemeniz gerekmez.
 
