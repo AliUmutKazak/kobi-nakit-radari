@@ -90,3 +90,8 @@ Konumlandırma cümlesi (inceleme raporunun önerisinden uyarlandı): *KOBİ'ler
 - [Finrota NAP360](https://www.finrota.com/ozel-cozumler/cash-flow-management-nap360-finrota)
 
 Paraşüt ve Mikro'nun sayfaları özellikleri ayrıntılandırmıyor; bu ikisi için kesin bilgi ancak deneme hesabıyla alınır.
+
+
+## Güncelleme (22 Ekim 2026)
+
+Xero JAX (ödeme günü tahmini), QuickBooks, Float/FreeAgent, HighRadius, Akbank Mobil, Paraşüt ve Figopara için güncel durum ve fark yaratabilecek alanlar: [FARKLILASMA_ANALIZI.md](FARKLILASMA_ANALIZI.md).

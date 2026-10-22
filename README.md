@@ -57,7 +57,7 @@ C:\Users\HP\.venvs\kobi-radar\Scripts\python -m pytest -q
 C:\Users\HP\.venvs\kobi-radar\Scripts\python tools/paketle.py
 ```
 
-Tasarım gerekçeleri: [docs/ARASTIRMA.md](docs/ARASTIRMA.md). Rakipler: [docs/RAKIPLER.md](docs/RAKIPLER.md). Lisanslar ve veri kaynakları: [docs/LISANSLAR.md](docs/LISANSLAR.md).
+Tasarım gerekçeleri: [docs/ARASTIRMA.md](docs/ARASTIRMA.md). Rakipler: [docs/RAKIPLER.md](docs/RAKIPLER.md). Benzer ürünlere göre durum ve fark yaratabilecek alanlar: [docs/FARKLILASMA_ANALIZI.md](docs/FARKLILASMA_ANALIZI.md). Lisanslar ve veri kaynakları: [docs/LISANSLAR.md](docs/LISANSLAR.md).
 
 ## Modüller
 
