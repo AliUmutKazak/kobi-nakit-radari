@@ -17,7 +17,8 @@ from .open_data import delay_study
 from .synthetic import observe
 from .pipeline import forecast, gap_summary, naive_collections, payments_cutoff, weekly_table
 from .reconcile import collection_events
-from .standards import SIGNIFICANCE, diebold_mariano, interval_report, passes as interval_passes
+from .standards import (SIGNIFICANCE, basel_zone, diebold_mariano, interval_report, kupiec_pof,
+                        passes as interval_passes, random_effects)
 
 VERSION = "2026.10.21"            # tahmin kaydına yazılır: hangi kod sürümüyle üretildiği
 MIN_HISTORY_DAYS = 365            # protokol 2. bölüm: en az 12 aylık fatura geçmişi; altında geri test yapılmaz
@@ -259,7 +260,9 @@ def b1_margin(g: pd.DataFrame, h: int, step: int, actual: str = "actual", cols=N
     diffs = block_bootstrap(g, date_col, max(1, int(np.ceil(h / step))),
                             lambda d: _err(d, cols["vade"], actual) - _err(d, cols[best], actual), seed=seed)
     m1 = ci(diffs)[0]
-    return {"m1": m1, "m2": MARGIN_FRACTION * m1 if m1 > 0 else None, "kontrol": best}
+    point = _err(g, cols["vade"], actual) - _err(g, cols[best], actual)
+    return {"m1": m1, "m2": MARGIN_FRACTION * m1 if m1 > 0 else None, "kontrol": best,
+            "m1_tahmin": float(point), "m1_se": float(np.std(diffs, ddof=1))}
 
 
 def b1_decision(ci95: tuple[float, float] | None, m2: float | None, worse_than_due: bool) -> tuple[bool | None, str]:
@@ -276,6 +279,35 @@ def b1_decision(ci95: tuple[float, float] | None, m2: float | None, worse_than_d
     if m2 is not None and lo > m2:
         return False, "geride (marjın dışında)"
     return False, "kanıtlanamadı" + ("" if m2 is not None else " (marj belirlenemedi)")
+
+
+def pooled_b1(firms: pd.DataFrame) -> pd.DataFrame:
+    """Protokol 1.8 birincil karar: bütün pilot işletmelerinin birleşik analizi (ufuk başına).
+
+    `firms`: işletme ve ufuk başına bir satır; sütunlar ufuk_gun, fark_tahmin, fark_se (ileriye dönük pilottan,
+    model eksi en iyi güçlü basit yöntem, sapma puanı) ve m1_tahmin, m1_se (o işletmenin Aşama 0'ından, en iyi
+    basit yöntemin "vadesinde öder"e üstünlüğü). Fark ve M1 ayrı ayrı rastgele etkiler meta-analiziyle birleştirilir
+    (standards.random_effects). Birleşik M2 = birleşik M1'in %95 alt sınırının yarısı (FDA 2016, protokol 1.7).
+    Karar b1_decision ile verilir. İşletme başına sonuçlar betimleyicidir: Cochrane El Kitabı (12.2.2.1), istatistiksel
+    anlamlılığa dayalı oy sayımını "ciddi sınırlılıkları olan ve yanlış sonuca götürebilen", kabul edilemez bir
+    yöntem sayar."""
+    out = []
+    for h, g in firms.groupby("ufuk_gun"):
+        diff = random_effects(g["fark_tahmin"], g["fark_se"])
+        m1 = random_effects(g["m1_tahmin"], g["m1_se"]) if {"m1_tahmin", "m1_se"} <= set(g) else {"ci": None}
+        m1_lo = m1["ci"][0] if m1.get("ci") else None
+        m2 = MARGIN_FRACTION * m1_lo if m1_lo is not None and m1_lo > 0 else None
+        passed, result = b1_decision(diff["ci"], m2, False)
+        row = {"ufuk_gun": int(h), "isletme": diff["k"], "fark_birlesik": diff["estimate"],
+               "fark_ci95": diff["ci"], "tau2": diff["tau2"], "m1_alt_sinir": m1_lo, "m2": m2,
+               "B1": passed, "B1_sonuc": result}
+        if {"kayit", "alt_asim", "ust_asim"} <= set(g):           # B2 birleşik: aşımlar toplanır
+            n, lo, hi = int(g["kayit"].sum()), int(g["alt_asim"].sum()), int(g["ust_asim"].sum())
+            row.update({"B2_kayit": n, "B2_basel_alt": basel_zone(n, lo, 0.10)["zone"],
+                        "B2_kupiec_alt_p": kupiec_pof(n, lo, 0.10)["p_value"],
+                        "B2_kupiec_ust_p": kupiec_pof(n, hi, 0.10)["p_value"]})
+        out.append(row)
+    return pd.DataFrame(out)
 
 
 def summarize_backtest(bt: pd.DataFrame, step: int) -> pd.DataFrame:
@@ -725,6 +757,8 @@ def score(records: list[dict], later: pd.DataFrame, events: pd.DataFrame | None 
                                     lambda d: err(d, "model") - min(err(d, m) for m in strong), n_boot, seed)
             row["fark_guven_araligi"] = ci(diffs, 90)
             ci95 = ci(diffs)
+            row["fark_tahmin"] = float(err(g, "model") - min(err(g, m) for m in strong))
+            row["fark_se"] = float(np.std(diffs, ddof=1))
         else:
             row["fark_guven_araligi"] = None
         row["fark_guven_araligi_95"] = ci95

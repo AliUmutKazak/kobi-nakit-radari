@@ -1167,7 +1167,8 @@ with tab_accuracy:
                     "B1_sonuc": "B1 sonucu",
                     "dm_sonuc": "İsabet testi (Diebold-Mariano)", "alt_asim": "Kötümserin altı (adet)",
                     "ust_asim": "İyimserin üstü (adet)", "basel_alt": "Basel bölgesi (alt uç)",
-                    "kupiec_p": "Kupiec p değeri", "B1": "B1 (isabet)", "B2": "B2 (aralık)",
+                    "kupiec_p": "Kupiec p değeri", "B1": "B1, bu işletme (betimleyici)", "B2": "B2 (aralık)",
+                    "fark_tahmin": "Fark tahmini (puan)", "fark_se": "Farkın standart hatası",
                     "ortusmeyen_kayit": "Örtüşmeyen kayıt", "ortusmeyen_alt_asim": "Örtüşmeyen: kötümserin altı",
                     "ortusmeyen_ust_asim": "Örtüşmeyen: iyimserin üstü",
                     "ortusmeyen_kupiec_p": "Örtüşmeyen: Kupiec p"}).drop(
@@ -1181,7 +1182,8 @@ with tab_accuracy:
                 st.caption("Ölçütler uluslararası standartlardır, kendi eşiğimiz yoktur. B1 (protokol 1.7): model eksi en "
                            "iyi basit yöntem sapma farkının %95 güven aralığının üst sınırı, Aşama 0'dan dondurulan "
                            "marjın altındaysa \"eşdeğer\", sıfırın altındaysa \"üstün\"; değilse \"kanıtlanamadı\" "
-                           "(FDA 2016 eşdeğerlik yaklaşımı). Diebold-Mariano sonucu ayrıca gösterilir. B2: kötümser uç için Basel Komitesi trafik ışığı (BIS 1996) yeşil ve Kupiec "
+                           "(FDA 2016 eşdeğerlik yaklaşımı). Pilotun kararı bu işletmenin sonucuyla değil, bütün pilot işletmelerinin "
+                           "birleşik analiziyle verilir (protokol 1.8); buradaki B1 betimleyicidir. Diebold-Mariano sonucu ayrıca gösterilir. B2: kötümser uç için Basel Komitesi trafik ışığı (BIS 1996) yeşil ve Kupiec "
                            "(1995) kapsama testleri reddetmiyorsa geçer. Haftalık kayıtların ufukları üst üste biner: "
                            "isabet testi ve güven aralığı bunu hesaba katar, Basel ve Kupiec katmaz (Christoffersen "
                            "1998). Bu yüzden aşımlar örtüşmeyen alt örneklemle (her ufuk süresinde bir kayıt) de verilir.")

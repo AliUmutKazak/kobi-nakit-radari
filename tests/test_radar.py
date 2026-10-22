@@ -715,8 +715,9 @@ def test_dashboard_renders_demo_and_own_data_without_errors(tmp_path, monkeypatc
     next(b for b in at.button if b.label.startswith("Aşama 0 testini çalıştır")).click().run()
     assert not at.exception, [e.value for e in at.exception]
     assert Store(db).get("retro_result") and "Aşama 0" in Store(db).audit_log()["action"].str.cat()
-    table = next(d.value for d in at.dataframe if "B1 (isabet)" in d.value.columns)
-    assert set(table["B1 (isabet)"]) <= {"geçti", "kaldı", "değerlendirilemedi"}       # kayıttan okununca da
+    col = "Diebold-Mariano: geride değil"
+    table = next(d.value for d in at.dataframe if col in d.value.columns)
+    assert set(table[col]) <= {"geçti", "kaldı", "değerlendirilemedi"}                 # kayıttan okununca da
     next(b for b in at.button if b.label == "Pilot raporunu hazırla").click().run()
     assert not at.exception, [e.value for e in at.exception]
     assert (tmp_path / "KobiRadar" / "anonim_anahtar.txt").exists()
@@ -1677,3 +1678,24 @@ def test_b1_is_a_non_inferiority_decision_with_prespecified_margin():
     m = pilot.b1_margin(g, 14, 7)
     assert m["kontrol"] == "medyan" and 50 < m["m1"] < 60 and m["m2"] == pytest.approx(m["m1"] / 2)
     assert pilot.b1_margin(g.assign(naive_due=g["naive_median"]), 14, 7)["m2"] is None   # kontrolün etkisi yok
+
+
+def test_pooled_b1_replaces_vote_counting():
+    """Protokol 1.8: işletmelerin çoğu tek başına "kanıtlanamadı" çıkarken birleşik analiz karar verebilir."""
+    from radar import pilot, standards
+    # Tek başına geniş aralıklı ama tutarlı beş işletme: fark ~0, M1 ~10 puan.
+    firms = pd.DataFrame({"ufuk_gun": [30] * 5, "fark_tahmin": [1.0, -2.0, 0.5, 2.0, -1.0], "fark_se": [2.0] * 5,
+                          "m1_tahmin": [9.0, 11.0, 10.0, 12.0, 8.0], "m1_se": [2.0] * 5})
+    alone = [pilot.b1_decision((d - 1.96 * 2, d + 1.96 * 2), 0.5 * (m - 1.96 * 2), False)[1]
+             for d, m in zip(firms["fark_tahmin"], firms["m1_tahmin"])]
+    assert alone.count("eşdeğer (marj içinde)") <= 2                         # oy sayımı: çoğunluk "geçmedi"
+    pooled = pilot.pooled_b1(firms).iloc[0]
+    assert pooled["isletme"] == 5 and pooled["B1"] and pooled["B1_sonuc"] == "eşdeğer (marj içinde)"
+    # Gerçekten kötü model birleşik analizde de geçmez.
+    worse = pilot.pooled_b1(firms.assign(fark_tahmin=firms["fark_tahmin"] + 15)).iloc[0]
+    assert not worse["B1"]
+    # HKSJ: heterojenlik yokken ölçek 1'in altına inmez (Röver vd. 2015); tek çalışmada normal aralık.
+    re1 = standards.random_effects([2.0], [1.0])
+    assert re1["k"] == 1 and re1["ci"] == pytest.approx((2 - 1.959964, 2 + 1.959964), abs=1e-4)
+    same = standards.random_effects([1.0, 1.0, 1.0], [1.0, 1.0, 1.0])
+    assert same["tau2"] == 0 and same["ci"][1] - same["ci"][0] > 2 * 1.96 / np.sqrt(3)

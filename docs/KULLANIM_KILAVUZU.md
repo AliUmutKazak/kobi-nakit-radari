@@ -14,9 +14,12 @@ Tahminler müşterilerinizin geçmişte nasıl ödediğine dayanır. Geçmiş ne
 
 **Hazır paketle (önerilen, kurulum gerekmez).**
 
-1. Size verilen `KobiRadar-....zip` dosyasını sağ tıklayıp "Tümünü ayıkla" deyin ve klasörü kalıcı bir yere koyun (ör. Belgeler).
-2. Klasördeki **`KOBI_Radar.bat`** dosyasına çift tıklayın. Panel tarayıcınızda kendiliğinden açılır (adres: http://127.0.0.1:8501).
-3. İlk açılış 20–30 saniye sürebilir (Windows yeni dosyaları ilk kez tarar); sonraki açılışlar birkaç saniyedir.
+1. **Dosyanın değişmediğini doğrulayın.** Proje size zip dosyasıyla birlikte, ayrı bir kanaldan (telefon ya da ayrı bir mesaj) 64 karakterlik bir SHA-256 özeti verir. Zip'in bulunduğu klasörde adres çubuğuna `powershell` yazıp Enter'a basın ve `Get-FileHash .\KobiRadar-....zip -Algorithm SHA256` komutunu çalıştırın (dosya adını kendi dosyanızınkiyle değiştirin). Çıkan değer size verilenle birebir aynı olmalı; değilse dosyayı açmayın ve Proje'ye haber verin.
+2. Zip dosyasını sağ tıklayıp "Tümünü ayıkla" deyin ve klasörü OneDrive ile eşitlenmeyen kalıcı bir yere koyun (ör. `C:\KobiRadar`).
+3. Klasördeki **`KOBI_Radar.bat`** dosyasına çift tıklayın. Panel tarayıcınızda kendiliğinden açılır (adres: http://127.0.0.1:8501).
+4. İlk açılış 20–30 saniye sürebilir (Windows yeni dosyaları ilk kez tarar); sonraki açılışlar birkaç saniyedir.
+
+**Windows güvenlik uyarısı.** Paket dijital olarak imzalı değildir. İnternetten indirilen imzasız bir dosyayı ilk kez açtığınızda Windows "Windows bilgisayarınızı korudu" ya da "Yayımcı doğrulanamadı" uyarısı gösterebilir. Bu, dosyanın zararlı olduğu anlamına gelmez; Windows yayımcıyı tanımadığı için uyarır. Yalnızca 1. adımdaki özet birebir tuttuysa devam edin: uyarıda "Ek bilgi" ve ardından "Yine de çalıştır" seçilir. Uyarının hiç çıkmamasını isterseniz, ayıklamadan önce zip dosyasına sağ tıklayıp "Özellikler"i açın ve altta görünüyorsa "Engellemeyi kaldır" kutusunu işaretleyin. Bilgisayarınız şirket tarafından yönetiliyorsa ya da Windows 11'deki Akıllı Uygulama Denetimi dosyayı engelliyorsa güvenlik ayarlarını kapatmayın; Proje'den kurulum desteği isteyin.
 
 Paket kendi Python'unu içinde taşır; Python kurmanız ya da internete bağlı olmanız gerekmez. Yeni sürüm geldiğinde eski klasörü silip yenisini açmanız yeterlidir: verileriniz klasörde değil, bilgisayarın yerel uygulama klasöründe durur ve silinmez.
 

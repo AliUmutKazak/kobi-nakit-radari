@@ -154,6 +154,11 @@ def main() -> None:
     shutil.copy2(archive, final)
     size = sum(f.stat().st_size for f in app_dir.rglob("*") if f.is_file())
     print(f"klasör: {size / 1e6:.0f} MB | zip: {final.stat().st_size / 1e6:.0f} MB -> {final}")
+    # SHA-256 özeti: alıcı, zip'in yolda değişmediğini doğrular (kılavuz 1. bölüm). Özet zip'le aynı kanaldan değil,
+    # ayrı bir kanaldan (telefon, ayrı e-posta) iletilir.
+    digest = hashlib.sha256(final.read_bytes()).hexdigest().upper()
+    (out_dir / (final.name + ".sha256")).write_text(f"{digest}  {final.name}\n", encoding="ascii")
+    print(f"SHA-256: {digest}")
 
 
 if __name__ == "__main__":

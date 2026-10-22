@@ -111,6 +111,32 @@ def diebold_mariano(loss_model, loss_bench, overlap: int = 1) -> dict:
             "n": T, "mean_diff": float(dbar)}
 
 
+def random_effects(estimates, std_errors, level: float = 0.95) -> dict:
+    """Rastgele etkiler meta-analizi: DerSimonian-Laird heterojenlik (tau²), Hartung-Knapp-Sidik-Jonkman (HKSJ)
+    güven aralığı (t dağılımı, k-1 serbestlik derecesi). Az çalışmada HKSJ, gözlenen heterojenlik düşükken aralığı
+    fazla daraltabildiği için ölçek katsayısı en az 1 alınır (Röver, Knapp ve Friede 2015, BMC Medical Research
+    Methodology 15:99). Cochrane El Kitabı bölüm 10.10.4: HKSJ az çalışmada Wald tipi aralıktan iyidir; iki üç
+    çalışmada aralık çok geniş çıkabilir. Tek çalışmada birleştirme yapılmaz, o çalışmanın normal aralığı döner."""
+    y, se = np.asarray(estimates, float), np.asarray(std_errors, float)
+    ok = np.isfinite(y) & np.isfinite(se) & (se > 0)
+    y, se = y[ok], se[ok]
+    k = len(y)
+    if k == 0:
+        return {"k": 0, "estimate": float("nan"), "ci": None, "tau2": float("nan")}
+    z = stats.norm.ppf(0.5 + level / 2)
+    if k == 1:
+        return {"k": 1, "estimate": float(y[0]), "ci": (float(y[0] - z * se[0]), float(y[0] + z * se[0])), "tau2": 0.0}
+    w = 1 / se ** 2
+    fixed = np.sum(w * y) / np.sum(w)
+    q = np.sum(w * (y - fixed) ** 2)
+    tau2 = max(0.0, (q - (k - 1)) / (np.sum(w) - np.sum(w ** 2) / np.sum(w)))
+    ws = 1 / (se ** 2 + tau2)
+    mu = np.sum(ws * y) / np.sum(ws)
+    scale = max(1.0, np.sum(ws * (y - mu) ** 2) / (k - 1))
+    half = stats.t.ppf(0.5 + level / 2, k - 1) * math.sqrt(scale / np.sum(ws))
+    return {"k": k, "estimate": float(mu), "ci": (float(mu - half), float(mu + half)), "tau2": float(tau2)}
+
+
 def interval_report(actual, lo, hi, tail_prob: float = 0.10) -> dict:
     """P10–P90 aralığı için standart değerlendirme: alt uçta Basel bölgesi ve Kupiec, üst uçta Kupiec,
     merkezi %80 aralık için Kupiec."""
