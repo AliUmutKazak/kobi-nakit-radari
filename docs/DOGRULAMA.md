@@ -264,7 +264,7 @@ Okuma: alt ve orta bölge isabetli. Yüksek riskte panel eksik söylüyor: "%81"
 
 ### Basit yöntemlere karşı
 
-Bir modelin "akıllı" sayılması için önce basit yöntemleri yenmesi gerekir (Makridakis vd. 2022, M5 sonuçları; ayrıca kullanıcının 14 Ekim 2026 tarihli inceleme raporundaki öneri). Aynı 384 tahminde, aynı fatura kümesi ve aynı giderlerle, üç basit kasa tahmini kuruldu:
+Bir modelin "akıllı" sayılması için önce basit yöntemleri yenmesi gerekir (Makridakis vd. 2022, M5 sonuçları; ayrıca 14 Ekim 2026 tarihli dış inceleme raporundaki öneri). Aynı 384 tahminde, aynı fatura kümesi ve aynı giderlerle, üç basit kasa tahmini kuruldu:
 
 - **Sözleşme vadesi:** her fatura vadesinde ödenir; vadesi geçmişse yarın.
 - **Müşteri medyanı:** her müşteri, geçmişte vadeden medyan kaç gün sonra ödediyse yine öyle öder.

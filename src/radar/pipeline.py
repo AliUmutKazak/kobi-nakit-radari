@@ -9,7 +9,7 @@ import pandas as pd
 from . import actions, fx
 from .features import build_features
 from .model import DelayModel, FallbackModel, evaluate, fit_model, training_frame
-from .simulate import (CHEQUE_BOUNCE, RECAL_GRID, pit_recalibration, PRIOR_RHO, aging_curve, censored_normal_fit, conditional_scores, correlation_from_scores,
+from .simulate import (CHEQUE_BOUNCE, RECAL_GRID, pit_recalibration, PRIOR_RHO, aging_curve, conditional_scores, correlation_from_scores,
                        simulate)
 from .synthetic import cash_plan, observe
 

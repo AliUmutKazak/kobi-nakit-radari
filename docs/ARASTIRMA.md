@@ -166,7 +166,7 @@ Rakipler
 - [Monk](https://www.automate.org/ai/news/monk-brings-ai-powered-ar-automation-to-automate-2026-surpasses-1b-in-receivables-under-management-monk)
 - [Xero Analytics Plus](https://www.xero.com/media-releases/xero-unveils-new-product-features-xerocon/), [QuickBooks Cash Flow Planner](https://insightfulaccountant.com/accounting-tech/general-ledger/quickbooks-cash-flow-planner-enhancements/)
 
-## Ek: Kullanıcının saha ve mevzuat raporunun değerlendirmesi (14 Ekim 2026)
+## Ek: Saha ve mevzuat inceleme raporunun değerlendirmesi (14 Ekim 2026)
 
 İncelenen belge: "KOBİ Tahsilat ve Nakit Akışı Otomasyonu İçin Altı Kritik Alanın Teknik, Saha ve Hukuki İnceleme Raporu" (12 sayfa).
 
@@ -221,7 +221,7 @@ Bilerek alınmayanlar:
 - **"FAT/NO" kalıbıyla iç fatura numarası yakalama.** "NO" öneki "SORGUNO:0482910" içindeki sorgu numarasını fatura numarası diye yakalıyor.
 - **Program başına sabit başlık imzası.** Bizde başlık eşanlamlı sözlükle, programdan bağımsız tanınıyor; tanınmazsa kullanıcı elle eşleştiriyor.
 
-**Avukat paketi.** Biçimi iyi: üç soru, düzenlenebilir iki şablon, beş maddelik onay çizelgesi ve imza bloğu. Ancak önceki raporda bulunan iki hata aynen geçmişti. Düzeltilmiş kopya `docs/hukuk/avukat_hukuki_inceleme_ve_onay_paketi_duzeltilmis.docx` olarak hazırlandı; orijinal dosyaya dokunulmadı. Yapılan değişiklikler:
+**Avukat paketi.** Biçimi iyi: üç soru, düzenlenebilir iki şablon, beş maddelik onay çizelgesi ve imza bloğu. Ancak önceki raporda bulunan iki hata aynen geçmişti. Düzeltilmiş kopya hazırlandı (iç belge, depoda yok); orijinal dosyaya dokunulmadı. Yapılan değişiklikler:
 
 | Yer | Orijinal | Düzeltilmiş | Gerekçe |
 |---|---|---|---|

@@ -12,7 +12,7 @@ Tarih: 14 Ekim 2026. Yöntem: her üründe yalnızca üreticinin kendi ürün sa
 | Hatırlatma kanalları | E-posta, taahhütlü posta, ödeme bağlantısı | E-posta | E-posta, SMS, otomatik arama | Belirtilmemiş | "Hatırlatma" (kanal belirtilmemiş) | Yalnızca taslak |
 | WhatsApp | Belirtilmemiş | Belirtilmemiş | Belirtilmemiş | Belirtilmemiş | Belirtilmemiş | Taslak metin; gönderim yok |
 | Ajan özerkliği | Belirtilmemiş | "Yalnızca öneri"den "tam otonom"a ayarlanabilir | Yapay zekâ e-posta üretici | "AI Agents" (ayrıntı yok) | Belirtilmemiş | Yalnızca öneri |
-| İtirazlı fatura yönetimi | Var (hatırlatmayı durdurur, tahminden çıkarır) | Yanıtlardan itiraz niyetini çıkarır | Belirtilmemiş | Modül var | Belirtilmemiş | Var (bu turda eklendi) |
+| İtirazlı fatura yönetimi | Var (hatırlatmayı durdurur, tahminden çıkarır) | Yanıtlardan itiraz niyetini çıkarır | Belirtilmemiş | Modül var | Belirtilmemiş | Var |
 | Ödeme sözü takibi | Belirtilmemiş | Yanıtlardan ödeme sözünü çıkarır | Belirtilmemiş | Belirtilmemiş | Belirtilmemiş | Var (elle girilir) |
 | En uygun iletişim zamanı | Belirtilmemiş | Belirtilmemiş | Var (gün ve saat) | Belirtilmemiş | Belirtilmemiş | Var (müşterinin ödeme gününe göre) |
 | Ödeme portalı / bağlantısı | Ödeme bağlantısı | Belirtilmemiş | Var | Var | Netahsilat (ayrı ürün) | Yok |
@@ -45,7 +45,7 @@ Kaynaklar: [Logo İşbaşı](https://isbasi.com/), [BizimHesap](https://bizimhes
 2. **Ödeme sözü (Upflow).** Söz tarihi girilen faturada bu tarih yeni vade sayılır ve söz tarihi geçene kadar hatırlatma üretilmez. Upflow bunu e-posta yanıtlarından otomatik çıkarıyor; bizde panelden elle giriliyor.
 3. **İletişim zamanı (Chaser).** Chaser "en iyi gün ve saat" öneriyor ama yöntemini açıklamıyor. Bizde kural açık: müşterinin ödemelerinin en az %60'ı aynı günün ±1 gün çevresinde toplanıyorsa sabit ödeme günü sayılır ve iletişim o günden 3 gün öncesine önerilir. Örnek veride 40 müşterinin 12'sinde tespit edildi.
 
-## Düzeltme (14 Ekim 2026, kullanıcının inceleme raporu üzerine)
+## Düzeltme (14 Ekim 2026, dış inceleme raporu üzerine)
 
 Önceki sürümde "olasılık bandı ya da eksiye düşme olasılığı hiçbir rakipte yok" ve tahminle ilgili satırlarda "belirtilmemiş" yazıyordu. Daha ayrıntılı kaynaklarla:
 

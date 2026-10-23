@@ -126,6 +126,9 @@ def main() -> None:
     step("Panel kopyalanıyor")
     for item in COPY:
         src = ROOT / item
+        if not src.exists():                       # iç belgeler depoda yok; yalnızca geliştirici bilgisayarında
+            print(f"  atlandı (bulunamadı): {item}")
+            continue
         dst = app_dir / (Path(item).name if item.startswith("docs/") else item)
         if src.is_dir():
             # TCMB verisinin ticari kullanımı TCMB'nin yazılı iznine tabidir (Kullanım Şartları); izin belgelenmeden

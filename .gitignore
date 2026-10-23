@@ -5,3 +5,19 @@ __pycache__/
 /data/
 .claude/
 dist/
+
+# İç belgeler: diskte kalır, herkese açık depoya girmez (avukat taslakları, KVKK taslakları,
+# pilot yazışmaları, dış inceleme raporları ve bunları üreten araçlar).
+/docs/GIDISAT_DEGERLENDIRMESI.md
+/docs/*.pdf
+/docs/*.docx
+/docs/hukuk/
+/docs/kvkk/
+/docs/pilot/*.docx
+/docs/pilot/PILOT_HAZIRLIK_KITI.md
+/tools/avukat_dosyasi.py
+/tools/hukuk_belgeleri.py
+/tools/pilot_kiti.py
+
+# TCMB verisinin yeniden dağıtımı TCMB'nin yazılı iznine bağlı; tablo yerelde kalır.
+/src/radar/data/sektor_alacak_*.csv

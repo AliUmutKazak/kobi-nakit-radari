@@ -1,81 +1,62 @@
 # KOBİ Nakit Akışı Radarı
 
-Açık faturaların ne zaman tahsil edileceğini olasılıksal olarak tahmin eder, 90 günlük kasa bandını (kötümser P10 / orta P50 / iyimser P90) çıkarır, "güvenle harcanabilir tutarı" gösterir ve açığı kapatmaya en çok yarayacak faturalar için onay bekleyen mesaj taslakları üretir.
+**Küçük işletmeler için olasılıksal nakit akışı tahmini ve tahsilat karar desteği.**
+*Probabilistic 90-day cash-flow forecasting and collections decision support for Turkish SMEs (Python, LightGBM, Monte Carlo, Streamlit).*
 
-**Durum (20.10.2026): pilot öncesi.** Türk KOBİ verisiyle henüz sınanmadı. Model, senaryo laboratuvarı ve istatistik çerçevesi pilot verisi gelene kadar donduruldu (aşağıda "Kabul kuralı"). Pilot: [docs/pilot/PILOT_PROTOKOLU.md](docs/pilot/PILOT_PROTOKOLU.md).
+Küçük bir işletme için asıl soru "müşteri ne zaman öder?" değil, "önümüzdeki haftalarda kasam eksiye düşer mi?" sorusudur. Radar, açık faturaların ne zaman tahsil edileceğini müşterilerin geçmiş ödeme davranışından tahmin eder; giderler, borçlar, çekler, vergi takvimi ve kur riskiyle birleştirip 90 günlük kasayı bir aralık olarak gösterir:
 
-## Kurulum (işletme bilgisayarı)
+- **Kasa bandı:** kötümser (P10), orta (P50) ve iyimser (P90) senaryo; kasanın eksiye düşme olasılığı ve "güvenle harcanabilir tutar".
+- **Tahsilat listesi:** kasa açığını kapatmaya en çok yarayacak faturalar, onay bekleyen mesaj taslaklarıyla (WhatsApp, e-posta). Panel hiçbir mesajı kendiliğinden göndermez.
+- **Kendini sınayan tahmin:** işletmenin kendi geçmişinde geriye dönük test; model basit yöntemlerin gerisindeyse panel bunu açıkça söyler.
+- **Türkiye pratiği:** cari hesap ekstresi ve muavin, çek/senet portföyü, UBL-TR e-fatura (KABUL/RED yanıtları dahil), vergi takvimi ve resmî tatiller, dövizli alacak ve borç.
 
-Tek yol taşınabilir pakettir. Python kurmak gerekmez.
-1. `KobiRadar-<sürüm>.zip` dosyasını açın.
-2. `KOBI_Radar.bat` dosyasına çift tıklayın.
+> **Durum: pilot öncesi prototip.** Türk KOBİ verisiyle henüz sınanmadı. Sonuçlar sentetik veri, senaryo laboratuvarı ve yabancı açık veri setleriyle elde edildi. Veriler yalnızca işletmenin bilgisayarında saklanır.
 
-Panel tarayıcıda http://localhost:8501 adresinde açılır ve yalnızca o bilgisayardan erişilebilir. Veriler `%LOCALAPPDATA%\KobiRadar\radar.db` dosyasında saklanır (OneDrive gibi eşitlenen klasörlerin dışında). Pilot için ön koşul: disk şifrelemesi (BitLocker ya da Windows "Cihaz şifrelemesi"). Ortak bilgisayarda isteğe bağlı panel parolası kullanılır. Güvenlik: [docs/GUVENLIK.md](docs/GUVENLIK.md). İşletme sahibi için: [docs/KULLANIM_KILAVUZU.md](docs/KULLANIM_KILAVUZU.md).
+## Doğrulama: neler ölçüldü
 
-## Güncel durum
+Kabul ölçütleri projede uydurulmadı; risk modeli doğrulamasında kullanılan standart testlerden alındı: Basel trafik ışığı (BCBS 1996; BDDK), Kupiec kapsama testi ve Diebold-Mariano isabet testi. Ayrıntı ve denenip reddedilen yöntemler: [docs/DOGRULAMA.md](docs/DOGRULAMA.md).
 
-| Alan | Durum | Ayrıntı |
+| Veri | Sonuç | Sınır |
 |---|---|---|
-| Gerçek Türk KOBİ verisiyle doğrulama | **Yok** | Pilotla yapılacak. Bütün sonuçlar sentetik veri, senaryo laboratuvarı ve yabancı açık veri setleriyle (IBM, Payment Date, UCI Online Retail II) ya da ECB kurlarıyla. |
-| Modelin basit yöntemlere üstünlüğü | **Belirsiz** | Açık veride "müşteri her zamanki kadar geç öder" yöntemiyle başa baş; 14 günde önde, IBM 30 günde "son dönemin tahsilat oranı" önde. Panel her işletmede modeli basit yöntemlerle geriye dönük karşılaştırır: hızlı geri test ve pilot için son 52 haftalık "Aşama 0" testi (Diebold-Mariano, Basel, Kupiec). Model bir ufukta gerideyse o ufkun tahsilatı için en isabetli basit yöntemin sayısı panelin üstünde gösterilir. [DOGRULAMA.md](docs/DOGRULAMA.md) |
-| Kasa bandı kalibrasyonu | Laboratuvarda kabul aralığında | Geçerli sonuç: laboratuvar sürüm 6 sınavı, 240 işletme. Kötümser uç aşımı %7, iyimser %10; Basel yeşil, Kupiec iki uçta geçiyor. Pilottaki çevrimiçi izleme (protokol 1.5) sıralı laboratuvarda %10,7 / %8,9. Eski sürümlerin sonuçları: [LAB_RAPORU.md](docs/LAB_RAPORU.md). |
-| Eksiye düşme olasılığı | Sentetikte ortaya sıkışık | Yüksek riskte gerçek risk gösterilenden yüksek çıktı (%80 → %92). Panel %50 ve üzerini "en az" diye gösterir; karar için kötümser çizgi esas alınır. Yeniden ayar (izotonik) gerçek sonuç verisi gerektirir, pilot sonrasına kayıtlı. |
-| Veri alma | Dosya ile | Excel/CSV fatura listesi, UBL-TR e-fatura XML (ticari senaryoda alıcının KABUL/RED uygulama yanıtları da okunur; reddedilen fatura itirazlı sayılır), cari hesap ekstresi / muavin, banka ekstresi (giriş/çıkış yönü otomatik), çek portföyü, ödenecek faturalar, gider planı. Tanınmayan başlıkta elle sütun eşleştirme; seçim hatırlanır. Muhasebe programlarına özel hazır şablon ve canlı banka / e-fatura bağlantısı yok. |
-| Çek ve senet | Var | Portföydeki çekler vadesinde, karşılıksız çıkma olasılığıyla (TBB oranı) sayılır. Cirolanan, iskontoya verilen ve "riskli" işaretlenen çekler sayılmaz. Kullanıcı Findeks karekodlu çek raporundaki oranı girerse o çek için ülke ortalaması yerine bu oran kullanılır. Çekle ödeme alışkanlığı işletmenin kendi kayıtlarından öğrenilir. Findeks oranı girilmeyen çekte keşideci bazlı risk yok. |
-| Giderler ve borçlar | Var | Gider planı, aylık sabit giderler (vergi takvimi ve resmî tatiller dahil), ödenecek faturalar. Gider planı banka geçmişiyle karşılaştırılır, eksik kısım "plan dışı ödeme" olarak eklenir. Giderlerin dalgalanması banda girer. Borç ödeme tarihi kullanıcının verdiği vadedir; vadesi geçmiş borç ertesi gün ödenmiş sayılır. |
-| Döviz | Var | Dövizli alacak, çek, borç ve gider girilen kurla TL'ye çevrilir. Kur belirsizliği ECB kur geçmişinden banda girer; her dövizde kasa aleyhine olan taraf esas alınır. ECB'nin son kurları panelde gösterilir; kurlar isteğe bağlı olarak internetten güncellenir. [HATA_AZALTMA_ANALIZI.md](docs/HATA_AZALTMA_ANALIZI.md), bölüm 7 |
-| Tahsilat aksiyonu | Var, gerçek sunucuyla denenmedi | Mesaj taslağı; WhatsApp'ta yazılmış hâlde açma; panoya kopyalama; kullanıcının kendi SMTP hesabıyla e-posta (yalnızca sahte sunucuyla test edildi). Gönderen kimliği (MERSİS / VKN) eksikse gönderme kapalı. |
-| Pilot ölçümü | Hazır (protokol 1.8) | Birincil karar bütün pilot işletmelerinin birleşik analiziyle verilir (rastgele etkiler meta-analizi; işletme başına "çoğunluk" sayımı Cochrane'e göre kabul edilemez olduğu için kaldırıldı). B1, önceden kayıtlı marjlı eşdeğerlik kararıdır (FDA 2016): kanıt yoksa sonuç "kanıtlanamadı" olur, "geçti" sayılmaz. Marj işletmenin Aşama 0 verisinden gelir. Haftalık kayıt kendiliğinden alınır. Kapanış kasası için kasa tutarı o gün girilmelidir; ekstrede bakiye varsa "Ekstre bakiyesini kasa tutarına yaz" düğmesi bunu tek tıka indirir. Pilot puanlaması kayıt alınmayan haftaları ve kasası güncellenmemiş kayıtları sayıp gösterir. Ödeme tarihi bilinmeyen kısmi ödemeler ölçüme girmez. |
-| Yeni satış tahmini | Yabancı açık veride sınandı | UCI Online Retail II ile: geçen yılın aynı dönemi işletmenin geçmişinde anlamlı biçimde daha isabetliyse o kullanılır (90 günlük sapma %37'den %8'e). Bir yıldan kısa geçmişte mevsimsellik bilinemez, panel uyarır. Pilotta B1 yalnızca açık faturaları ölçer; yeni satış ayrıca betimlenir. |
-| Mali müşavir görünümü | Var | Aynı bilgisayardaki işletmeler kasa riskine göre tek tabloda (yalnızca toplu sayılar). |
-| Hukuk | Açık sorular var | Doğrulanan hükümler ve avukata sorulacaklar: [docs/hukuk/MEVZUAT_KONTROLU.md](docs/hukuk/MEVZUAT_KONTROLU.md). TCMB sektör verisinin ticari kullanımı TCMB'nin yazılı iznine bağlı; pakete varsayılan olarak konmaz. |
-| Güvenlik | Pilot için yeterli | Yerel çalışma, isteğe bağlı panel parolası, işlem kaydı, AES-256-GCM şifreli yedek. Veritabanı dosyası şifresiz (disk şifrelemesi ön koşul). Çok kullanıcılı yetki yok. |
+| Gerçek açık veri: IBM Late Payment ve Payment Date (Kaggle), 16 geçmiş tahmin tarihi | Kötümser uç dört durumun dördünde Basel yeşil. İsabet, en iyi basit yöntemle istatistiksel olarak **eşdeğer**; üçünde sayısal olarak daha iyi. | Yabancı veri; "akıllı tahmin" üstünlüğü kanıtlanmadı. |
+| Senaryo laboratuvarı: 240 sentetik işletme (sınav kümesi, bir kez koşuldu) | Kötümser uç aşımı %7, iyimser %10 (hedef %10); Basel yeşil, Kupiec iki uçta da geçiyor. | Sentetik veriyi üreten kurallar bize ait. |
+| Gerçek KOBİ satış verisi: UCI Online Retail II | Yeni satış tahmininde 90 günlük sapma, mevsimsel yöntem işletmenin kendi geçmişinde seçilince %37'den %8'e indi. | Ödeme tarihi yok; yalnızca satış tarafı sınandı. |
+| Bilinen kusur | Yüksek riskte eksiye düşme olasılığı ortaya sıkışık (%80 gösterilen durumda gerçekleşme %92). Panel %50 ve üzerini "en az" diye gösterir. | Yeniden ayar gerçek sonuç verisi gerektirir; pilot sonrasına kayıtlı. |
 
-## Kabul kuralı (model ve özellik dondurma)
+Pilot verisi gelene kadar model ve laboratuvar donduruldu: vekil veride ince ayar yapmak, o veriyi ezberlemek olurdu. Pilot ölçüm planı (önceden kayıtlı başarı ölçütleriyle): [docs/pilot/PILOT_PROTOKOLU.md](docs/pilot/PILOT_PROTOKOLU.md).
 
-- Pilot verisi gelene kadar modele, laboratuvara ve istatistik çerçevesine yeni sürüm, boyut ya da test eklenmez. İstisna: sonucu yalnızca daha ihtiyatlı yapan güvenlik düzeltmeleri.
-- **Dondurmanın istisnası (22.10.2026, proje sahibinin kararıyla):** farklılaşma analizindeki üç küçük alan yapıldı: e-fatura kabul/ret yanıtı, Findeks çek oranı, mali müşavir portföy görünümü. Model değişmedi.
-- **Özellik dondurması (21.10.2026):** pilot başlayana kadar yeni özellik eklenmez. Yalnızca hata ve güvenlik düzeltmeleri ile bir pilot işletmesinin ya da mali müşavirin açıkça istediği şeyler yapılır.
-- Bir uçtaki aşım oranı, örneklem büyüklüğü için Basel trafik ışığında yeşilse ve Kupiec testi geçiyorsa (p ≥ 0,05) o sonuç kabul edilir; ayar yapılmaz. Gerçek oran %10 olsa bile ölçülen oran örneklem küçükken %10'dan belirgin biçimde sapabilir. Basel yeşil bölgesinin üst sınırı (%10'luk uç, `standards.basel_zone`):
+## Çalıştırma
 
-  | Gözlem sayısı | Yeşil bölgede en çok aşım |
-  |---|---|
-  | 35 | 6 (%17) |
-  | 50 | 8 (%16) |
-  | 100 | 14 (%14) |
-  | 240 | 31 (%12,9) |
-  | 1.000 | 115 (%11,5) |
+**İşletme bilgisayarında:** taşınabilir paket `KobiRadar-<sürüm>.zip` açılır ve `KOBI_Radar.bat` çift tıklanır; Python kurmak gerekmez. Panel http://localhost:8501 adresinde, yalnızca o bilgisayardan erişilebilir olarak açılır. Kullanım: [docs/KULLANIM_KILAVUZU.md](docs/KULLANIM_KILAVUZU.md). Güvenlik: [docs/GUVENLIK.md](docs/GUVENLIK.md).
 
-- Bu oranlar bandın ne sıklıkla aşıldığını ölçer; kasa tahmininin yüzde hatası değildir.
-
-## Geliştirme
-
-Sanal ortam, Windows yol uzunluğu sınırına takılmamak için kısa bir yolda durur:
+**Geliştirme (Python 3.13):**
 
 ```bash
-python -m venv C:\Users\HP\.venvs\kobi-radar
-C:\Users\HP\.venvs\kobi-radar\Scripts\python -m pip install -r requirements.txt
-C:\Users\HP\.venvs\kobi-radar\Scripts\python -m pytest -q
-C:\Users\HP\.venvs\kobi-radar\Scripts\python tools/paketle.py
+python -m venv .venv
+.venv\Scripts\python -m pip install -r requirements.txt
+.venv\Scripts\python -m pytest -q
+.venv\Scripts\python -m streamlit run app.py
 ```
 
-Tasarım gerekçeleri: [docs/ARASTIRMA.md](docs/ARASTIRMA.md). Rakipler: [docs/RAKIPLER.md](docs/RAKIPLER.md). Benzer ürünlere göre durum ve fark yaratabilecek alanlar: [docs/FARKLILASMA_ANALIZI.md](docs/FARKLILASMA_ANALIZI.md). Lisanslar ve veri kaynakları: [docs/LISANSLAR.md](docs/LISANSLAR.md).
+Taşınabilir paket: `python tools/paketle.py`. Örnek dosyalar `ornekler/` klasöründe; panelde "Tanıtım için örnek işletme ekle" düğmesi uydurma verilerle dolu bir işletme açar.
 
-## Modüller
+## Yapı
 
 | Dosya | Görev |
 |---|---|
-| `src/radar/ingest.py` | Dosyaları standart tabloya çevirme: fatura listesi, cari hesap ekstresi / muavin, banka ekstresi, çek, borç, gider; vergi takvimi ve resmî tatiller |
-| `src/radar/ubl.py` | UBL-TR e-fatura ayrıştırıcı |
+| `src/radar/ingest.py`, `ubl.py` | Dosyaları standart tabloya çevirme: fatura listesi, cari hesap ekstresi / muavin, banka ekstresi, çek, borç, gider; UBL-TR e-fatura |
 | `src/radar/reconcile.py` | Banka tahsilatı ile fatura eşleştirme (birebir, sonra FIFO ve kısmi) |
 | `src/radar/features.py`, `model.py` | Sızıntısız müşteri özellikleri; LightGBM kantil modeli ve aralık kalibrasyonu |
-| `src/radar/simulate.py` | Korelasyonlu Monte Carlo kasa simülasyonu |
-| `src/radar/fx.py` | Kur belirsizliği (ECB kur geçmişi, konformal genişletme), kurların internetten güncellenmesi |
+| `src/radar/simulate.py`, `fx.py` | Korelasyonlu Monte Carlo kasa simülasyonu; kur belirsizliği (ECB kur geçmişi, konformal genişletme) |
 | `src/radar/pipeline.py` | Uçtan uca akış, geri testler ve basit kıyas yöntemleri |
-| `src/radar/actions.py` | Metrikler, önceliklendirme, mesaj taslakları, TTK m.1530 hesapları |
-| `src/radar/store.py`, `access.py` | Kalıcı kayıt (SQLite), işlem kaydı, şifreli yedek; panel parolası |
-| `src/radar/mailer.py` | Onaylanan taslağın kullanıcının e-posta hesabından gönderilmesi |
+| `src/radar/actions.py`, `mailer.py` | Önceliklendirme, mesaj taslakları, TTK m.1530 hesapları; onaylanan taslağın kullanıcının hesabından gönderimi |
+| `src/radar/store.py`, `access.py` | Kalıcı kayıt (SQLite), işlem kaydı, AES-256-GCM şifreli yedek; panel parolası |
 | `src/radar/pilot.py`, `anonymize.py` | Pilot kayıtları, çevrimiçi izleme, pilot raporu; takma adlı veri paketi |
-| `src/radar/validation.py`, `lab.py`, `open_data.py`, `standards.py` | Doğrulama çerçevesi (dondurulmuş) |
-| `src/radar/synthetic.py`, `benchmark.py` | Sentetik veri; TCMB sektör karşılaştırması (izin gerektirir) |
-| `app.py` | Streamlit paneli |
+| `src/radar/validation.py`, `lab.py`, `open_data.py`, `standards.py` | Doğrulama çerçevesi ve senaryo laboratuvarı |
+| `src/radar/ui/` | Streamlit paneli: veri katmanı, özet ve üç sekme (kasa, tahsilat, tahmin doğruluğu) |
+| `app.py` | Panelin giriş noktası ve kenar çubuğu |
+| `tests/` | 93 test; panel, Streamlit AppTest ile uçtan uca çizilerek sınanır |
+
+Tasarım gerekçeleri: [docs/ARASTIRMA.md](docs/ARASTIRMA.md). Rakip incelemesi: [docs/RAKIPLER.md](docs/RAKIPLER.md), [docs/FARKLILASMA_ANALIZI.md](docs/FARKLILASMA_ANALIZI.md). Senaryo laboratuvarı: [docs/LAB_RAPORU.md](docs/LAB_RAPORU.md). Üçüncü taraf lisansları ve veri kaynakları: [docs/LISANSLAR.md](docs/LISANSLAR.md).
+
+**Veri notu:** Kaggle ve UCI veri setleri depoda yoktur ve yeniden dağıtılmaz. TCMB sektör tablosu, ticari kullanımı TCMB'nin yazılı iznine bağlı olduğu için depoda yoktur; tablo yoksa sektör karşılaştırması gösterilmez.

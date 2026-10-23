@@ -46,7 +46,7 @@ Referans: Kişisel Verileri Koruma Kurumu, *Kişisel Veri Güvenliği Rehberi (T
 | Silme, yok etme, anonim hâle getirme | "Tabloları sil": `secure_delete` ve `VACUUM` ile silinen veri dosyadan da sıfırlanır (testle doğrulandı). "İşletmeyi tamamen sil": bütün tablolar ve geri yükleme öncesi kopyalar kalıcı silinir. Paylaşılan pakette tam anonimlik iddia edilmez (takma adlandırma). |
 | Anahtar yönetimi | Takma ad anahtarı yalnızca yerel klasörde; işletme başına türetilir; paylaşılmaz. Yedek parolası hiçbir yere yazılmaz. |
 
-**İdari tedbirler (Tablo 4.2)** — işletmenin (veri sorumlusunun) sorumluluğunda. Uygulamayla birlikte taslaklar verilir: kişisel veri işleme envanteri ve saklama-imha politikası (docs/kvkk/VERI_ENVANTERI_VE_IMHA.md), veri işleyen sözleşmesi ve gizlilik taahhüdü (pilot protokolü Ek A). VERBİS kaydı, çalışan eğitimi, iç denetim ve kriz/ihlal bildirimi süreçleri işletmenin kendi kurumsal süreçleridir.
+**İdari tedbirler (Tablo 4.2)** — işletmenin (veri sorumlusunun) sorumluluğunda. Uygulamayla birlikte taslaklar verilir: kişisel veri işleme envanteri ve saklama-imha politikası (iç belge; avukat onayı bekliyor), veri işleyen sözleşmesi ve gizlilik taahhüdü (pilot protokolü Ek A). VERBİS kaydı, çalışan eğitimi, iç denetim ve kriz/ihlal bildirimi süreçleri işletmenin kendi kurumsal süreçleridir.
 
 ## Henüz ele alınmayanlar
 
