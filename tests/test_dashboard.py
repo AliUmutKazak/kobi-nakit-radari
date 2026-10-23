@@ -6,8 +6,6 @@ import pandas as pd
 import pytest
 
 
-
-
 def test_dashboard_script_compiles():
     import ast
     from pathlib import Path
@@ -55,7 +53,9 @@ def test_dashboard_renders_demo_and_own_data_without_errors(tmp_path, monkeypatc
     assert not at.exception, [e.value for e in at.exception]
     assert len(at.dataframe) >= 1 and len(at.text_area) == 1
     assert not any("en son hareket" in e.value for e in at.error)
-    assert any("Ortalama tahsil süreniz" in i.value for i in at.info)
+    from radar import benchmark
+    if benchmark.available():                                             # TCMB tablosu yalnızca izinli kurulumda
+        assert any("Ortalama tahsil süreniz" in i.value for i in at.info)
     assert any(w.value.startswith("DİKKAT") for w in at.warning)          # kuru girilmemiş dövizli borç
     assert any(h.value == "Kur değişirse" for h in at.subheader)
     stale = next(w.value for w in at.warning if "Girdiğiniz USD kuru" in w.value)

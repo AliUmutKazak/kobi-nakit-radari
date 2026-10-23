@@ -79,6 +79,9 @@ def sample(split: str, n: int, seed: int = 0, focus: dict | None = None) -> pd.D
         raise ValueError(split)
     rng = np.random.default_rng(SEED_BASE[split] + seed)
     u = qmc.LatinHypercube(d=len(RANGES) + 3, seed=rng).random(n)
+    if not benchmark.available():
+        raise FileNotFoundError(f"Senaryo laboratuvarı TCMB sektör tablosunu gerektirir: {benchmark.TABLE} "
+                                "(yeniden dağıtılamadığı için depoda yok).")
     sectors = benchmark.table()
     sectors = sectors[sectors["duzey"] != "bölüm"]
     rows = []

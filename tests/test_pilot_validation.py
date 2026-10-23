@@ -264,6 +264,9 @@ def test_scenario_lab_generator_split_and_source_anchors(tmp_path, monkeypatch):
     i = generate(seed=4, n_customers=12, as_of=AS_OF, inflation=0.5)
     assert i["amount"].iloc[:5].lt(a["amount"].iloc[:5]).all()
 
+    from radar import benchmark
+    if not benchmark.available():
+        pytest.skip("Senaryo laboratuvarı TCMB sektör tablosunu gerektirir; tablo depoda yok")
     dev, test = lab.sample("gelistirme", 30), lab.sample("sinav", 30)
     assert not set(dev["seed"]) & set(test["seed"])
     for name, (rng_dev, _, _) in lab.RANGES.items():
