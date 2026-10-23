@@ -60,3 +60,5 @@ Taşınabilir paket: `python tools/paketle.py`. Örnek dosyalar `ornekler/` klas
 Tasarım gerekçeleri: [docs/ARASTIRMA.md](docs/ARASTIRMA.md). Rakip incelemesi: [docs/RAKIPLER.md](docs/RAKIPLER.md), [docs/FARKLILASMA_ANALIZI.md](docs/FARKLILASMA_ANALIZI.md). Senaryo laboratuvarı: [docs/LAB_RAPORU.md](docs/LAB_RAPORU.md). Üçüncü taraf lisansları ve veri kaynakları: [docs/LISANSLAR.md](docs/LISANSLAR.md).
 
 **Veri notu:** Kaggle ve UCI veri setleri depoda yoktur ve yeniden dağıtılmaz. TCMB sektör tablosu, ticari kullanımı TCMB'nin yazılı iznine bağlı olduğu için depoda yoktur; tablo yoksa sektör karşılaştırması gösterilmez.
+
+**Lisans:** Tüm hakları saklıdır; kod inceleme için açıktır, izinsiz kullanılamaz ([LICENSE](LICENSE)).
