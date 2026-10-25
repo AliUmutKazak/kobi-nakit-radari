@@ -267,3 +267,9 @@ def test_efatura_application_response_marks_rejected_invoices_disputed(full):
     later = APP_RESPONSE.format(date="2026-09-25", code="KABUL", invoice=ids[0]).encode()
     df2, _ = ingest.load_ubl(invoices + responses + [later], 30)
     assert not df2.set_index("invoice_id").at[ids[0], "disputed"]
+
+
+def test_unknown_religious_holiday_years_are_reported():
+    from radar import ingest
+    assert ingest.holiday_years_unknown(["2026-11-01", "2027-03-01"]) == []
+    assert ingest.holiday_years_unknown(["2027-12-28", "2028-01-26"]) == [2028]

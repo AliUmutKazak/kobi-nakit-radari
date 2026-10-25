@@ -129,6 +129,9 @@ def to_csv_bytes(df: pd.DataFrame, columns: dict[str, str]) -> bytes:
 INVOICE_COLUMNS = {"invoice_id": "Fatura No", "customer_name": "Cari Unvan", "vkn": "VKN", "issue_date": "Fatura Tarihi",
                    "due_date": "Vade Tarihi", "amount": "Tutar", "open_amount": "Kalan", "paid_date": "Ödeme Tarihi"}
 PAYMENT_COLUMNS = {"date": "Tarih", "amount": "Tutar", "description": "Açıklama"}
+RETRO_COLUMNS = ["ufuk_gun", "tahmin_tarihi_sayisi", "sapma_model_%", "sapma_medyan_%", "sapma_vade_%", "sapma_oran_%",
+                 "bant_ici", "aralik_skoru_%", "dm_sonuc", "dm_kiyas", "alt_asim", "ust_asim", "basel_alt", "kupiec_p",
+                 "b1_m1", "b1_m2", "b1_kontrol", "b1_m1_tahmin", "b1_m1_se"]
 
 
 SAFE_LABELS = ("maaş", "kira", "sgk", "kdv", "muhtasar", "vergi", "kredi", "elektrik", "doğalgaz", "su",
@@ -144,7 +147,8 @@ def _safe_label(value) -> str:
 
 def package(company: str, invoices: pd.DataFrame, key: str, payments: pd.DataFrame | None = None,
             extra: dict[str, pd.DataFrame] | None = None, records: pd.DataFrame | None = None,
-            round_to: float | None = None, retention_days: int = 30) -> tuple[bytes, dict]:
+            round_to: float | None = None, retention_days: int = 30, retro: pd.DataFrame | None = None,
+            margins: dict | None = None) -> tuple[bytes, dict]:
     """Bir işletmenin takma adlandırılmış dosyalarını zip olarak verir; yanında ne yapıldığının özeti.
 
     `invoices` ve `payments` henüz takma adlandırılmamış standart tablolardır; `extra` (giderler, çekler)
@@ -180,6 +184,15 @@ def package(company: str, invoices: pd.DataFrame, key: str, payments: pd.DataFra
         # İleriye dönük pilot kayıtları yalnızca tarih, ufuk ve tutar içerir; olduğu gibi aktarılır.
         files["pilot_kayitlari.csv"] = records.to_csv(index=False).encode("utf-8-sig")
         summary["pilot_kaydı"] = int(records["as_of"].nunique())
+    if retro is not None and len(retro):
+        # Aşama 0 özeti (protokol 1.6-1.8): ufuk başına toplu sapma ve test sonuçları; kişisel veri ya da fatura yok.
+        keep = [c for c in RETRO_COLUMNS if c in retro]
+        files["asama0.csv"] = retro[keep].to_csv(index=False).encode("utf-8-sig")
+        summary["asama0"] = f"{int(retro['tahmin_tarihi_sayisi'].max())} haftalık geriye dönük test"
+    if margins:
+        import json
+        files["b1_marj.json"] = json.dumps(margins, ensure_ascii=False, indent=1).encode("utf-8")
+        summary["b1_marj"] = "dondurulmuş B1 kabul marjı (protokol 1.7)"
     if round_to:
         summary["yuvarlama"] = f"bütün tutarlar {round_to:,.0f} TL'ye yuvarlandı".replace(",", ".")
     today = pd.Timestamp.now().normalize()

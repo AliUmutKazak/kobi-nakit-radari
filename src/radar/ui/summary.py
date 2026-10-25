@@ -82,15 +82,19 @@ def render(res, store, own, businesses):
                     "Tahmin tarihi": pd.Timestamp(o["as_of"]).strftime("%d.%m.%Y"), "Son hesap": saved.get("hesap", "")}
                     if o else {"Eksiye düşme riski": float("nan"), "Son hesap": "henüz hesaplanmadı"})})
             table = pd.DataFrame(rows).sort_values("Eksiye düşme riski", ascending=False, na_position="last")
-            show_table(table.assign(**{"Eksiye düşme riski": table["Eksiye düşme riski"].map(
-                lambda v: "–" if v != v else (f"en az %{v * 100:.0f}" if v >= HIGH_RISK else f"%{v * 100:.0f}"))}),
-                width="stretch", hide_index=True)
+            # Metin olarak gösterilir ("en az %X"); sütun adında "risk" geçerse show_table sayıya çevirip boşaltıyordu.
+            table.insert(1, "90 günde eksiye düşme", table.pop("Eksiye düşme riski").map(
+                lambda v: "–" if v != v else (f"en az %{v * 100:.0f}" if v >= HIGH_RISK else f"%{v * 100:.0f}")))
+            show_table(table, width="stretch", hide_index=True)
             st.caption("Her satır, o işletme panelde en son açıldığında hesaplanan özettir; güncel görmek için işletmeyi "
                        "seçip açın. Yalnızca bu bilgisayarda kayıtlı işletmeler gösterilir ve hiçbir veri başka yere "
                        "gönderilmez. Tabloda müşteri adı ya da fatura bilgisi yoktur. Her işletme için işletmeyle yapılan "
                        "sözleşme ve mali müşavirin sır saklama yükümlülüğü (3568 sayılı Kanun) geçerlidir.")
 
-    c = st.columns(6)
+    # İki satır üçer gösterge: tek satırda altı gösterge dizüstü genişliğinde (1366 piksel) tutarları kesiyordu.
+    # Üst satır karar sayıları (kasa, güvenle harcanabilir, risk), alt satır alacak durumu.
+    top, bottom = st.columns(3), st.columns(3)
+    c = [top[0], bottom[0], bottom[1], bottom[2], top[2], top[1]]
     c[0].metric("Kasa ve banka", tl(res["opening"], compact=True), help="Bugün kasada ve bankada olan toplam para.")
     c[5].metric("Güvenle harcanabilir", tl(pipeline.safe_to_spend(sim), compact=True),
                 help="Bugün bundan fazlasını plan dışı harcarsanız, önümüzdeki 90 günde kasanın en az bir gün eksiye düşmesi "

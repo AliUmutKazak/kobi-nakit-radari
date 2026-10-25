@@ -98,6 +98,7 @@ def test_dashboard_renders_demo_and_own_data_without_errors(tmp_path, monkeypatc
     assert not at.exception, [e.value for e in at.exception]
     assert at.session_state["active_business"] == "Örnek İşletme (uydurma veri)" and len(at.metric) == 10
     assert not any("en son hareket" in e.value for e in at.error)
+    assert not any("hangi gün girildiği kayıtlı değil" in w.value for w in at.warning)   # tanıtımda yanlış uyarı yok
     at.sidebar.selectbox[0].set_value("İşletmem").run()
     at.sidebar.date_input[0].set_value(datetime.date(2026, 10, 20)).run()
     assert any("en son hareket" in e.value for e in at.error)             # 19 gün eski veri uyarısı

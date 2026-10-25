@@ -697,6 +697,12 @@ _RELIGIOUS_HOLIDAYS = {
 }
 
 
+def holiday_years_unknown(dates) -> list[int]:
+    """Dini bayram tarihleri henüz eklenmemiş yıllar (yalnızca sabit tarihli tatiller bilinir)."""
+    years = {pd.Timestamp(d).year for d in dates}
+    return sorted(y for y in years if y not in _RELIGIOUS_HOLIDAYS)
+
+
 def is_holiday(day) -> bool:
     day = pd.Timestamp(day)
     return f"{day:%m-%d}" in _FIXED_HOLIDAYS or f"{day:%Y-%m-%d}" in _RELIGIOUS_HOLIDAYS.get(day.year, [])

@@ -35,6 +35,8 @@ Pilot verisi gelene kadar model ve laboratuvar donduruldu: vekil veride ince aya
 python -m venv .venv
 .venv\Scripts\python -m pip install -r requirements.txt
 .venv\Scripts\python -m pytest -q
+.venv\Scripts\python -m pip install ruff
+.venv\Scripts\python -m ruff check --select F,E9 app.py src tests tools
 .venv\Scripts\python -m streamlit run app.py
 ```
 

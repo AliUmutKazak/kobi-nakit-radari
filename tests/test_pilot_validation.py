@@ -388,3 +388,56 @@ def test_pooled_b1_replaces_vote_counting():
     assert re1["k"] == 1 and re1["ci"] == pytest.approx((2 - 1.959964, 2 + 1.959964), abs=1e-4)
     same = standards.random_effects([1.0, 1.0, 1.0], [1.0, 1.0, 1.0])
     assert same["tau2"] == 0 and same["ci"][1] - same["ci"][0] > 2 * 1.96 / np.sqrt(3)
+
+
+def test_pilot_data_chain_end_to_end_with_three_synthetic_firms(tmp_path):
+    """Pilot veri zincirinin provası: her işletmede Aşama 0 ve haftalık ileriye dönük kayıtlar; takma adlı paket;
+    Proje tarafında paketlerden işletme satırları ve birleşik karar (protokol 1.8). Gerçek veri gelmeden zincirin
+    kopuk halkası kalmadığını gösterir."""
+    import sys
+    import zipfile
+
+    from radar import anonymize, pilot
+    from radar.store import Store
+
+    root = Path(__file__).parents[1]
+    sys.path.insert(0, str(root / "tools"))
+    from pilot_birlesik import from_packages
+
+    unpacked = tmp_path / "paketler"
+    for seed in (21, 22, 23):
+        full = generate(seed=seed, n_customers=20, months=18, as_of=AS_OF)
+        now = observe(full, AS_OF)
+        # Aşama 0 (testte 4 hafta) ve marj: ilk kayıttan önce dondurulur.
+        retro = pilot.cash_backtest(now, pd.Timestamp(AS_OF) - pd.Timedelta(days=100), origins=4, step=7)
+        margins = {"m2": {str(int(r["ufuk_gun"])): r["b1_m2"] for _, r in retro.iterrows() if pd.notna(r["b1_m2"])},
+                   "m1": {str(int(r["ufuk_gun"])): r["b1_m1"] for _, r in retro.iterrows() if pd.notna(r["b1_m1"])}}
+        # Haftalık ileriye dönük kayıtlar: o gün görülen veriyle; ufuklar AS_OF'tan önce doluyor.
+        store = Store(tmp_path / f"firma{seed}.db")
+        for k in range(10):                     # 30 günlük ufukta en az iki bağımsız blok (2 × 5 hafta)
+            t = pd.Timestamp(AS_OF) - pd.Timedelta(days=100 - 7 * k)
+            record = pilot.forward_record(observe(full, t), t, n_sims=300)
+            store.add_pilot_record(t, record, meta={"acilis_guncel": False})
+        blob, summary = anonymize.package(f"Firma {seed}", now, "test-anahtari", records=store.pilot_records(),
+                                          retro=retro, margins=margins)
+        assert "asama0" in summary and "b1_marj" in summary
+        with zipfile.ZipFile(__import__("io").BytesIO(blob)) as z:
+            names = z.namelist()
+            assert any(n.endswith("asama0.csv") for n in names) and any(n.endswith("b1_marj.json") for n in names)
+            z.extractall(unpacked)
+    firms = from_packages(unpacked)
+    assert firms["isletme"].nunique() == 3 and set(firms["ufuk_gun"]) == {14, 30}
+    assert firms[["fark_tahmin", "fark_se", "m1_tahmin", "m1_se"]].notna().all().all()
+    pooled = pilot.pooled_b1(firms)
+    assert set(pooled["ufuk_gun"]) == {14, 30} and (pooled["isletme"] == 3).all()
+    assert (pooled["yetersiz_kayitli_isletme"] == 0).all()
+    # Az kayıtlı işletme sessizce düşmez, sayısı raporlanır.
+    short = pilot.pooled_b1(firms.assign(fark_se=np.where(firms["isletme"] == firms["isletme"].iloc[0], np.nan,
+                                                          firms["fark_se"])))
+    assert (short["yetersiz_kayitli_isletme"] == 1).all() and (short["isletme"] == 2).all()
+    assert pooled["B1_sonuc"].isin(["üstün", "eşdeğer (marj içinde)", "kanıtlanamadı",
+                                    "kanıtlanamadı (marj belirlenemedi)", "geride (marjın dışında)"]).all()
+    assert pooled["B2_kayit"].gt(0).all()
+    # Pakette fatura numarası ya da müşteri adı yerine takma adlar var; Aşama 0 dosyası yalnızca toplu sayılar.
+    a0 = pd.read_csv(next(unpacked.rglob("asama0.csv")))
+    assert set(a0.columns) <= set(anonymize.RETRO_COLUMNS)

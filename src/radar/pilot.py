@@ -293,12 +293,14 @@ def pooled_b1(firms: pd.DataFrame) -> pd.DataFrame:
     yöntem sayar."""
     out = []
     for h, g in firms.groupby("ufuk_gun"):
+        usable = g["fark_tahmin"].notna() & g["fark_se"].gt(0)
         diff = random_effects(g["fark_tahmin"], g["fark_se"])
         m1 = random_effects(g["m1_tahmin"], g["m1_se"]) if {"m1_tahmin", "m1_se"} <= set(g) else {"ci": None}
         m1_lo = m1["ci"][0] if m1.get("ci") else None
         m2 = MARGIN_FRACTION * m1_lo if m1_lo is not None and m1_lo > 0 else None
         passed, result = b1_decision(diff["ci"], m2, False)
-        row = {"ufuk_gun": int(h), "isletme": diff["k"], "fark_birlesik": diff["estimate"],
+        row = {"ufuk_gun": int(h), "isletme": diff["k"], "yetersiz_kayitli_isletme": int((~usable).sum()),
+               "fark_birlesik": diff["estimate"],
                "fark_ci95": diff["ci"], "tau2": diff["tau2"], "m1_alt_sinir": m1_lo, "m2": m2,
                "B1": passed, "B1_sonuc": result}
         if {"kayit", "alt_asim", "ust_asim"} <= set(g):           # B2 birleşik: aşımlar toplanır
@@ -308,6 +310,39 @@ def pooled_b1(firms: pd.DataFrame) -> pd.DataFrame:
                         "B2_kupiec_ust_p": kupiec_pof(n, hi, 0.10)["p_value"]})
         out.append(row)
     return pd.DataFrame(out)
+
+
+def package_rows(folder) -> tuple[pd.DataFrame, dict]:
+    """Proje tarafı: bir işletmenin açılmış takma adlı pilot paketinden birleşik analiz satırları (ufuk başına) ve o
+    işletmenin dondurulmuş marjı. Paket: faturalar.csv (güncel), isteğe bağlı ekstre.csv, pilot_kayitlari.csv,
+    asama0.csv, b1_marj.json. Puanlama paneldekiyle aynı koddur (score)."""
+    from pathlib import Path
+
+    from .ingest import load_invoices, load_payments
+    from .reconcile import reconcile
+
+    folder = Path(folder)
+    later, _ = load_invoices(folder / "faturalar.csv")
+    if (folder / "ekstre.csv").exists():
+        paid, allocations, _ = reconcile(later.assign(open_amount=later["amount"], paid_date=pd.NaT),
+                                         load_payments(folder / "ekstre.csv")[0])
+        events = collection_events(paid, allocations)
+    else:
+        events = collection_events(later)
+    margins = json.loads((folder / "b1_marj.json").read_text(encoding="utf-8")) if (folder / "b1_marj.json").exists() else {}
+    m2 = {int(h): float(v) for h, v in margins.get("m2", {}).items()}
+    records = records_from_table(pd.read_csv(folder / "pilot_kayitlari.csv"))
+    _, summary = score(records, later, events=events, margins=m2)
+    rows = summary[summary["hedef"] == "tahsilat"] if len(summary) else summary
+    out = pd.DataFrame({"isletme": folder.name, "ufuk_gun": rows.get("ufuk_gun", []),
+                        "fark_tahmin": rows.get("fark_tahmin", []), "fark_se": rows.get("fark_se", []),
+                        "kayit": rows.get("kayit", []), "alt_asim": rows.get("alt_asim", []),
+                        "ust_asim": rows.get("ust_asim", [])})
+    if (folder / "asama0.csv").exists():
+        retro = pd.read_csv(folder / "asama0.csv").set_index("ufuk_gun")
+        for col, src in (("m1_tahmin", "b1_m1_tahmin"), ("m1_se", "b1_m1_se")):
+            out[col] = out["ufuk_gun"].map(retro[src]) if src in retro else float("nan")
+    return out.reset_index(drop=True), margins
 
 
 def summarize_backtest(bt: pd.DataFrame, step: int) -> pd.DataFrame:
@@ -758,7 +793,9 @@ def score(records: list[dict], later: pd.DataFrame, events: pd.DataFrame | None 
             row["fark_guven_araligi"] = ci(diffs, 90)
             ci95 = ci(diffs)
             row["fark_tahmin"] = float(err(g, "model") - min(err(g, m) for m in strong))
-            row["fark_se"] = float(np.std(diffs, ddof=1))
+            # En az iki bağımsız blok yoksa bootstrap değişkenliği ölçemez (bütün örnekler aynı olur); standart hata
+            # verilmez ve işletme birleşik analizde "yetersiz kayıt" olarak raporlanır.
+            row["fark_se"] = float(np.std(diffs, ddof=1)) if len(dates) >= 2 * block else float("nan")
         else:
             row["fark_guven_araligi"] = None
         row["fark_guven_araligi_95"] = ci95

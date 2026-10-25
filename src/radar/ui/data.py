@@ -158,6 +158,11 @@ def run_own(path: str, rev: int, as_of: str, include_projected: bool):
         plan = ingest.fixed_cost_plan(as_of, payroll_day=int(float(store.get("fixed_payroll_day", 1))),
                                       rent_day=int(float(store.get("fixed_rent_day", 1))), **fixed)
         notes.append(f"Aylık sabit giderlerden {len(plan)} ödeme ({tl(plan['amount'].sum())}) eklendi.")
+        unknown = ingest.holiday_years_unknown(plan["date"]) if len(plan) else []
+        if unknown:
+            notes.append(f"{', '.join(map(str, unknown))} yılının Ramazan ve Kurban Bayramı tarihleri programda henüz yok; "
+                         "vergi ödeme günleri yalnızca hafta sonu ve sabit tarihli tatillere göre kaydırıldı. Program "
+                         "güncellenmeli (Diyanet resmî tatil listesi).")
         plan = plan.assign(kaynak="Aylık sabit giderler", tur="Varsayım (elle girilen)")
         outflows = plan if outflows is None else pd.concat([outflows, plan], ignore_index=True)
     if payables is not None:
@@ -262,8 +267,11 @@ def run_pilot(key, _res, label, hide, retro_json="", store_path=""):
 
 def anonymous_package(store: Store, seller: str):
     extra = {"giderler": store.load("outflows"), "odenecekler": store.load("payables"), "cekler": store.load("cheques")}
+    retro_json = store.get("retro_result", "")
+    retro = pd.read_json(io.StringIO(retro_json), orient="records") if retro_json else None
+    margins = json.loads(store.get("b1_margins", "{}")) or None
     return anonymize.package(seller or "İşletme", store.load("invoices"), secret_key(store),
-                             store.load("payments"), extra, records=store.pilot_records())
+                             store.load("payments"), extra, records=store.pilot_records(), retro=retro, margins=margins)
 
 
 
@@ -289,6 +297,7 @@ def add_sample_business():
     obs = synthetic.observe(synthetic.generate(seed=7, as_of=today), today)
     # Açılış kasası bilerek düşük: tanıtımda risk ve "açığı kapatmak için ne gerekir" bölümü görünsün.
     sample.set("opening", round(synthetic.cash_plan(obs, today, opening_months=0.3)[0], -3))
+    sample.set("opening_date", f"{pd.Timestamp(today):%Y-%m-%d}")   # tanıtımda "kasa tutarı tarihi yok" uyarısı çıkmasın
     sample.set("seller", "Örnek Ticaret A.Ş. (MERSİS 0000000000000000)")
     st.session_state["active_business"] = SAMPLE_NAME
 
