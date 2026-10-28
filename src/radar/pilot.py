@@ -20,7 +20,7 @@ from .reconcile import collection_events
 from .standards import (SIGNIFICANCE, basel_zone, diebold_mariano, interval_report, kupiec_pof,
                         passes as interval_passes, random_effects)
 
-VERSION = "2026.10.25"            # tahmin kaydına yazılır: hangi kod sürümüyle üretildiği
+VERSION = "2026.10.28"            # tahmin kaydına yazılır: hangi kod sürümüyle üretildiği
 MIN_HISTORY_DAYS = 365            # protokol 2. bölüm: en az 12 aylık fatura geçmişi; altında geri test yapılmaz
 # Aşama 0 (protokol 1.6): ileriye dönük pilotla aynı tanım, geçmişe uygulanmış hâli. Kayan başlangıç noktalı
 # değerlendirme (rolling origin; Tashman 2000, International Journal of Forecasting 16): haftada bir tahmin günü,
@@ -31,6 +31,11 @@ RETRO_MIN_TRAIN_DAYS = 180
 RETRO_MIN_ORIGINS = 4              # Diebold-Mariano testi için en az kayıt (accuracy_test)
 MIN_MATCH_RATE = 0.80             # banka tahsilatlarının bu oranın altında eşleştiği kayıt uyarılıdır, B1'e girmez
 ALPHA = 0.2                       # P10–P90 aralığı: %80 merkezi aralık
+SCOPE_NAMES = {"banka_ekstresi": "banka ekstresi", "giderler": "giderler (gider dosyası ya da aylık sabit giderler)",
+               "odenecek_faturalar": "ödenecek faturalar", "cekler": "çek/senet portföyü", "yeni_satislar": "yeni satışlar"}
+# Hiçbir yüklemeyle tahmine girmeyen kalemler (saha hazırlık değerlendirmesi 28.10.2026; AFP: varsayımlar görünür olmalı).
+NEVER_IN_SCOPE = ("yeni kredi kullanımı ve kredinin erken kapanması, hesaplar ya da ortaklarla para transferleri, "
+                  "henüz bilinmeyen yeni yükümlülükler")
 
 
 def _interval_score(lo, hi, y):
@@ -76,11 +81,12 @@ def _band_svg(sim, width: int = 720, height: int = 220) -> str:
 def build(obs: pd.DataFrame, as_of, opening: float = 0.0, outflows: pd.DataFrame | None = None,
           label: str = "İşletme", cheques: pd.DataFrame | None = None, unmatched: pd.DataFrame | None = None,
           n_payments: int | None = None, res: dict | None = None, key: str | None = None,
-          retro: pd.DataFrame | None = None) -> dict:
+          retro: pd.DataFrame | None = None, opening_date: str | None = None) -> dict:
     """Raporun bütün sayılarını hesaplar (HTML'den bağımsız; testlerde de kullanılır).
 
     `res` verilirse (panelde zaten hesaplanmış tahmin) kasa yeniden simüle edilmez. `key` verilirse
-    öncelik listesindeki müşteri adları takma adlarla değiştirilir (rapor paylaşılacaksa)."""
+    öncelik listesindeki müşteri adları takma adlarla değiştirilir (rapor paylaşılacaksa). `opening_date`: kasa ve
+    banka tutarının girildiği gün (kapsam tablosunda gösterilir)."""
     as_of = pd.Timestamp(as_of)
     if res is None:
         flows = outflows if outflows is not None else pd.DataFrame({"date": [], "amount": []})
@@ -96,6 +102,7 @@ def build(obs: pd.DataFrame, as_of, opening: float = 0.0, outflows: pd.DataFrame
     }
     if n_payments:
         quality["Banka tahsilatlarının faturalarla eşleşme oranı"] = _pct(1 - (len(unmatched) if unmatched is not None else 0) / n_payments)
+    coverage = coverage_table(res, as_of, opening_date)
     history_days = (obs["issue_date"].max() - obs["issue_date"].min()).days
     delays = delay_study(obs, origins=4, step=60) if history_days >= MIN_HISTORY_DAYS else pd.DataFrame()
     # Veri tahmin tarihinden eskiyse, son hareketten sonraki ödemeler bilinmez; geri test orada biter.
@@ -103,11 +110,31 @@ def build(obs: pd.DataFrame, as_of, opening: float = 0.0, outflows: pd.DataFrame
         cash = retro
     else:
         cash = cash_backtest(obs, min(as_of, last)) if history_days >= MIN_HISTORY_DAYS else pd.DataFrame()
-    return {"label": label, "as_of": as_of, "res": res, "quality": quality, "delays": delays, "cash": cash,
+    return {"label": label, "as_of": as_of, "res": res, "quality": quality, "coverage": coverage, "delays": delays, "cash": cash,
             "retro": retro is not None and len(retro) > 0,
             "gap": gap_summary(res), "weeks": weekly_table(res), "top": _top(res, key, obs),
             "record": forward_record(obs, as_of, events=res.get("events") if isinstance(res, dict) else None,
                                      payments_through=res["info"].get("payments_through")), "cash_record": cash_record(res)}
+
+
+def coverage_table(res: dict, as_of, opening_date: str | None = None) -> dict:
+    """Bu tahmine neyin girdiği: kasa tutarının tarihi, tahsilat kayıtlarının son günü, dahil ve dışarıda kalan
+    kaynaklar. Kasa tahmini eksik gider ya da borca duyarlıdır; okuyan kişi neyin hesaba katılmadığını görmelidir."""
+    as_of = pd.Timestamp(as_of).normalize()
+    if opening_date:
+        day = pd.Timestamp(opening_date)
+        opened = f"{day:%d.%m.%Y}" + ("" if day >= as_of else f" (tahmin tarihinden {(as_of - day).days} gün önce)")
+    else:
+        opened = "kayıtlı değil"
+    through = res["info"].get("payments_through")
+    rows = {"Kasa ve banka tutarının girildiği gün": opened,
+            "Tahsilatların işlendiği son gün": f"{pd.Timestamp(through):%d.%m.%Y}" if through is not None else "–"}
+    scope = res.get("scope") or {}
+    if scope:
+        rows["Tahmine dahil kaynaklar"] = ", ".join(["açık faturalar"] + [SCOPE_NAMES[k] for k, v in scope.items() if v])
+        rows["Yüklenmediği için dahil olmayan"] = ", ".join(SCOPE_NAMES[k] for k, v in scope.items() if not v) or "yok"
+    rows["Hiçbir durumda dahil olmayan"] = NEVER_IN_SCOPE
+    return rows
 
 
 SIMPLE_METHODS = {"medyan": ("naive_median", "müşteri her zamanki kadar geç öder"),
@@ -515,6 +542,7 @@ def verdict(delays: pd.DataFrame, cash: pd.DataFrame) -> str:
 def render(r: dict) -> str:
     res, sim, gap = r["res"], r["res"]["sim"], r["gap"]
     quality = pd.DataFrame(list(r["quality"].items()), columns=["Ölçüt", "Değer"])
+    coverage = pd.DataFrame(list(r.get("coverage", {}).items()), columns=["Kalem", "Durum"])
     rec = r["record"]
     record = pd.DataFrame({"Ufuk": [f"{h} gün ({pd.Timestamp(u):%d.%m.%Y} dahil)" for h, u in zip(rec["horizon"], rec["until"])],
                            "Model, kötümser": rec["p10"].map(_tl), "Model, orta (P50)": rec["p50"].map(_tl),
@@ -584,6 +612,8 @@ svg{{width:100%;height:auto}} .band{{fill:var(--band)}} .mid{{fill:none;stroke:v
 <div class="kpi"><div>Kasa ve banka<b>{_tl(res['opening'])}</b></div><div>Açık alacak<b>{_tl(res['metrics']['open_ar'])}</b></div>
 <div>Vadesi geçmiş<b>{_tl(res['metrics']['overdue_ar'])}</b></div><div>90 günde eksiye düşme riski<b>{_pct(sim.prob_any_breach)}</b></div></div>
 <p>{html.escape(risk_line)}</p>
+<h2>Tahminin kapsamı</h2>{_table(coverage)}
+<p class="note">Kasa tahmini yalnızca dahil olan kaynakları içerir. Dışarıda kalan büyük bir ödeme ya da tahsilat, bütün çizgiyi o tutar kadar kaydırır.</p>
 <h2>90 günlük kasa</h2>{_band_svg(sim)}
 <p class="note">Mavi bant: kasanın %80 olasılıkla içinde kalacağı aralık. Çizgi: orta tahmin (P50, medyan); gerçekleşenin altında ya da üstünde kalma olasılığı eşittir. Kırmızı kesikli: sıfır.</p>
 <h2>13 haftalık plan</h2>{_table(weeks)}
@@ -606,7 +636,12 @@ Kasa, 2.000 senaryolu Monte Carlo simülasyonuyla hesaplanır; müşterilerin bi
 hatasından ölçülür. İki herkese açık gerçek veri setinde model, "müşteri her zamanki kadar geç öder" yöntemiyle başa baş, "vadesinde ödenir"
 varsayımından daha isabetli çıkmıştır; "son dönemin tahsilat oranı" yöntemi ise bir veri setinde modelden isabetli, diğerinde
 geride kalmıştır (proje belgeleri: DOGRULAMA.md). Bu yüzden rapor, modeli her işletmenin kendi geçmişinde bu yöntemlerle yarıştırır. Gecikmeler hızla kötüleşiyorsa tahmin iyimser kalabilir.
-Kur değişimi, yeni kredi ve plan dışı büyük giderler dahil değildir.</p>
+Dövizli kalemlerde kur belirsizliği Avrupa Merkez Bankası kur geçmişinden banda katılır. Plan dışı ödemeler yalnızca banka ekstresi
+yüklenmişse, işletmenin kendi banka çıkışlarından tahmini olarak eklenir.
+Öğrenen model, vadesinden en az 60 gün geçtiği hâlde henüz ödenmemiş faturaları eğitimde "bugüne kadarki gecikme" ile etiketler
+(sağdan sansür); bu, uzun gecikmeleri olduğundan kısa gösterebilir. Bant, geçmiş tarihlerdeki tahmin hatasından sansürü hesaba katarak
+ölçüldüğü için etki kısmen dengelenir;
+sansürü doğrudan modelleyen sağkalım yöntemiyle karşılaştırma pilot sonrasına kayıtlıdır.</p>
 </body></html>"""
 
 

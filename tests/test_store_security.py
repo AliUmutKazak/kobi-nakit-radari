@@ -90,6 +90,12 @@ def test_security_hardening(tmp_path, monkeypatch):
     monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
     monkeypatch.delenv("RADAR_DB", raising=False)
     assert default_path() == tmp_path / "KobiRadar" / "radar.db"
+    # Veritabanı bulutla eşitlenen bir klasördeyse panel uyarır (müşteri verisi buluta kopyalanmasın).
+    from radar.store import synced_folder
+    monkeypatch.setenv("OneDrive", str(tmp_path / "OneDrive"))
+    assert synced_folder(tmp_path / "OneDrive" / "Masaüstü" / "radar.db") == str(tmp_path / "OneDrive")
+    assert synced_folder(tmp_path / "Dropbox" / "radar.db") == "Dropbox"
+    assert synced_folder(default_path()) is None
     store = Store(tmp_path / "x.db")
     with pytest.raises(ValueError):
         store.load("invoices; DROP TABLE settings")

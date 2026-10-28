@@ -3,9 +3,9 @@ import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 
-from radar import pipeline
+from radar import pilot, pipeline
 from radar.ui.data import run_customer_delay, run_fx_shift, run_gap, run_scenario
-from radar.ui.fmt import SCOPE_NAMES, show_table, tl, turkish_axes
+from radar.ui.fmt import show_table, tl, turkish_axes
 
 
 def render(res, res_key):
@@ -24,7 +24,7 @@ def render(res, res_key):
                "eşittir. Kırmızı kesikli çizgi sıfır.")
     if scope and not all(scope.values()):
         st.caption("Kapsam dışı (grafiğe dahil değil): "
-                   + ", ".join(SCOPE_NAMES[k] for k, v in scope.items() if not v) + ".")
+                   + ", ".join(pilot.SCOPE_NAMES[k] for k, v in scope.items() if not v) + ".")
     with st.expander("13 haftalık plan"):
         st.caption("Bilinen çıkışlar (giderler, borçlar) kesin kabul edilir. Tahsilat sütunları tahmindir: açık faturalar "
                    "müşterilerin geçmiş ödeme davranışından, yeni satışlar son 90 günün satış hızından gelir.")

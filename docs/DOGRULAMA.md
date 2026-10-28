@@ -2,6 +2,14 @@
 
 Tarih: 14 Ekim 2026. Yeniden üretmek için: `python run_validation.py 24` (yaklaşık 3 dakika).
 
+## Bilinen sınır: eğitim etiketlerinde sağdan sansür (28 Ekim 2026)
+
+Saha hazırlık değerlendirmesi (28.10.2026) şunu söyledi: `model.py` ödenmemiş faturaların o güne kadarki gecikmesini hedef değer olarak kullanıyor. Kodla karşılaştırıldı, **doğru**. `model.training_frame` yalnızca vadesi en az 60 gün önce dolmuş faturaları eğitime alır; bunlardan hâlâ ödenmemiş olanların etiketi "bugüne kadarki gecikme"dir. Bu değer gerçek gecikmenin yalnızca alt sınırıdır (sağdan sansür). Etkisi, uzun gecikmeleri ve üst kantilleri olduğundan kısa göstermektir; en çok, gecikmeleri uzayan işletmede belirir.
+
+Kısmi dengeleyiciler: (1) 60 günlük olgunluk süresi, yalnızca hızlı ödenen yeni faturaların seçilmesini önler. (2) Bant ve kalibrasyon, geçmiş tahmin tarihlerinde gerçekleşenle ölçülür ve ödenmemiş faturalar orada sansürlü en çok olabilirlikle ele alınır (aşağıda, "düzeltilen kusurlar" 4). (3) Açık faturanın yaşı simülasyonda "bugüne kadar ödenmedi" koşuluyla kırpılır. Bunlar sorunu ortadan kaldırmaz; nokta tahmin yine kısa kalabilir.
+
+Karar: model dondurması nedeniyle (pilot verisi görülmeden vekil veride ayar yapılmaz) şimdi değiştirilmiyor. Pilot raporunun "Yöntem ve sınırlar" bölümüne yazıldı. Pilot sonrasında sansürü doğrudan modelleyen ayrık zamanlı sağkalım modeli (Saini vd. 2024, Discover Analytics) mevcut modele karşı aynı kayan başlangıçlı prosedürle (Tashman 2000) sınanır; yöntem pilot verisine göre ayarlanıp aynı dönemle başarı ilan edilmez (GIDISAT_DEGERLENDIRMESI.md, madde 13–14).
+
 ## Kur belirsizliği: ECB kurlarıyla geçmişe dönük sınama (20 Ekim 2026)
 
 Dövizli alacağın TL karşılığı, kur sabit sayılınca 2010–2026'da 30–90 günlük dönemlerin %24–36'sında bugünkünden düşük çıktı. Alacak ağırlıklı dövizde (TL'nin ortalama değer kaybı çıkarılmış tarihsel benzetim) kötümser uç %4–7 aşıldı. Borç ağırlıklı dövizde aynı yöntem iyimser kalıyordu (üst uç %15–27). Bu yüzden son 3 yılın kur hareketleri değer kaybıyla birlikte kullanılıyor ve bant konformal olarak genişletiliyor. Seçim 2010–2017, sınav 2018–2026 (bir kez): borç tarafında aşım %12,1'den %9,5'e indi (390 dönem). Ayrıntı: [HATA_AZALTMA_ANALIZI.md](HATA_AZALTMA_ANALIZI.md), bölüm 7. Yeniden üretmek için: `python tools/kur_sinamasi.py`.
@@ -101,10 +109,12 @@ Kabul ölçütleri projede belirlenmez; şu kaynaklardan alınır (kod: `src/rad
 
 | Soru | Standart | Kaynak |
 |---|---|---|
-| Kasa, kötümser tahminin (P10) altına beklenenden sık düşüyor mu? (riskli uç) | Trafik ışığı: doğru modelde "bu kadar ya da daha az aşım" olasılığı ≥ %95 sarı, ≥ %99,99 kırmızı; sınırlar örneklem büyüklüğüne göre binom dağılımından | Basel Bankacılık Denetim Komitesi, BCBS 22 (1996); Türkiye: BDDK, Risk Ölçüm Modelleri ile Piyasa Riskinin Hesaplanmasına ... İlişkin Tebliğ, RG 03.11.2006/26335 (aynı 4 / 5–9 / 10+ sınırları) |
+| Kasa, kötümser tahminin (P10) altına beklenenden sık düşüyor mu? (riskli uç) | Basel tipi trafik ışığı (uyarlanmış): doğru modelde "bu kadar ya da daha az aşım" olasılığı ≥ %95 sarı, ≥ %99,99 kırmızı; sınırlar örneklem büyüklüğüne göre binom dağılımından | Bölge kuralı: Basel Bankacılık Denetim Komitesi, BCBS 22 (1996); güncel metin Basel Çerçevesi MAR32 ve MAR99. Türkiye'de aynı 4 / 5–9 / 10+ sınırları: BDDK, Risk Ölçüm Modelleri ile Piyasa Riskinin Hesaplanmasına ... İlişkin Tebliğ, RG 03.11.2006/26335 |
 | Aralık doğru genişlikte mi (fazla dar ya da fazla geniş)? | Kupiec olabilirlik oranı testi, iki yönlü, %5 | Kupiec (1995), Journal of Derivatives |
 | Tahmin basit yöntemlerden kötü mü? | Diebold-Mariano, Harvey-Leybourne-Newbold düzeltmesiyle, %5 | Diebold ve Mariano (1995), JBES; Harvey vd. (1997), IJF |
 | "Eksiye düşme olasılığı" doğru ayarlı mı? | Spiegelhalter z testi ve Brier skoru, %5 | Spiegelhalter (1986), Statistics in Medicine |
+
+**Trafik ışığının sınırı (28.10.2026).** Basel çerçevesi bankanın %99 düzeyindeki günlük riske maruz değerini 250 bağımsız gözlemle sınamak için kurulmuştur (Basel Çerçevesi MAR32.5: %99; MAR99.11: "250 bağımsız gözlem", binom olasılıkları). Projede aynı kural %10 kuyruk olasılığına (P10), daha az gözleme ve haftalık, üst üste binen ufuklara uygulanır. Bu nedenle sonuç bir **uyarlanmış kapsama tanılamasıdır**: "yeşil", Basel ya da BDDK uygunluğu değil, riskli uçta beklenenden anlamlı fazla aşım bulunmadığı anlamına gelir. Üst üste binen ufuklarda aşımlar kümelenir ve bağımsızlık varsayımı sağlanmaz (Christoffersen 1998); bu yüzden pilotta aşımlar örtüşmeyen alt örneklemle de raporlanır. Aşağıdaki tablolarda "Basel" sütunu bu uyarlanmış testi gösterir.
 
 **Gerçek açık veri (16 tahmin tarihi, açık faturalardan tahsilat):**
 
@@ -127,7 +137,7 @@ Riskli uç dört durumun dördünde Basel yeşil bölgede; merkezi aralık Kupie
 | İki taraflı konformal ayar (iyimser uç daralabilir) | Payment Date 30 günde iyimser uç daha da daraldı (aşım 6/16, Kupiec p = 0,003); sentetikte iyimser uç daha da genişledi | Reddedildi |
 | Yalnız riskli ucu genişletme | Sentetikte Spiegelhalter z −4,46 (mevcut −4,57), güvenilirlik değişmedi | Kazanç yok |
 
-**Yorum ve açık kalan iş.** Kasanın riskli tarafı her veri ve senaryoda uluslararası standarda (Basel/BDDK) uygun. İki taraflı kalibrasyon ise veri setleri arasında **ters yönde** sapıyor: gerçek büyük portföyde iyimser uç fazla dar, sentetik şirketlerde fazla geniş. Tek bir genel ayar ikisini birden düzeltemez; birine göre ayar yapmak öbürünü bozar, gerçek veriye göre ayar yapmak ise o veriyi ezberlemek olur. Doğru ayar, Türk KOBİ pilot verisiyle (protokol B2 ve kapanış kasası hedefi) ölçülecek. O zamana kadar panel, yüksek riskte (≥ %50) gösterilen olasılığın gerçek riskten düşük olabileceğini açıkça uyarır ve kararın kötümser senaryoya göre verilmesini önerir.
+**Yorum ve açık kalan iş.** Kasanın riskli tarafı her veri ve senaryoda uyarlanmış Basel tipi bölge testinde yeşil (yukarıdaki sınır geçerli; düzenleyici uygunluk değildir). İki taraflı kalibrasyon ise veri setleri arasında **ters yönde** sapıyor: gerçek büyük portföyde iyimser uç fazla dar, sentetik şirketlerde fazla geniş. Tek bir genel ayar ikisini birden düzeltemez; birine göre ayar yapmak öbürünü bozar, gerçek veriye göre ayar yapmak ise o veriyi ezberlemek olur. Doğru ayar, Türk KOBİ pilot verisiyle (protokol B2 ve kapanış kasası hedefi) ölçülecek. O zamana kadar panel, yüksek riskte (≥ %50) gösterilen olasılığın gerçek riskten düşük olabileceğini açıkça uyarır ve kararın kötümser senaryoya göre verilmesini önerir.
 
 ## Gerçek açık verilerle doğrulama (14 Ekim 2026)
 

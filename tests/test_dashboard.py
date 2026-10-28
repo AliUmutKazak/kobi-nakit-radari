@@ -68,7 +68,7 @@ def test_dashboard_renders_demo_and_own_data_without_errors(tmp_path, monkeypatc
     assert any(n.value == 123456.0 for n in at.sidebar.number_input)
     next(b for b in at.button if b.label == "Geri testi çalıştır").click().run()
     assert not at.exception, [e.value for e in at.exception]
-    assert any("Basel Komitesi trafik ışığı" in m.value for m in at.markdown)
+    assert any("Basel tipi trafik ışığı" in m.value for m in at.markdown)
     monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))                   # anonimleştirme anahtarı testte buraya
     next(b for b in at.sidebar.button if b.label == "Takma adlı paketi hazırla").click().run()
     assert not at.exception, [e.value for e in at.exception]

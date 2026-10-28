@@ -3,7 +3,6 @@ import pandas as pd
 import streamlit as st
 
 STAGES = {"hatirlatma": "Hatırlatma", "mutabakat": "Mutabakat", "resmi": "Resmî bildirim"}
-SCOPE_NAMES = {'banka_ekstresi': 'banka ekstresi', 'giderler': 'giderler (gider dosyası ya da aylık sabit giderler)', 'odenecek_faturalar': 'ödenecek faturalar', 'cekler': 'çek/senet portföyü', 'yeni_satislar': 'yeni satışlar'}
 
 # Bu olasılıktan itibaren risk "en az" diye gösterilir: doğrulamada yüksek riskte gerçekleşme gösterilenden yüksekti
 # (%80 → %92; docs/DOGRULAMA.md). Yeniden ayar (izotonik) gerçek sonuç verisi gerektirir, pilot sonrasına kayıtlı.

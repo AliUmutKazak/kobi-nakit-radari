@@ -17,7 +17,7 @@ Tarih: 14 Ekim 2026. Yöntem: her üründe yalnızca üreticinin kendi ürün sa
 | En uygun iletişim zamanı | Belirtilmemiş | Belirtilmemiş | Var (gün ve saat) | Belirtilmemiş | Belirtilmemiş | Var (müşterinin ödeme gününe göre) |
 | Ödeme portalı / bağlantısı | Ödeme bağlantısı | Belirtilmemiş | Var | Var | Netahsilat (ayrı ürün) | Yok |
 | Banka bağlantısı | Var | Tahsilat eşleştirme ajanı | Belirtilmemiş | Belirtilmemiş | Netekstre (açık bankacılık) | Yok (dosya yükleme) |
-| Çek / senet | Belirtilmemiş | Belirtilmemiş | Belirtilmemiş | Belirtilmemiş | Belirtilmemiş | Var (tek oranla) |
+| Çek / senet | Belirtilmemiş | Belirtilmemiş | Belirtilmemiş | Belirtilmemiş | Çekler elle ya da Excel ile yüklenir (İngilizce ürün sayfası, 28.10.2026); karşılıksızlık riski belirtilmemiş | Var (keşideci bazlı Findeks oranı ya da işletmenin kendi oranı) |
 | Türkiye muhasebe / e-fatura uyumu | Yok | Yok | Yok | Yok | ERP entegrasyonu | UBL-TR ve Türkçe dışa aktarım dosyaları |
 | Hedef müşteri | Yıllık 10–500 milyon £ ciro | Belirtilmemiş | Belirtilmemiş | Yıllık 1 milyon £ üstü ciro | KOBİ ve büyük şirket | KOBİ |
 | Fiyat | Teklifle | Belirtilmemiş | Belirtilmemiş | Belirtilmemiş | Teklifle | — |
@@ -61,11 +61,13 @@ Sonuç: "rakiplerde tahmin ya da otomasyon yok" iddiası kullanılmamalı. Fatur
 
 Konumlandırma cümlesi (inceleme raporunun önerisinden uyarlandı): *KOBİ'lerin muhasebe ve banka dosyalarını müşterilerin gerçek ödeme davranışıyla birleştirerek önümüzdeki 13 haftada kasanın hangi aralıkta hareket edeceğini gösteren, her tahsilat önerisini kullanıcı kontrolünde ve geriye dönük ölçülebilir kılan nakit karar destek aracı.*
 
+**Düzeltme (28.10.2026, saha hazırlık değerlendirmesi üzerine).** Finrota NAP360'ın İngilizce ürün sayfası ([finrota.com/en/products/nap](https://www.finrota.com/en/products/nap)) Türkçe sayfadan fazlasını yazıyor: kasa, çek ve senetlerin elle ya da Excel ile yüklenmesi, satış, gider, personel ve enflasyon senaryoları, en iyi ve en kötü durumlu kur tahmini ve kullanıcının belirlediği sınırlara göre alarm. Yani Türkiye'de toplam nakit tahmini rakipsiz değildir; Finrota senaryo tabanlı bir nakit tahmini sunuyor. Sayfada olasılık, güven aralığı ya da tahminin geçmiş veriyle sınanması geçmiyor; isabet ve özellik derinliği için demo gerekir.
+
 ## Rakiplerde olmayan, bizde olan
 
 1. **Olasılıksal toplam kasa görünümü.** Fatura bazında gecikme olasılığı Chaser'da var (yukarıdaki düzeltme); ama giderler dahil toplam kasa için güven bandı ve "eksiye düşme olasılığı" incelenen kaynaklarda geçmiyor. En yakını Finrota'nın elle kurulan senaryoları.
 2. **Tahsilat listesinin kasa açığına bağlanması.** Sıralama "en çok gecikmiş" ya da "en büyük tutar"a göre değil, açık gününe kadar gelmeme riski taşıyan tutara göre.
-3. **Çek/senet ve cari hesap mantığı.** Yabancı ürünlerde yok; Finrota sayfasında belirtilmemiş.
+3. **Çek/senet ve cari hesap mantığı.** Yabancı ürünlerde yok. Finrota çeklerin yüklenmesine izin veriyor (28.10.2026 düzeltmesi); çekin karşılıksız çıkma olasılığını tahmine kattığı sayfasında belirtilmemiş.
 4. **Kendini sınayan tahmin.** Geçmiş tarihlerde tahmin üretip gerçekleşenle karşılaştıran geri test kodda var. Panelde "Bu tahmin geçmişte ne kadar tuttu?" bölümünde kullanıcının kendi verisiyle çalışır.
 
 5. **Açığı kapatma hesabı.** Panel, kötümser senaryodaki en derin açığı ve onu kapatmak için listenin ilk kaç faturasının tahsil edilmesi gerektiğini söyler; gider erteleme ve tahsilat senaryoları aynı rastgele senaryolar üzerinde yeniden hesaplanır. Finrota'da senaryo var ama elle kuruluyor ve tahsilat listesine bağlı değil.

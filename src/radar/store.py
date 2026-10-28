@@ -31,6 +31,25 @@ def default_path() -> Path:
     return Path(base) / "KobiRadar" / "radar.db"
 
 
+# Bulut eşitleme klasörleri: veritabanı bunların altındaysa müşteri verisi buluta kopyalanır (GUVENLIK.md, bulgu 3).
+SYNC_ENV = ("OneDrive", "OneDriveCommercial", "OneDriveConsumer")
+SYNC_NAMES = ("onedrive", "dropbox", "google drive", "googledrive", "icloud drive", "iclouddrive", "yandex.disk", "box")
+
+
+def synced_folder(path) -> str | None:
+    """Yol bir bulut eşitleme klasörünün altındaysa o klasör, değilse None. Varsayılan yer eşitlenmez; uyarı,
+    RADAR_DB ile ya da elle başka bir yer seçildiğinde işe yarar."""
+    path = Path(path).resolve()
+    for name in SYNC_ENV:
+        root = os.environ.get(name)
+        if root and (path == Path(root).resolve() or Path(root).resolve() in path.parents):
+            return root
+    for part in path.parts[:-1]:
+        if part.lower() in SYNC_NAMES or part.lower().startswith("onedrive - "):
+            return part
+    return None
+
+
 DEFAULT_NAME = "İşletmem"
 BACKUP_MAGIC = b"KOBIRADAR-YEDEK-1"     # şifreli yedek dosyasının başlığı (sürümlü)
 

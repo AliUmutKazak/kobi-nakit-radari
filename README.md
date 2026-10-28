@@ -14,7 +14,7 @@ Küçük bir işletme için asıl soru "müşteri ne zaman öder?" değil, "ön�
 
 ## Doğrulama: neler ölçüldü
 
-Kabul ölçütleri projede uydurulmadı; risk modeli doğrulamasında kullanılan standart testlerden alındı: Basel trafik ışığı (BCBS 1996; BDDK), Kupiec kapsama testi ve Diebold-Mariano isabet testi. Ayrıntı ve denenip reddedilen yöntemler: [docs/DOGRULAMA.md](docs/DOGRULAMA.md).
+Kabul ölçütleri projede uydurulmadı; risk modeli doğrulamasında kullanılan standart testlerden alındı: Basel tipi trafik ışığı, Kupiec kapsama testi ve Diebold-Mariano isabet testi. Trafik ışığı, Basel Komitesinin binom bölge kuralının (BCBS 1996; %99 VaR, 250 gözlem) %10 kuyruğa ve küçük örnekleme uyarlanmış hâlidir; bir kapsama tanılamasıdır, bankacılık düzenlemesine uygunluk anlamına gelmez. Tablodaki "yeşil" bu uyarlanmış testin sonucudur. Ayrıntı ve denenip reddedilen yöntemler: [docs/DOGRULAMA.md](docs/DOGRULAMA.md).
 
 | Veri | Sonuç | Sınır |
 |---|---|---|
@@ -57,7 +57,7 @@ Taşınabilir paket: `python tools/paketle.py`. Örnek dosyalar `ornekler/` klas
 | `src/radar/validation.py`, `lab.py`, `open_data.py`, `standards.py` | Doğrulama çerçevesi ve senaryo laboratuvarı |
 | `src/radar/ui/` | Streamlit paneli: veri katmanı, özet ve üç sekme (kasa, tahsilat, tahmin doğruluğu) |
 | `app.py` | Panelin giriş noktası ve kenar çubuğu |
-| `tests/` | 93 test; panel, Streamlit AppTest ile uçtan uca çizilerek sınanır |
+| `tests/` | 95 test; panel, Streamlit AppTest ile uçtan uca çizilerek sınanır |
 
 Tasarım gerekçeleri: [docs/ARASTIRMA.md](docs/ARASTIRMA.md). Rakip incelemesi: [docs/RAKIPLER.md](docs/RAKIPLER.md), [docs/FARKLILASMA_ANALIZI.md](docs/FARKLILASMA_ANALIZI.md). Senaryo laboratuvarı: [docs/LAB_RAPORU.md](docs/LAB_RAPORU.md). Üçüncü taraf lisansları ve veri kaynakları: [docs/LISANSLAR.md](docs/LISANSLAR.md).
 

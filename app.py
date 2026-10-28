@@ -9,7 +9,7 @@ import pandas as pd  # noqa: E402
 import streamlit as st  # noqa: E402
 
 from radar import access, anonymize, benchmark, fx, ingest, mailer, pipeline  # noqa: E402
-from radar.store import encrypt_backup, list_businesses  # noqa: E402
+from radar.store import encrypt_backup, list_businesses, synced_folder  # noqa: E402
 from radar.ui import summary as overview, tab_accuracy, tab_cash, tab_collect  # noqa: E402
 from radar.ui.data import (MAPPABLE, add_business, add_sample_business, anonymous_package,  # noqa: E402
                            get_store, open_upload, parse_bank, parse_invoices, run_demo, run_own, save_upload)
@@ -29,6 +29,10 @@ BUSINESSES = list_businesses()
 if st.session_state.get("active_business") not in BUSINESSES:
     st.session_state["active_business"] = next(iter(BUSINESSES))
 store = get_store(str(BUSINESSES[st.session_state["active_business"]]))
+_synced = synced_folder(store.path)
+if _synced:
+    st.error(f"Veriler bulutla eşitlenen bir klasörde ({_synced}): {store.path}. Müşteri bilgileri buluta kopyalanır. "
+             "Programı RADAR_DB ayarı olmadan açın ya da verileri eşitlenmeyen bir klasöre taşıyın (KULLANIM_KILAVUZU).")
 
 # İsteğe bağlı panel parolası (ortak kullanılan bilgisayarlar için; KVKK rehberi: kullanıcı hesap yönetimi).
 if access.enabled() and not st.session_state.get("auth_ok"):

@@ -261,7 +261,8 @@ def run_pilot(key, _res, label, hide, retro_json="", store_path=""):
     secret = secret_key(get_store(store_path)) if hide else None
     retro = pd.read_json(io.StringIO(retro_json), orient="records") if retro_json else None
     r = pilot.build(_res["obs"], _res["as_of"], res=_res, label=label, key=secret,
-                    unmatched=_res.get("unmatched"), n_payments=_res.get("n_payments"), retro=retro)
+                    unmatched=_res.get("unmatched"), n_payments=_res.get("n_payments"), retro=retro,
+                    opening_date=get_store(store_path).get("opening_date") or None)
     return pilot.render(r).encode("utf-8")
 
 

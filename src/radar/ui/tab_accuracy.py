@@ -88,12 +88,14 @@ def render(res, res_key, store, own):
                 "model": (bt["p50"] - bt["actual"]).abs(), "vade": (bt["naive_due"] - bt["actual"]).abs(),
                 "medyan": (bt["naive_median"] - bt["actual"]).abs(), "oran": (bt["naive_rate"] - bt["actual"]).abs()}),
                 overlap=3)
-            st.write(f"Uluslararası testler ({len(bt)} tarih): kötümser uç için Basel Komitesi trafik ışığı "
+            st.write(f"Uluslararası testler ({len(bt)} tarih): kötümser uç için Basel tipi trafik ışığı "
                      f"**{band['basel_lower']['zone']}** ({band['below']} aşım); Kupiec kapsama testi p = "
                      f"{band['kupiec_central']['p_value']:.2f} ({'reddedildi' if band['kupiec_central']['reject'] else 'reddedilmedi'}); "
                      f"isabet (Diebold-Mariano): **{acc['sonuc']}**.")
             st.caption("Az sayıda tarihle testlerin gücü düşüktür: 'yeşil' ve 'reddedilmedi', modelin doğru olduğunu "
-                       "değil, aksine kanıt bulunmadığını gösterir. Pilot süresince kayıtlar biriktikçe güç artar.")
+                       "değil, aksine kanıt bulunmadığını gösterir. Trafik ışığı, Basel Komitesinin %99 günlük risk ölçüsü için "
+                       "kurduğu bölge kuralının bu ölçüme uyarlanmış hâlidir; düzenleyici uygunluk anlamına gelmez. "
+                       "Pilot süresince kayıtlar biriktikçe güç artar.")
             show_table(bt.rename(columns={
                 "origin": "Tahmin tarihi", "actual": "Gerçekleşen (TL)", "p10": "Kötümser (TL)",
                 "p50": "Orta tahmin (TL)", "p90": "İyimser (TL)", "inside": "Bant içinde",
@@ -219,7 +221,7 @@ def render(res, res_key, store, own):
                            "iyi basit yöntem sapma farkının %95 güven aralığının üst sınırı, Aşama 0'dan dondurulan "
                            "marjın altındaysa \"eşdeğer\", sıfırın altındaysa \"üstün\"; değilse \"kanıtlanamadı\" "
                            "(FDA 2016 eşdeğerlik yaklaşımı). Pilotun kararı bu işletmenin sonucuyla değil, bütün pilot işletmelerinin "
-                           "birleşik analiziyle verilir (protokol 1.8); buradaki B1 betimleyicidir. Diebold-Mariano sonucu ayrıca gösterilir. B2: kötümser uç için Basel Komitesi trafik ışığı (BIS 1996) yeşil ve Kupiec "
+                           "birleşik analiziyle verilir (protokol 1.8); buradaki B1 betimleyicidir. Diebold-Mariano sonucu ayrıca gösterilir. B2: kötümser uç için Basel tipi trafik ışığı (BIS 1996 bölge kuralı, %10 kuyruğa uyarlanmış; düzenleyici uygunluk değildir) yeşil ve Kupiec "
                            "(1995) kapsama testleri reddetmiyorsa geçer. Haftalık kayıtların ufukları üst üste biner: "
                            "isabet testi ve güven aralığı bunu hesaba katar, Basel ve Kupiec katmaz (Christoffersen "
                            "1998). Bu yüzden aşımlar örtüşmeyen alt örneklemle (her ufuk süresinde bir kayıt) de verilir.")

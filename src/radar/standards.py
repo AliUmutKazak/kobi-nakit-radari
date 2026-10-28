@@ -8,6 +8,10 @@ Projede kabul eşikleri kendimiz tarafından belirlenmez; aşağıdaki kurum ve 
   model altında "bu kadar ya da daha az aşım" olasılığı %95'e ulaşıyorsa sarı, %99,99'a ulaşıyorsa
   kırmızı bölge. Sınırlar her örneklem büyüklüğü için yeniden hesaplanır; belge başka güven
   düzeylerinin de sınanabileceğini belirtir. Kasada riskli uç alt uçtur (kötümser senaryonun altı).
+  Kapsam sınırı: Basel çerçevesi %99 düzeyinde günlük riske maruz değer ve 250 bağımsız gözlem için kurulmuştur
+  (güncel metin: Basel Çerçevesi MAR32.5 ve MAR99.11). Burada aynı bölge kuralı %10 kuyruk olasılığına ve küçük
+  örneklemlere uyarlanır; sonuç uyarlanmış bir kapsama tanılamasıdır, Basel ya da BDDK uygunluğu anlamına gelmez.
+  Üst üste binen ufuklarda bağımsızlık varsayımı sağlanmaz (bkz. pilot.score, örtüşmeyen alt örneklem).
 - Kupiec, P. (1995), "Techniques for verifying the accuracy of risk measurement models", Journal of
   Derivatives 3(2). Aşım oranının beklenen orana eşitliği için olabilirlik oranı testi; iki yönlüdür:
   bant fazla dar da (çok aşım) fazla geniş de (az aşım) olsa reddeder.

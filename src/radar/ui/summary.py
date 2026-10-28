@@ -8,7 +8,7 @@ import streamlit as st
 
 from radar import benchmark, fx, ingest, pilot, pipeline
 from radar.ui.data import get_store, retro_data_key
-from radar.ui.fmt import HIGH_RISK, SCOPE_NAMES, show_table, tl, tr_number
+from radar.ui.fmt import HIGH_RISK, show_table, tl, tr_number
 
 
 def render(res, store, own, businesses):
@@ -169,7 +169,7 @@ def render(res, store, own, businesses):
     scope = res.get("scope")
     if own and scope:
         info = res["info"]
-        missing = [SCOPE_NAMES[k] for k, v in scope.items() if not v]
+        missing = [pilot.SCOPE_NAMES[k] for k, v in scope.items() if not v]
         age = (pd.Timestamp(res["as_of"]) - res["last_activity"]).days if res.get("last_activity") is not None else None
         with st.expander("Veri kalitesi ve kapsam" + (" — eksik kaynak var" if missing else "")):
             q = st.columns(4)

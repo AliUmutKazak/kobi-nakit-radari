@@ -131,6 +131,14 @@ def test_pilot_report_builds_and_renders(tmp_path):
     hidden = pilot.render(pilot.build(obs, AS_OF, res=r["res"], label="X", key="gizli"))
     assert not any(name in hidden for name in r["top"]["Müşteri"])           # müşteri adları gizlendi
     assert not any(number in hidden for number in r["top"]["Fatura"])          # fatura numaraları da
+    # Kapsam: kasa tutarının tarihi, tahsilat kesimi, dahil ve dışarıda kalan kaynaklar her raporda yazılır.
+    assert "Tahminin kapsamı" in page and "Hiçbir durumda dahil olmayan" in page and "kayıtlı değil" in page
+    scoped = dict(r["res"], scope={"banka_ekstresi": True, "giderler": True, "odenecek_faturalar": False,
+                                   "cekler": False, "yeni_satislar": True})
+    cov = pilot.coverage_table(scoped, AS_OF, "2026-09-28")
+    assert cov["Kasa ve banka tutarının girildiği gün"] == "28.09.2026 (tahmin tarihinden 3 gün önce)"
+    assert cov["Yüklenmediği için dahil olmayan"] == "ödenecek faturalar, çek/senet portföyü"
+    assert cov["Tahmine dahil kaynaklar"].startswith("açık faturalar, banka ekstresi")
 
 
 def test_weekly_pilot_records_are_frozen_and_scheduled(tmp_path):

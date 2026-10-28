@@ -3,7 +3,7 @@
 Soru: Sistemsel olarak tamam mıyız; benzer ürünlerin gerisinde miyiz; pazarda olmayan ya da yeni başlayan, bizim yaparsak değer katacağımız neler var?
 
 Kısa cevap:
-- **Pilot için tamamız.** Yöntem bakımından incelediğimiz ürünlerin önündeyiz.
+- **Pilot için tamamız.** Yöntem bakımından incelediğimiz ürünlerin kamuya açık sayfalarında yazandan daha fazlasını yapıyoruz; ama bu bir özellik karşılaştırmasıdır, isabet karşılaştırması değildir. Türk KOBİ verisinde isabet kanıtı pilotla gelecek (28.10.2026 düzeltmesi).
 - **Ürün olarak bazı alanlarda gerideyiz:** canlı banka bağlantısı, mobil, bulut, finansmana bağlanma. Bunlar hata değil, olgunluk farkıdır ve çoğu lisans, ortaklık ya da gerçek kullanıcı gerektirir.
 - **Fark yaratabileceğimiz yedi alan var.** Hiçbiri pilottan önce yapılmayacak (özellik dondurması). Önce pilot öncesi görüşmelerde talep olup olmadığı sınanacak (pilot hazırlık kiti, H7–H11).
 
@@ -14,8 +14,8 @@ Kaynak notu: Ürün bilgileri üreticilerin kendi sayfalarından ve basından al
 | Alan | Biz | Pazar (görülen) | Değerlendirme |
 |---|---|---|---|
 | Fatura bazında ödeme günü tahmini | Var (kantil model + müşteri alışkanlığı) | Xero JAX ödeme günü tahmini ve tahmine göre hatırlatma (Eylül 2025); HighRadius, CashAnalytics | Eşit |
-| Kasa belirsizliğinin ölçülmüş bandı | Var: P10/P50/P90, konformal ayar, Basel/Kupiec ile sınanmış | Float/FreeAgent "Forecast Confidence" göstergesi; HighRadius "%95 güven" diyor ama yöntemi açıklamıyor. Kalibrasyonu ölçülmüş bant sunan ticari ürün görülmedi | **Önde** |
-| Bağımsız ve önceden kayıtlı isabet ölçümü | Pilot protokolü 1.8, basit yöntemlere karşı | Yayımlanmış bağımsız ölçüm görülmedi; isabet yüzdeleri üretici iddiası | **Önde** (pilot bitince) |
+| Kasa belirsizliğinin ölçülmüş bandı | Var: P10/P50/P90, konformal ayar; uyarlanmış Basel tipi bölge testi ve Kupiec ile yabancı açık veride ve sentetik veride sınanmış (Türk verisinde henüz değil) | Float/FreeAgent "Forecast Confidence" göstergesi; HighRadius "%95 güven" diyor ama yöntemi açıklamıyor. Kalibrasyonu ölçülmüş bant sunan ticari ürün görülmedi | **Önde** |
+| Bağımsız ve önceden kayıtlı isabet ölçümü | Pilot protokolü 1.9, basit yöntemlere karşı | Yayımlanmış bağımsız ölçüm görülmedi; isabet yüzdeleri üretici iddiası | **Önde** (pilot bitince) |
 | Türk çek sistemi (vade, karşılıksızlık, ciro) | Var | Paraşüt'te çek hatırlatması var, risk modeli görülmedi | **Önde** |
 | Hukuka uygun hatırlatma (TTK m.1530, ticari ileti yönetmeliği, MERSİS kilidi) | Var | Paraşüt otomatik hatırlatma e-postası gönderiyor; yasal içerik denetimi görülmedi | **Önde** |
 | Veri yerelde, buluta gitmiyor | Var | Rakiplerin hepsi bulut | Farklı tercih: güven avantajı, ölçek dezavantajı |
@@ -24,6 +24,7 @@ Kaynak notu: Ürün bilgileri üreticilerin kendi sayfalarından ve basından al
 | Otomatik hatırlatma gönderimi | Bilinçli olarak yok (taslak + kullanıcı onayı) | Paraşüt, Xero | Farklı tercih (hukuki risk) |
 | Tahsilat yolu (kartla ödeme bağlantısı) | Yok | Paraşüt (iyzico) | **Geride** |
 | Finansmana bağlanma | Yok | Paraşüt–Figopara entegrasyonu; Albaraka–Figopara (Eylül 2026) | **Geride** |
+| Türkiye'de toplam nakit tahmini (28.10.2026 eki) | Var | Finrota NAP360: geçmiş ödemelerden tahmin, senaryolar, çek ve senet yükleme, en iyi/en kötü kur senaryosu, sınıra bağlı alarm (üretici sayfası). Olasılık bandı ve geçmişte sınanma belirtilmemiş | Rakipsiz değiliz; fark ölçülmüş belirsizlik ve isabet karnesinde, bu da saha kanıtı bekliyor |
 | Banka içi nakit tahmini | — | Akbank Mobil "İşin için": nakit akışı ve "gelecek günler için tahmin" (yöntem açıklanmıyor) | Bankalar alana giriyor; kendi müşterisiyle sınırlı |
 
 Sonuç: Yöntem, Türkiye'ye uyum ve güven tarafında öndeyiz; bağlantı, kanal ve olgunluk tarafında gerideyiz. Gerideki alanların çoğu pilottan sonra ortaklıkla kapanır; kendi başımıza yazmamız gerekmez.
